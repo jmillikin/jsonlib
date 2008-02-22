@@ -20,22 +20,35 @@ ESCAPES = {
 	'\\': '\\\\'
 }
 
-def write_array (value, sort_keys):
+def get_indent (indent_level):
+	if indent_level is None:
+		return '', ''
+	return '\n', indent_level
+	
+def write_array (value, sort_keys, indent_level):
 	"""Serialize an iterable to a list of strings in JSON array format."""
-	retval = ['[']
+	newline, indent = get_indent (indent_level)
+	retval = ['[', newline]
 	
 	for index, item in enumerate (value):
 		if item is value:
 			raise errors.WriteError ("Can't write self-referential values")
-		retval.extend (_write (item, sort_keys))
+		if indent:
+			retval.append (indent)
+		retval.extend (_write (item, sort_keys, indent_level))
 		if (index + 1) < len (value):
-			retval.append (', ')
+			if newline:
+				retval.append (',' + newline)
+			else:
+				retval.append (', ')
+	retval.append (newline)
 	retval.append (']')
 	return retval
 	
-def write_object (value, sort_keys):
+def write_object (value, sort_keys, indent_level):
 	"""Serialize a mapping to a list of strings in JSON object format."""
-	retval = ['{']
+	newline, indent = get_indent (indent_level)
+	retval = ['{', newline]
 	
 	if sort_keys:
 		items = sorted (value.items ())
@@ -49,11 +62,17 @@ def write_object (value, sort_keys):
 		if sub_value is value:
 			raise errors.WriteError ("Can't write self-referential values")
 			
-		retval.extend (_write (key, sort_keys))
+		if indent:
+			retval.append (indent)
+		retval.extend (_write (key, sort_keys, indent_level))
 		retval.append (': ')
-		retval.extend (_write (sub_value, sort_keys))
+		retval.extend (_write (sub_value, sort_keys, indent_level))
 		if (index + 1) < len (value):
-			retval.append (', ')
+			if newline:
+				retval.append (',' + newline)
+			else:
+				retval.append (', ')
+	retval.append (newline)
 	retval.append ('}')
 	return retval
 	
@@ -120,7 +139,7 @@ TYPE_MAPPERS = {
 	type (None): lambda _: 'null',
 }
 
-def _write (value, sort_keys):
+def _write (value, sort_keys, indent):
 	"""Serialize a Python value into a list of byte strings.
 	
 	When joined together, result in the value's JSON representation.
@@ -128,7 +147,7 @@ def _write (value, sort_keys):
 	"""
 	v_type = type (value)
 	if v_type in CONTAINER_TYPES:
-		return CONTAINER_TYPES[v_type] (value, sort_keys)
+		return CONTAINER_TYPES[v_type] (value, sort_keys, indent)
 	elif v_type in TYPE_MAPPERS:
 		return TYPE_MAPPERS[v_type] (value)
 	else:
@@ -139,14 +158,16 @@ def _write (value, sort_keys):
 				
 		raise errors.UnknownSerializerError (value)
 		
-def write (value, sort_keys = False):
+def write (value, sort_keys = False, indent = None):
 	"""Serialize a Python value to a JSON-formatted byte string.
 	
 	value -- The Python object to serialize.
 	sort_keys -- Whether object keys should be kept sorted. Useful
 	             for tests, or other cases that check against a
 	             constant string value.
+	indent -- A string to be used for indenting arrays and objects.
+	          If this is non-None, pretty-printing mode is activated.
 	
 	"""
-	return ''.join (_write (value, sort_keys))
+	return ''.join (_write (value, sort_keys, indent))
 	

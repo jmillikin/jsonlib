@@ -38,6 +38,12 @@ class WriteArrayTests (TestCase):
 	def test_multiple_value_array (self):
 		self.w ([True, True], '[true, true]')
 		
+	def test_indent (self):
+		self.assertEqual (write ([True, True], indent = ''),
+		                  '[\ntrue,\ntrue\n]')
+		self.assertEqual (write ([True, True], indent = '\t'),
+		                  '[\n\ttrue,\n\ttrue\n]')
+		
 	def test_fail_on_self_reference (self):
 		a = []
 		a.append (a)
@@ -58,6 +64,14 @@ class WriteObjectTests (TestCase):
 		self.assertEqual (write ({'e': True, 'm': True},
 		                         sort_keys = True),
 		                  '{"e": true, "m": true}')
+		
+	def test_indent (self):
+		self.assertEqual (write ({'e': True, 'm': True},
+		                         sort_keys = True, indent = ''),
+		                  '{\n"e": true,\n"m": true\n}')
+		self.assertEqual (write ({'e': True, 'm': True},
+		                         sort_keys = True, indent = '\t'),
+		                  '{\n\t"e": true,\n\t"m": true\n}')
 		
 	def test_fail_on_invalid_key (self):
 		self.assertRaises (errors.WriteError, write, {1: True})
