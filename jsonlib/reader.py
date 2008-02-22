@@ -6,6 +6,7 @@
 from decimal import Decimal
 import re
 import struct
+import sys
 
 from .util import memoized, chunk, KEYWORDS
 from .StateMachine import StateMachine, PUSH, POP
@@ -99,6 +100,8 @@ def read_unicode_escape (stream):
 	indicate a code point in the Basic Multi-lingual Plane.
 	
 	* \uUUUU\uUUUU, where the two points encode a UTF-16 surrogate pair.
+	  In builds of Python without wide character support, these are
+	  returned as a surrogate pair.
 	
 	"""
 	get_n = lambda n: u''.join ([stream.next () for ii in xrange (n)])
@@ -107,24 +110,30 @@ def read_unicode_escape (stream):
 	
 	# Check if it's a UTF-16 surrogate pair
 	if unicode_value >= 0xD800 and unicode_value <= 0xDBFF:
-		# Convert to 10-bit halves of the 20-bit character
-		first_half = unicode_value - 0xD800
-		
+		first_half = unicode_value
 		try:
 			next_escape = get_n (2)
 			if next_escape != '\\u':
-				raise errors.MissingSurrogateError (unicode_value)
-			second_half = int (get_n (4), 16) - 0xDC00
+				raise errors.MissingSurrogateError (first_half)
+			second_half = int (get_n (4), 16)
 		except StopIteration:
-			raise errors.MissingSurrogateError (unicode_value)
+			raise errors.MissingSurrogateError (first_half)
 			
-		# Merge into 20-bit character
-		unicode_value = (first_half << 10) + second_half
-		
-		# Add U+10000 for full unicode character
-		unicode_value = unicode_value + 0x10000
-		
-	return unichr (unicode_value)
+		if sys.maxunicode <= 65535:
+			# No wide character support
+			return unichr (first_half) + unichr (second_half)
+		else:
+			# Convert to 10-bit halves of the 20-bit character
+			first_half -= 0xD800
+			second_half -= 0xDC00
+			
+			# Merge into 20-bit character
+			unicode_value = (first_half << 10) + second_half
+			
+			# Add U+10000 for full unicode character
+			unicode_value = unicode_value + 0x10000
+	else:
+		return unichr (unicode_value)
 	
 def read_unichars (string):
 	"""Read unicode characters from an escaped string."""
