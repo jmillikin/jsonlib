@@ -124,14 +124,12 @@ def read_unicode_escape (stream):
 			return unichr (first_half) + unichr (second_half)
 		else:
 			# Convert to 10-bit halves of the 20-bit character
-			first_half -= 0xD800
-			second_half -= 0xDC00
+			upper -= 0xD800
+			lower -= 0xDC00
 			
 			# Merge into 20-bit character
-			unicode_value = (first_half << 10) + second_half
-			
-			# Add U+10000 for full unicode character
-			unicode_value = unicode_value + 0x10000
+			unicode_value = (upper << 10) + lower + 0x10000
+			return unichr (unicode_value)
 	else:
 		return unichr (unicode_value)
 	
