@@ -20,14 +20,14 @@ ESCAPES = {
 	'\\': '\\\\'
 }
 
-def get_indent (indent_level):
-	if indent_level is None:
-		return '', ''
-	return '\n', indent_level
+def get_indent (indent_string, indent_level):
+	if indent_string is None:
+		return '', '', ''
+	return '\n', indent_string * (indent_level + 1), indent_string * indent_level
 	
-def write_array (value, sort_keys, indent_level):
+def write_array (value, sort_keys, indent_string, indent_level):
 	"""Serialize an iterable to a list of strings in JSON array format."""
-	newline, indent = get_indent (indent_level)
+	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['[', newline]
 	
 	for index, item in enumerate (value):
@@ -35,19 +35,19 @@ def write_array (value, sort_keys, indent_level):
 			raise errors.WriteError ("Can't write self-referential values")
 		if indent:
 			retval.append (indent)
-		retval.extend (_write (item, sort_keys, indent_level))
+		retval.extend (_write (item, sort_keys, indent_string, indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
 				retval.append (',' + newline)
 			else:
 				retval.append (', ')
-	retval.append (newline)
+	retval.append (newline + next_indent)
 	retval.append (']')
 	return retval
 	
-def write_object (value, sort_keys, indent_level):
+def write_object (value, sort_keys, indent_string, indent_level):
 	"""Serialize a mapping to a list of strings in JSON object format."""
-	newline, indent = get_indent (indent_level)
+	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['{', newline]
 	
 	if sort_keys:
@@ -64,15 +64,15 @@ def write_object (value, sort_keys, indent_level):
 			
 		if indent:
 			retval.append (indent)
-		retval.extend (_write (key, sort_keys, indent_level))
+		retval.extend (_write (key, sort_keys, indent_string, indent_level + 1))
 		retval.append (': ')
-		retval.extend (_write (sub_value, sort_keys, indent_level))
+		retval.extend (_write (sub_value, sort_keys, indent_string, indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
 				retval.append (',' + newline)
 			else:
 				retval.append (', ')
-	retval.append (newline)
+	retval.append (newline + next_indent)
 	retval.append ('}')
 	return retval
 	
@@ -139,7 +139,7 @@ TYPE_MAPPERS = {
 	type (None): lambda _: 'null',
 }
 
-def _write (value, sort_keys, indent):
+def _write (value, sort_keys, indent_string, indent_level):
 	"""Serialize a Python value into a list of byte strings.
 	
 	When joined together, result in the value's JSON representation.
@@ -147,7 +147,9 @@ def _write (value, sort_keys, indent):
 	"""
 	v_type = type (value)
 	if v_type in CONTAINER_TYPES:
-		return CONTAINER_TYPES[v_type] (value, sort_keys, indent)
+		return CONTAINER_TYPES[v_type] (value, sort_keys,
+		                                indent_string,
+		                                indent_level)
 	elif v_type in TYPE_MAPPERS:
 		return TYPE_MAPPERS[v_type] (value)
 	else:
@@ -169,5 +171,5 @@ def write (value, sort_keys = False, indent = None):
 	          If this is non-None, pretty-printing mode is activated.
 	
 	"""
-	return ''.join (_write (value, sort_keys, indent))
+	return ''.join (_write (value, sort_keys, indent, 0))
 	

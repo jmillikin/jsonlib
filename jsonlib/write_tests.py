@@ -38,11 +38,17 @@ class WriteArrayTests (TestCase):
 	def test_multiple_value_array (self):
 		self.w ([True, True], '[true, true]')
 		
-	def test_indent (self):
+	def test_empty_indent (self):
 		self.assertEqual (write ([True, True], indent = ''),
 		                  '[\ntrue,\ntrue\n]')
+		
+	def test_single_indent (self):
 		self.assertEqual (write ([True, True], indent = '\t'),
 		                  '[\n\ttrue,\n\ttrue\n]')
+		
+	def test_nested_indent (self):
+		self.assertEqual (write ([True, [True]], indent = '\t'),
+		                  '[\n\ttrue,\n\t[\n\t\ttrue\n\t]\n]')
 		
 	def test_fail_on_self_reference (self):
 		a = []
@@ -65,13 +71,20 @@ class WriteObjectTests (TestCase):
 		                         sort_keys = True),
 		                  '{"e": true, "m": true}')
 		
-	def test_indent (self):
-		self.assertEqual (write ({'e': True, 'm': True},
+	def test_empty_indent (self):
+		self.assertEqual (write ({'a': True, 'b': True},
 		                         sort_keys = True, indent = ''),
-		                  '{\n"e": true,\n"m": true\n}')
-		self.assertEqual (write ({'e': True, 'm': True},
+		                  '{\n"a": true,\n"b": true\n}')
+		
+	def test_single_indent (self):
+		self.assertEqual (write ({'a': True, 'b': True},
 		                         sort_keys = True, indent = '\t'),
-		                  '{\n\t"e": true,\n\t"m": true\n}')
+		                  '{\n\t"a": true,\n\t"b": true\n}')
+		
+	def test_nested_indent (self):
+		self.assertEqual (write ({'a': True, 'b': {'c': True}},
+		                         sort_keys = True, indent = '\t'),
+		                  '{\n\t"a": true,\n\t"b": {\n\t\t"c": true\n\t}\n}')
 		
 	def test_fail_on_invalid_key (self):
 		self.assertRaises (errors.WriteError, write, {1: True})
