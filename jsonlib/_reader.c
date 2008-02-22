@@ -118,7 +118,7 @@ read_4hex (Py_UNICODE *start, Py_UNICODE *retval_ptr)
 
 static int
 read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
-                     Py_UNICODE *unesc_ptr,
+                     Py_UNICODE *buffer, Py_ssize_t *buffer_idx,
                      Py_ssize_t *index_ptr, Py_ssize_t max_char_count)
 {
 	Py_ssize_t remaining;
@@ -144,9 +144,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 	/* Check for surrogate pair */
 	if (value >= 0xD800 && value <= 0xDBFF)
 	{
-		Py_UNICODE upper, lower;
-		
-		upper = value - 0xD800;
+		Py_UNICODE upper = value, lower;
 		
 		if (remaining < 10)
 		{
@@ -168,14 +166,26 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 		
 		if (!read_4hex (string_start + (*index_ptr), &lower))
 			return FALSE;
-		lower = lower - 0xDC00;
+			
 		(*index_ptr) += 4;
 		
-		/* Merge upper and lower components */
-		value = ((upper << 10) + lower) + 0x10000;
+#		if Py_UNICODE_SIZE >= 4
+			upper -= 0xD800;
+			lower -= 0xDC00;
+			
+			/* Merge upper and lower components */
+			value = ((upper << 10) + lower) + 0x10000;
+			buffer[(*buffer_idx)++] = value;
+#		else
+			/* No wide character support, return surrogate pairs */
+			buffer[(*buffer_idx)++] = upper;
+			buffer[*buffer_idx] = lower;
+#		endif
 	}
-	
-	(*unesc_ptr) = value;
+	else
+	{
+		buffer[*buffer_idx] = value;
+	}
 	return TRUE;
 }
 
@@ -248,14 +258,13 @@ read_string (ParserState *state)
 				case 't': buffer[buffer_idx] = 0x09; break;
 				case 'u':
 				{
-					Py_UNICODE unesc;
 					Py_ssize_t next_ii = ii;
 					if (read_unicode_escape (state, start,
-					                         &unesc,
+					                         buffer,
+					                         &buffer_idx,
 					                         &next_ii,
 					                         max_char_count))
 					{
-						buffer[buffer_idx] = unesc;
 						ii = next_ii;
 					}
 					
