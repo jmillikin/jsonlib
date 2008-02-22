@@ -18,10 +18,10 @@
 	typedef int Py_ssize_t;
 #	define PY_SSIZE_T_F "%d"
 #else
-#	define PY_SSIZE_T_F "%zd"
+#	define PY_SSIZE_T_F "%" PY_FORMAT_SIZE_T "d"
 #endif
 
-#if PY_UNICODE_SIZE < 4
+#if Py_UNICODE_SIZE < 4
 #	define PY_UNICODE_F "%u"
 #else
 #	define PY_UNICODE_F "%lu"
@@ -188,7 +188,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 			
 			/* Merge upper and lower components */
 			value = ((upper << 10) + lower) + 0x10000;
-			buffer[(*buffer_idx)++] = value;
+			buffer[*buffer_idx] = value;
 #		else
 			/* No wide character support, return surrogate pairs */
 			buffer[(*buffer_idx)++] = upper;
