@@ -14,6 +14,19 @@
 #define FALSE 0
 #define TRUE 1
 
+#if PY_VERSION_HEX < 0x02050000
+	typedef int Py_ssize_t;
+#	define PY_SSIZE_T_F "%d"
+#else
+#	define PY_SSIZE_T_F "%zd"
+#endif
+
+#if PY_UNICODE_SIZE < 4
+#	define PY_UNICODE_F "%u"
+#else
+#	define PY_UNICODE_F "%lu"
+#endif
+
 typedef struct _ParserState {
 	Py_UNICODE *start;
 	Py_UNICODE *end;
@@ -131,7 +144,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 	if (remaining < 4)
 	{
 		PyErr_Format (JSON_ReadError,
-		              "Unterminated escape in string starting at position %d",
+		              "Unterminated escape in string starting at position " PY_SSIZE_T_F,
 		              (Py_ssize_t)(state->index - state->start));
 		return FALSE;
 	}
@@ -149,7 +162,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 		if (remaining < 10)
 		{
 			PyErr_Format (JSON_MissingSurrogateError,
-			              "Surrogate pair half is required at %d",
+			              "Surrogate pair half is required at " PY_SSIZE_T_F,
 			              (Py_ssize_t)(state->index - state->start));
 			return FALSE;
 		}
@@ -158,7 +171,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 		    string_start[(*index_ptr) + 1] != 'u')
 		{
 			PyErr_Format (JSON_MissingSurrogateError,
-			              "Surrogate pair half is required at %d",
+			              "Surrogate pair half is required at " PY_SSIZE_T_F,
 			              (Py_ssize_t)(state->index - state->start));
 			return FALSE;
 		}
@@ -209,7 +222,7 @@ read_string (ParserState *state)
 		if (c == 0)
 		{
 			PyErr_Format (JSON_ReadError,
-			              "unterminated string starting at position %d",
+			              "unterminated string starting at position " PY_SSIZE_T_F,
 			              (Py_ssize_t)(state->index - state->start));
 			return NULL;
 		}
@@ -279,7 +292,7 @@ read_string (ParserState *state)
 				default:
 				{
 					PyErr_Format (JSON_ReadError,
-					              "Illegal escape code '%lu' at position %d",
+					              "Illegal escape code '" PY_UNICODE_F "' at position " PY_SSIZE_T_F,
 					              c, (Py_ssize_t)(start - state->start) + ii);
 					
 					PyMem_Free (buffer);
@@ -393,7 +406,7 @@ read_number (ParserState *state)
 	
 	if (object == NULL)
 	{
-		PyErr_Format(JSON_ReadError, "invalid number starting at position %d",
+		PyErr_Format(JSON_ReadError, "invalid number starting at position " PY_SSIZE_T_F,
 		             (Py_ssize_t)(state->index - state->start));
 		return NULL;
 	}
@@ -422,14 +435,14 @@ read_array(ParserState *jsondata)
 		if (c == 0) {
 			PyErr_Format(JSON_ReadError,
 			             "unterminated array starting at "
-			             "position %d",
+			             "position " PY_SSIZE_T_F,
 			             (Py_ssize_t)(start - jsondata->start));
 			goto failure;;
 		} else if (c == ']') {
 			if (expect_item && items>0) {
 				PyErr_Format(JSON_ReadError,
 				             "expecting array item at "
-				             "position %d",
+				             "position " PY_SSIZE_T_F,
 				             (Py_ssize_t)(jsondata->index - jsondata->start));
 				goto failure;
 			}
@@ -439,7 +452,7 @@ read_array(ParserState *jsondata)
 			if (expect_item) {
 				PyErr_Format(JSON_ReadError,
 				             "expecting array item at "
-				             "position %d",
+				             "position " PY_SSIZE_T_F,
 				             (Py_ssize_t)(jsondata->index - jsondata->start));
 				goto failure;
 			}
@@ -487,14 +500,14 @@ read_object(ParserState *jsondata)
 		if (c == 0) {
 			PyErr_Format(JSON_ReadError,
 			             "unterminated object starting at "
-			             "position %d",
+			             "position " PY_SSIZE_T_F,
 			             (Py_ssize_t)(start - jsondata->start));
 			goto failure;;
 		} else if (c == '}') {
 			if (expect_key && items>0) {
 				PyErr_Format(JSON_ReadError,
 				             "expecting object property name"
-				             " at position %d",
+				             " at position " PY_SSIZE_T_F,
 				             (Py_ssize_t)(jsondata->index - jsondata->start));
 				goto failure;
 			}
@@ -504,7 +517,7 @@ read_object(ParserState *jsondata)
 			if (expect_key) {
 				PyErr_Format(JSON_ReadError,
 				             "expecting object property name"
-				             "at position %d",
+				             "at position " PY_SSIZE_T_F,
 				             (Py_ssize_t)(jsondata->index - jsondata->start));
 				goto failure;
 			}
@@ -515,7 +528,7 @@ read_object(ParserState *jsondata)
 			if (c != '"') {
 				PyErr_Format(JSON_BadObjectKeyError,
 				             "expecting property name in "
-				             "object at position %d",
+				             "object at position " PY_SSIZE_T_F,
 				             (Py_ssize_t)(jsondata->index - jsondata->start));
 				goto failure;
 			}
@@ -528,7 +541,7 @@ read_object(ParserState *jsondata)
 			if (*jsondata->index != ':') {
 				PyErr_Format(JSON_ReadError,
 				             "missing colon after object "
-				             "property name at position %d",
+				             "property name at position " PY_SSIZE_T_F,
 				             (Py_ssize_t)(jsondata->index - jsondata->start));
 				Py_DECREF(key);
 				goto failure;
@@ -629,7 +642,7 @@ JSON_decode(PyObject *self, PyObject *args, PyObject *kwargs)
 		if (state.index < state.end) {
 			PyErr_Format(JSON_ReadError,
 			             "extra data after JSON description"
-			             " at position %d",
+			             " at position " PY_SSIZE_T_F,
 			             (Py_ssize_t)(state.index - state.start));
 			Py_DECREF (result);
 			result = NULL;
