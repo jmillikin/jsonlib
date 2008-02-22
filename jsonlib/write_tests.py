@@ -54,6 +54,11 @@ class WriteObjectTests (TestCase):
 	def test_multiple_value_object (self):
 		self.w ({'a': True, 'b': True}, '{"a": true, "b": true}')
 		
+	def test_sort_keys (self):
+		self.assertEqual (write ({'e': True, 'm': True},
+		                         sort_keys = True),
+		                  '{"e": true, "m": true}')
+		
 	def test_fail_on_invalid_key (self):
 		self.assertRaises (errors.WriteError, write, {1: True})
 		

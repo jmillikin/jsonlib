@@ -20,33 +20,38 @@ ESCAPES = {
 	'\\': '\\\\'
 }
 
-def write_array (value):
+def write_array (value, sort_keys):
 	"""Serialize an iterable to a list of strings in JSON array format."""
 	retval = ['[']
 	
 	for index, item in enumerate (value):
 		if item is value:
 			raise errors.WriteError ("Can't write self-referential values")
-		retval.extend (_write (item))
+		retval.extend (_write (item, sort_keys))
 		if (index + 1) < len (value):
 			retval.append (', ')
 	retval.append (']')
 	return retval
 	
-def write_object (value):
+def write_object (value, sort_keys):
 	"""Serialize a mapping to a list of strings in JSON object format."""
 	retval = ['{']
 	
-	for index, (key, sub_value) in enumerate (value.items ()):
+	if sort_keys:
+		items = sorted (value.items ())
+	else:
+		items = value.items ()
+	
+	for index, (key, sub_value) in enumerate (items):
 		if not isinstance (key, (str, unicode)):
 			raise errors.WriteError ("Only strings may be used as object keys")
 			
 		if sub_value is value:
 			raise errors.WriteError ("Can't write self-referential values")
 			
-		retval.extend (_write (key))
+		retval.extend (_write (key, sort_keys))
 		retval.append (': ')
-		retval.extend (_write (sub_value))
+		retval.extend (_write (sub_value, sort_keys))
 		if (index + 1) < len (value):
 			retval.append (', ')
 	retval.append ('}')
@@ -98,12 +103,15 @@ def write_unicode (value):
 	
 # Fundamental types
 _m_str = memoized (str)
-TYPE_MAPPERS = {
+CONTAINER_TYPES = {
 	dict: write_object,
-	unicode: write_unicode,
-	str: write_string,
 	list: write_array,
 	tuple: write_array,
+}
+
+TYPE_MAPPERS = {
+	unicode: write_unicode,
+	str: write_string,
 	int: _m_str,
 	long: _m_str,
 	float: _m_str,
@@ -112,16 +120,18 @@ TYPE_MAPPERS = {
 	type (None): lambda _: 'null',
 }
 
-def _write (value):
+def _write (value, sort_keys):
 	"""Serialize a Python value into a list of byte strings.
 	
 	When joined together, result in the value's JSON representation.
 	
 	"""
 	v_type = type (value)
-	try:
+	if v_type in CONTAINER_TYPES:
+		return CONTAINER_TYPES[v_type] (value, sort_keys)
+	elif v_type in TYPE_MAPPERS:
 		return TYPE_MAPPERS[v_type] (value)
-	except KeyError:
+	else:
 		# Might be a subclass
 		for mapper_type, mapper in TYPE_MAPPERS.items ():
 			if isinstance (value, mapper_type):
@@ -129,7 +139,14 @@ def _write (value):
 				
 		raise errors.UnknownSerializerError (value)
 		
-def write (value):
-	"""Serialize a Python value to a JSON-formatted byte string."""
-	return ''.join (_write (value))
+def write (value, sort_keys = False):
+	"""Serialize a Python value to a JSON-formatted byte string.
+	
+	value -- The Python object to serialize.
+	sort_keys -- Whether object keys should be kept sorted. Useful
+	             for tests, or other cases that check against a
+	             constant string value.
+	
+	"""
+	return ''.join (_write (value, sort_keys))
 	
