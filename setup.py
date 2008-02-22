@@ -1,3 +1,4 @@
+from os.path import dirname, join
 from distutils.core import setup, Extension
 
 version = '1.0.0'
@@ -6,6 +7,7 @@ setup (
 	name = 'jsonlib',
 	version = version,
 	description = "JSON serializer/deserializer for Python",
+	long_description = open (join (dirname (__file__), 'README.txt')).read (),
 	author = "John Millikin",
 	author_email = "jmillikin@gmail.com",
 	license = "MIT",
