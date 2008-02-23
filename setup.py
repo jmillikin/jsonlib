@@ -24,5 +24,5 @@ setup (
 		"Topic :: Software Development :: Libraries :: Python Modules",
 	],
 	keywords = ["json"],
-	ext_modules  = [Extension ('jsonlib/_reader', ['jsonlib/_reader.c'])],
+	ext_modules  = [Extension ('jsonlib._reader', ['jsonlib/_reader.c'])],
 )
