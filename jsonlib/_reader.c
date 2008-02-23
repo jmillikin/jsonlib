@@ -33,6 +33,20 @@ typedef struct _ParserState {
 	Py_UNICODE *index;
 } ParserState;
 
+typedef enum
+{
+	ARRAY_EMPTY,
+	ARRAY_NEED_VALUE,
+	ARRAY_GOT_VALUE
+} ParseArrayState;
+
+typedef enum
+{
+	OBJECT_EMPTY,
+	OBJECT_NEED_KEY,
+	OBJECT_GOT_VALUE
+} ParseObjectState;
+
 static PyObject *read_keyword (ParserState *state);
 static PyObject *read_string (ParserState *state);
 static PyObject *read_number (ParserState *state);
@@ -47,7 +61,7 @@ static PyObject *MissingSurrogateError;
 static PyObject *_Decimal;
 
 static void
-skipSpaces (ParserState *state)
+skip_spaces (ParserState *state)
 {
 	while (state->index && Py_UNICODE_ISSPACE (*state->index))
 		state->index++;
@@ -144,7 +158,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 	{
 		PyErr_Format (ReadError,
 		              "Unterminated escape in string starting at position " PY_SSIZE_T_F,
-		              (Py_ssize_t)(state->index - state->start));
+		              (Py_ssize_t) (state->index - state->start));
 		return FALSE;
 	}
 	
@@ -162,7 +176,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 		{
 			PyErr_Format (MissingSurrogateError,
 			              "Surrogate pair half is required at " PY_SSIZE_T_F,
-			              (Py_ssize_t)(state->index - state->start));
+			              (Py_ssize_t) (state->index - state->start));
 			return FALSE;
 		}
 		
@@ -171,7 +185,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 		{
 			PyErr_Format (MissingSurrogateError,
 			              "Surrogate pair half is required at " PY_SSIZE_T_F,
-			              (Py_ssize_t)(state->index - state->start));
+			              (Py_ssize_t) (state->index - state->start));
 			return FALSE;
 		}
 		(*index_ptr) += 2;
@@ -222,7 +236,7 @@ read_string (ParserState *state)
 		{
 			PyErr_Format (ReadError,
 			              "unterminated string starting at position " PY_SSIZE_T_F,
-			              (Py_ssize_t)(state->index - state->start));
+			              (Py_ssize_t) (state->index - state->start));
 			return NULL;
 		}
 		
@@ -292,7 +306,7 @@ read_string (ParserState *state)
 				{
 					PyErr_Format (ReadError,
 					              "Illegal escape code '" PY_UNICODE_F "' at position " PY_SSIZE_T_F,
-					              c, (Py_ssize_t)(start - state->start) + ii);
+					              c, (Py_ssize_t) (start - state->start) + ii);
 					
 					PyMem_Free (buffer);
 					return NULL;
@@ -337,7 +351,7 @@ read_number (ParserState *state)
 	
 	while ((c = *ptr))
 	{
-		switch(c) {
+		switch (c) {
 		case '0':
 			if (!got_digit)
 			{
@@ -405,8 +419,9 @@ read_number (ParserState *state)
 	
 	if (object == NULL)
 	{
-		PyErr_Format(ReadError, "invalid number starting at position " PY_SSIZE_T_F,
-		             (Py_ssize_t)(state->index - state->start));
+		PyErr_Format (ReadError,
+		              "invalid number starting at position " PY_SSIZE_T_F,
+		              (Py_ssize_t) (state->index - state->start));
 		return NULL;
 	}
 	
@@ -414,173 +429,207 @@ read_number (ParserState *state)
 	return object;
 }
 
-
-static PyObject *
-read_array(ParserState *state)
+static int
+read_array_impl (PyObject *list, ParserState *state)
 {
-	PyObject *object, *item;
-	int expect_item, items, result;
 	Py_UNICODE *start, c;
-	
-	object = PyList_New(0);
+	ParseArrayState array_state = ARRAY_EMPTY;
 	
 	start = state->index;
 	state->index++;
-	expect_item = TRUE;
-	items = 0;
-	while (TRUE) {
-		skipSpaces(state);
+	while (TRUE)
+	{
+		skip_spaces (state);
 		c = *state->index;
-		if (c == 0) {
-			PyErr_Format(ReadError,
-			             "unterminated array starting at "
-			             "position " PY_SSIZE_T_F,
-			             (Py_ssize_t)(start - state->start));
-			goto failure;;
-		} else if (c == ']') {
-			if (expect_item && items>0) {
-				PyErr_Format(ReadError,
-				             "expecting array item at "
-				             "position " PY_SSIZE_T_F,
-				             (Py_ssize_t)(state->index - state->start));
-				goto failure;
+		if (c == 0)
+		{
+			PyErr_Format (ReadError,
+			              "Unterminated array starting at "
+			              "position " PY_SSIZE_T_F,
+			              (Py_ssize_t) (start - state->start));
+			return FALSE;
+		}
+		
+		else if (c == ']')
+		{
+			if (array_state == ARRAY_NEED_VALUE)
+			{
+				PyErr_Format (ReadError,
+				              "Expecting array item at "
+				              "position " PY_SSIZE_T_F,
+				              (Py_ssize_t) (state->index - state->start));
+				return FALSE;
 			}
 			state->index++;
-			break;
-		} else if (c == ',') {
-			if (expect_item) {
-				PyErr_Format(ReadError,
-				             "expecting array item at "
-				             "position " PY_SSIZE_T_F,
-				             (Py_ssize_t)(state->index - state->start));
-				goto failure;
+			return TRUE;
+		}
+		
+		else if (c == ',')
+		{
+			if (array_state != ARRAY_GOT_VALUE)
+			{
+				PyErr_Format (ReadError,
+				              "Expecting array item at "
+				              "position " PY_SSIZE_T_F,
+				              (Py_ssize_t) (state->index - state->start));
+				return FALSE;
 			}
-			expect_item = TRUE;
+			array_state = ARRAY_NEED_VALUE;
 			state->index++;
-			continue;
-		} else {
-			item = json_read (state);
-			if (item == NULL)
-				goto failure;
-			result = PyList_Append(object, item);
-			Py_DECREF(item);
-			if (result == -1)
-				goto failure;
-			expect_item = FALSE;
-			items++;
+		}
+		
+		else
+		{
+			PyObject *value;
+			if ((value = json_read (state)))
+			{
+				int result = PyList_Append (list, value);
+				Py_DECREF (value);
+				if (result != -1)
+				{
+					array_state = ARRAY_GOT_VALUE;
+					continue;
+				}
+			}
+			return FALSE;
 		}
 	}
-
-	return object;
-
-failure:
-	Py_DECREF(object);
-	return NULL;
 }
-
 
 static PyObject *
-read_object(ParserState *state)
+read_array (ParserState *state)
 {
-	PyObject *object, *key, *value;
-	int expect_key, items, result;
-	Py_UNICODE *start, c;
+	PyObject *object = PyList_New (0);
 	
-	object = PyDict_New ();
-	
-	expect_key = TRUE;
-	items = 0;
-	start = state->index;
-	state->index++;
-	
-	while (TRUE) {
-		skipSpaces (state);
-		c = *state->index;
-		if (c == 0) {
-			PyErr_Format(ReadError,
-			             "unterminated object starting at "
-			             "position " PY_SSIZE_T_F,
-			             (Py_ssize_t)(start - state->start));
-			goto failure;;
-		} else if (c == '}') {
-			if (expect_key && items>0) {
-				PyErr_Format(ReadError,
-				             "expecting object property name"
-				             " at position " PY_SSIZE_T_F,
-				             (Py_ssize_t)(state->index - state->start));
-				goto failure;
-			}
-			state->index++;
-			break;
-		} else if (c == ',') {
-			if (expect_key) {
-				PyErr_Format(ReadError,
-				             "expecting object property name"
-				             "at position " PY_SSIZE_T_F,
-				             (Py_ssize_t)(state->index - state->start));
-				goto failure;
-			}
-			expect_key = TRUE;
-			state->index++;
-			continue;
-		} else {
-			if (c != '"') {
-				PyErr_Format(BadObjectKeyError,
-				             "expecting property name in "
-				             "object at position " PY_SSIZE_T_F,
-				             (Py_ssize_t)(state->index - state->start));
-				goto failure;
-			}
-
-			key = json_read (state);
-			if (key == NULL)
-				goto failure;
-
-			skipSpaces(state);
-			if (*state->index != ':') {
-				PyErr_Format(ReadError,
-				             "missing colon after object "
-				             "property name at position " PY_SSIZE_T_F,
-				             (Py_ssize_t)(state->index - state->start));
-				Py_DECREF(key);
-				goto failure;
-			} else {
-				state->index++;
-			}
-
-			value = json_read (state);
-			if (value == NULL) {
-				Py_DECREF(key);
-				goto failure;
-			}
-
-			result = PyDict_SetItem(object, key, value);
-			Py_DECREF(key);
-			Py_DECREF(value);
-			if (result == -1)
-				goto failure;
-			expect_key = FALSE;
-			items++;
-		}
+	if (!read_array_impl (object, state))
+	{
+		Py_DECREF (object);
+		return NULL;
 	}
-
+	
 	return object;
-
-failure:
-	Py_DECREF(object);
-	return NULL;
 }
 
+static int
+read_object_impl (PyObject *object, ParserState *state)
+{
+	Py_UNICODE *start, c;
+	ParseObjectState object_state = OBJECT_EMPTY;
+	
+	start = state->index;
+	state->index++;
+	while (TRUE)
+	{
+		skip_spaces (state);
+		c = *state->index;
+		if (c == 0)
+		{
+			PyErr_Format (ReadError,
+			              "Unterminated object starting at "
+			              "position " PY_SSIZE_T_F,
+			              (Py_ssize_t) (start - state->start));
+			return FALSE;
+		}
+		
+		else if (c == '}')
+		{
+			if (object_state == OBJECT_NEED_KEY)
+			{
+				PyErr_Format (ReadError,
+				              "Expecting object property name "
+				              "at position " PY_SSIZE_T_F,
+				              (Py_ssize_t) (state->index - state->start));
+				return FALSE;
+			}
+			state->index++;
+			return TRUE;
+		}
+		
+		else if (c == ',')
+		{
+			if (object_state != OBJECT_GOT_VALUE)
+			{
+				PyErr_Format (ReadError,
+				              "Expecting object property name "
+				              "at position " PY_SSIZE_T_F,
+				              (Py_ssize_t) (state->index - state->start));
+				return FALSE;
+			}
+			object_state = OBJECT_NEED_KEY;
+			state->index++;
+		}
+		
+		else if (c == '"')
+		{
+			PyObject *key, *value;
+			int result;
+
+			if (!(key = json_read (state)))
+				return FALSE;
+			
+			skip_spaces (state);
+			if (*state->index != ':')
+			{
+				PyErr_Format (ReadError,
+				              "Missing colon after object "
+				              "property name at position " PY_SSIZE_T_F,
+				              (Py_ssize_t) (state->index - state->start));
+				Py_DECREF (key);
+				return FALSE;
+			}
+			
+			state->index++;
+			if (!(value = json_read (state)))
+			{
+				Py_DECREF (key);
+				return FALSE;
+			}
+			
+			result = PyDict_SetItem (object, key, value);
+			Py_DECREF (key);
+			Py_DECREF (value);
+			if (result == -1)
+			{
+				return FALSE;
+			}
+			
+			object_state = OBJECT_GOT_VALUE;
+		}
+		
+		else
+		{
+			PyErr_Format (BadObjectKeyError,
+			              "Expecting property name in "
+			              "object at position " PY_SSIZE_T_F,
+			              (Py_ssize_t) (state->index - state->start));
+			return FALSE;
+		}
+	}
+}
+
+static PyObject *
+read_object (ParserState *state)
+{
+	PyObject *object = PyDict_New ();
+	
+	if (!read_object_impl (object, state))
+	{
+		Py_DECREF (object);
+		return NULL;
+	}
+	
+	return object;
+}
 
 static PyObject *
 json_read (ParserState *state)
 {
 	PyObject *object;
 
-	skipSpaces (state);
+	skip_spaces (state);
 	switch (*state->index) {
 	case 0:
-		PyErr_SetString (ReadError, "empty JSON description");
+		PyErr_SetString (ReadError, "Empty JSON expression");
 		return NULL;
 	case '{':
 		object = read_object (state);
@@ -610,7 +659,7 @@ json_read (ParserState *state)
 		object = read_number (state);
 		break;
 	default:
-		PyErr_SetString (ReadError, "cannot parse JSON description");
+		PyErr_SetString (ReadError, "Cannot parse JSON expression");
 		return NULL;
 	}
 
@@ -620,12 +669,12 @@ json_read (ParserState *state)
 static PyObject*
 _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 {
-	static char *kwlist[] = {"json", NULL};
+	static char *kwlist[] = {"string", NULL};
 	PyObject *result, *unicode;
 	ParserState state;
 	
-	if (!PyArg_ParseTupleAndKeywords(args, kwargs, "O:read", kwlist,
-	                                 &unicode))
+	if (!PyArg_ParseTupleAndKeywords (args, kwargs, "O:_read", kwlist,
+	                                  &unicode))
 		return NULL;
 	
 	Py_INCREF (unicode);
@@ -634,15 +683,15 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	state.end = state.start + PyUnicode_GetSize (unicode);
 	state.index = state.start;
 	
-	result = json_read (&state);
-	
-	if (result != NULL) {
-		skipSpaces (&state);
-		if (state.index < state.end) {
-			PyErr_Format(ReadError,
-			             "extra data after JSON description"
-			             " at position " PY_SSIZE_T_F,
-			             (Py_ssize_t)(state.index - state.start));
+	if ((result = json_read (&state)))
+	{
+		skip_spaces (&state);
+		if (state.index < state.end)
+		{
+			PyErr_Format (ReadError,
+			              "Extra data after JSON expression "
+			              "at position " PY_SSIZE_T_F,
+			              (Py_ssize_t) (state.index - state.start));
 			Py_DECREF (result);
 			result = NULL;
 		}
@@ -653,19 +702,16 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	return result;
 }
 
-
-/* List of functions defined in the module */
-
 static PyMethodDef reader_methods[] = {
 	{"_read", (PyCFunction) (_read_entry), METH_VARARGS|METH_KEYWORDS,
-	PyDoc_STR("_read (string) -> parse the JSON representation into\n"
-	          "python objects.")},
+	PyDoc_STR ("_read (string) -> Deserialize the JSON expression to\n"
+	           "a Python object.")},
 	
 	{NULL, NULL}
 };
 
-PyDoc_STRVAR(module_doc,
-"Fast JSON encoder/decoder module."
+PyDoc_STRVAR (module_doc,
+	"Fast implementation of jsonlib._read."
 );
 
 PyMODINIT_FUNC
@@ -673,11 +719,8 @@ init_reader (void)
 {
 	PyObject *m, *errors, *decimal_module;
 	
-	m = Py_InitModule3("_reader", reader_methods, module_doc);
-	
-	if (m == NULL)
+	if (!(m = Py_InitModule3 ("_reader", reader_methods, module_doc)))
 		return;
-	
 	if (!(errors = PyImport_ImportModule ("errors")))
 		return;
 	if (!(ReadError = PyObject_GetAttrString (errors, "ReadError")))
