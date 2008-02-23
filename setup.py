@@ -1,7 +1,7 @@
 from os.path import dirname, join
 from distutils.core import setup, Extension
 
-version = '1.2.0'
+version = '1.2.1'
 
 setup (
 	name = 'jsonlib',
