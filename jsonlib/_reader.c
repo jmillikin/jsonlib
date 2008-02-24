@@ -480,6 +480,15 @@ read_array_impl (PyObject *list, ParserState *state)
 		
 		else
 		{
+			if (array_state == ARRAY_GOT_VALUE)
+			{
+				PyErr_Format (ReadError,
+				              "Expecting comma at "
+				              "position " PY_SSIZE_T_F,
+				              (Py_ssize_t) (state->index - state->start));
+				return FALSE;
+			}
+			
 			PyObject *value;
 			if ((value = json_read (state)))
 			{

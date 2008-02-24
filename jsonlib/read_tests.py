@@ -152,6 +152,9 @@ class ReadArrayTests (TestCase):
 	def test_mixed_array (self):
 		self.r ('[1, "b", ["c", "d"]]', [1L, "b", ["c", "d"]])
 		
+	def test_failure_missing_comma (self):
+		self.assertRaises (errors.ReadError, read, '[1 2]')
+		
 class ReadObjectTests (TestCase):
 	def test_empty_object (self):
 		self.r ('{}', {})
