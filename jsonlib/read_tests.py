@@ -180,6 +180,9 @@ class ReadObjectTests (TestCase):
 		self.assertRaises (errors.BadObjectKeyError, read,
 		                   '{1: 2}')
 		
+	def test_failure_missing_comma (self):
+		self.assertRaises (errors.ReadError, read, '{"a": 1 "b": 2}')
+		
 class UnicodeEncodingDetectionTests (TestCase):
 	def de (self, encoding):
 		def read_encoded (string, expected):

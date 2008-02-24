@@ -572,7 +572,16 @@ read_object_impl (PyObject *object, ParserState *state)
 		{
 			PyObject *key, *value;
 			int result;
-
+			
+			if (object_state == OBJECT_GOT_VALUE)
+			{
+				PyErr_Format (ReadError,
+				              "Expecting comma at "
+				              "position " PY_SSIZE_T_F,
+				              (Py_ssize_t) (state->index - state->start));
+				return FALSE;
+			}
+			
 			if (!(key = json_read (state)))
 				return FALSE;
 			
