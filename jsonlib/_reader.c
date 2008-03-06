@@ -480,6 +480,7 @@ read_array_impl (PyObject *list, ParserState *state)
 		
 		else
 		{
+			PyObject *value;
 			if (array_state == ARRAY_GOT_VALUE)
 			{
 				PyErr_Format (ReadError,
@@ -489,7 +490,6 @@ read_array_impl (PyObject *list, ParserState *state)
 				return FALSE;
 			}
 			
-			PyObject *value;
 			if ((value = json_read (state)))
 			{
 				int result = PyList_Append (list, value);
