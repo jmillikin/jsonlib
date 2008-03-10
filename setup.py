@@ -1,5 +1,5 @@
 from os.path import dirname, join
-from distutils.core import setup, Extension
+from setuptools import setup, Extension
 
 version = '1.2.2'
 
