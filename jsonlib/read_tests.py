@@ -56,6 +56,9 @@ class ReadNumberTests (TestCase):
 	def test_negative_decimal (self):
 		self.r ('-1.2345', Decimal ('-1.2345'))
 		
+	def test_zero_after_decimal (self):
+		self.r ('0.01', Decimal ('0.01'))
+		
 	def test_exponent (self):
 		self.r ('1e2', Decimal ('100.0'))
 		self.r ('10e2', Decimal ('1000.0'))

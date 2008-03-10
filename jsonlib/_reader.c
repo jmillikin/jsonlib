@@ -357,7 +357,7 @@ read_number (ParserState *state)
 			{
 				leading_zero = TRUE;
 			}
-			if (got_digit && leading_zero)
+			else if (leading_zero && !is_float)
 			{
 				PyErr_Format (LeadingZeroError, "Invalid leading zero");
 				return NULL;
@@ -373,7 +373,7 @@ read_number (ParserState *state)
 		case '7':
 		case '8':
 		case '9':
-			if (leading_zero)
+			if (leading_zero && !is_float)
 			{
 				PyErr_Format (LeadingZeroError, "Invalid leading zero");
 				return NULL;
