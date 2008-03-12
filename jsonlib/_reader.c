@@ -291,7 +291,7 @@ read_string (ParserState *state)
 					                         &next_ii,
 					                         max_char_count))
 					{
-						ii = next_ii;
+						ii = next_ii - 1;
 					}
 					
 					else

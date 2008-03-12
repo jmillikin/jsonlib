@@ -122,6 +122,9 @@ class ReadStringTests (TestCase):
 		self.r (r'"\uD834\uDD1E"', u'\U0001d11e')
 		self.r (r'"\ud834\udd1e"', u'\U0001d11e')
 		
+	def test_unescape_unicode_followed_by_normal (self):
+		self.r (r'"\u00e9a"', u'\u00e9a')
+		
 	def test_end_of_stream (self):
 		self.assertRaises (errors.ReadError, read, r'"\uD834\u"')
 		
