@@ -13,7 +13,7 @@ setup (
 	license = "MIT",
 	url = "https://launchpad.net/jsonlib",
 	download_url = "http://cheeseshop.python.org/pypi/jsonlib/%s" % version,
-	packages = ['jsonlib'],
+	packages = ['jsonlib', 'jsonlib.tests'],
 	platforms = ["Platform Independent"],
 	classifiers = [
 		"Development Status :: 5 - Production/Stable",

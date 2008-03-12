@@ -4,7 +4,7 @@
 import codecs
 from decimal import Decimal
 import unittest
-from . import read, errors
+from .. import read, errors
 
 class TestCase (unittest.TestCase):
 	def r (self, string, expected):

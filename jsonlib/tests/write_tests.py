@@ -3,7 +3,7 @@
 
 from decimal import Decimal
 import unittest
-from . import write, errors
+from .. import write, errors
 
 class TestCase (unittest.TestCase):
 	def w (self, value, expected):
