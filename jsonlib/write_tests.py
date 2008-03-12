@@ -1,6 +1,7 @@
 # Copyright (C) 2008 John Millikin. See LICENSE.txt for details.
 # Author: John Millikin <jmillikin@gmail.com>
 
+from decimal import Decimal
 import unittest
 from . import write, errors
 
@@ -23,6 +24,9 @@ class WriteBasicTests (TestCase):
 		
 	def test_long (self):
 		self.w (1L, '1')
+		
+	def test_decimal (self):
+		self.w (Decimal ('1.1'), '1.1')
 		
 	def test_fail_on_unknown (self):
 		self.assertRaises (errors.UnknownSerializerError, write,
