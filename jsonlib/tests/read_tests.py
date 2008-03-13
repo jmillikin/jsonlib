@@ -8,7 +8,11 @@ from .. import read, errors
 
 class TestCase (unittest.TestCase):
 	def r (self, string, expected):
-		value = read (string)
+		value = read (string, __speedboost = False)
+		self.assertEqual (value, expected)
+		self.assertEqual (type (value), type (expected))
+		
+		value = read (string, __speedboost = True)
 		self.assertEqual (value, expected)
 		self.assertEqual (type (value), type (expected))
 		

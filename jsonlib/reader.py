@@ -327,16 +327,18 @@ def unicode_autodetect_encoding (bytes):
 		return unicode (bytes, 'utf-16-le')
 	return unicode (bytes, 'utf-8')
 	
-def read (string):
+def read (string, **kwargs):
 	"""Parse a JSON expression into a Python value.
 	
 	If string is a byte string, it will be converted to Unicode
 	before parsing (see unicode_autodetect_encoding).
 	
 	"""
-	try:
-		from _reader import _read
-	except ImportError:
-		_read = _py_read
+	_read = _py_read
+	if kwargs.get ('__speedboost', True):
+		try:
+			from _reader import _read
+		except ImportError:
+			pass
 	return _read (unicode_autodetect_encoding (string))
 	
