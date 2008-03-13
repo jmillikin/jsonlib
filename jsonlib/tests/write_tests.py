@@ -109,8 +109,8 @@ class WriteStringTests (TestCase):
 	def test_escape_reverse_solidus (self):
 		self.w ('\\', r'"\\"')
 		
-	def test_escape_solidus (self):
-		self.w ('/', r'"\/"')
+	def test_no_escape_solidus (self):
+		self.w ('/', '"/"')
 		
 	def test_escape_backspace (self):
 		self.w ('\b', r'"\b"')
