@@ -21,9 +21,9 @@ NUMBER_SPLITTER = re.compile (
 re.UNICODE)
 
 TOKEN_SPLITTER = re.compile (
-	r'\s*([[\]{}:,])|'         # Basic tokens
+	r'\s*([\[\]{}:,])|'         # Basic tokens
 	r'\s*("(?:[^"\\]|\\.)*")|' # String atom
-	r'\s*([^\s[\]{}:,]+)|'     # Non-string atom
+	r'\s*([^\s\[\]{}:,]+)|'     # Non-string atom
 	r'(.+?)',                  # Anything else, will trigger an exception
 re.UNICODE)
 
