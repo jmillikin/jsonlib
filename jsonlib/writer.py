@@ -79,21 +79,22 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	for index, (key, sub_value) in enumerate (items):
 		is_string = isinstance (key, str)
 		is_unicode = isinstance (key, unicode)
-		if not (is_string or is_unicode):
-			if coerce_keys:
-				key = unicode (key)
-				is_unicode = True
-			else:
-				raise errors.WriteError ("Only strings may "
-				                         "be used as object "
-				                         "keys.")
-				
 		if indent:
 			retval.append (indent)
 		if is_string:
 			retval.extend (write_string (key, ascii_only))
-		else:
+		elif is_unicode:
 			retval.extend (write_unicode (key, ascii_only))
+		elif coerce_keys:
+			try:
+				new_key = write_basic (key, ascii_only)
+			except errors.UnknownSerializerError:
+				new_key = str (key)
+			retval.extend ('"%s"' % new_key)
+		else:
+			raise errors.WriteError ("Only strings may "
+			                         "be used as object "
+			                         "keys.")
 		retval.append (': ')
 		retval.extend (_write (sub_value, sort_keys, indent_string,
 		                       ascii_only, coerce_keys,
@@ -179,19 +180,9 @@ TYPE_MAPPERS = {
 	type (None): lambda _: 'null',
 }
 
-def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
-            parent_objects, indent_level):
-	"""Serialize a Python value into a list of byte strings.
-	
-	When joined together, result in the value's JSON representation.
-	
-	"""
+def write_basic (value, ascii_only):
 	v_type = type (value)
-	if v_type in CONTAINER_TYPES:
-		w_func = CONTAINER_TYPES[v_type]
-		return w_func (value, sort_keys, indent_string, ascii_only,
-		               coerce_keys, parent_objects, indent_level)
-	elif v_type in STR_TYPE_MAPPERS:
+	if v_type in STR_TYPE_MAPPERS:
 		return STR_TYPE_MAPPERS[v_type] (value, ascii_only)
 	elif v_type in TYPE_MAPPERS:
 		return TYPE_MAPPERS[v_type] (value)
@@ -206,6 +197,20 @@ def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 				
 		raise errors.UnknownSerializerError (value)
 		
+def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
+            parent_objects, indent_level):
+	"""Serialize a Python value into a list of byte strings.
+	
+	When joined together, result in the value's JSON representation.
+	
+	"""
+	v_type = type (value)
+	if v_type in CONTAINER_TYPES:
+		w_func = CONTAINER_TYPES[v_type]
+		return w_func (value, sort_keys, indent_string, ascii_only,
+		               coerce_keys, parent_objects, indent_level)
+	return write_basic (value, ascii_only)
+	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False):
 	"""Serialize a Python value to a JSON-formatted byte string.
