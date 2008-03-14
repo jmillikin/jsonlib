@@ -64,11 +64,18 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 		items = sorted (value.items ())
 	else:
 		items = value.items ()
-	
+		
+	if newline:
+		separator = ',' + newline
+	else:
+		separator = ', '
 	for index, (key, sub_value) in enumerate (items):
-		if not isinstance (key, (str, unicode)):
+		is_string = isinstance (key, str)
+		is_unicode = isinstance (key, unicode)
+		if not (is_string or is_unicode):
 			if coerce_keys:
 				key = unicode (key)
+				is_unicode = True
 			else:
 				raise errors.WriteError ("Only strings may "
 				                         "be used as object "
@@ -76,20 +83,17 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 				
 		if indent:
 			retval.append (indent)
-		retval.extend (_write (key, sort_keys, indent_string,
-		                       ascii_only, coerce_keys,
-		                       parent_objects + (value,),
-		                       indent_level + 1))
+		if is_string:
+			retval.extend (write_string (key, ascii_only))
+		else:
+			retval.extend (write_unicode (key, ascii_only))
 		retval.append (': ')
 		retval.extend (_write (sub_value, sort_keys, indent_string,
 		                       ascii_only, coerce_keys,
 		                       parent_objects + (value,),
 		                       indent_level + 1))
 		if (index + 1) < len (value):
-			if newline:
-				retval.append (',' + newline)
-			else:
-				retval.append (', ')
+			retval.append (separator)
 	retval.append (newline + next_indent)
 	retval.append ('}')
 	return retval
