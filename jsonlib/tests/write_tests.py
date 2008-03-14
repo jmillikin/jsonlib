@@ -7,7 +7,9 @@ from .. import write, errors
 
 class TestCase (unittest.TestCase):
 	def w (self, value, expected):
-		self.assertEqual (write (value), expected)
+		serialized = write (value)
+		self.assertEqual (serialized, expected)
+		self.assertEqual (type (serialized), type (expected))
 		
 class WriteBasicTests (TestCase):
 	def test_null (self):
