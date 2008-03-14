@@ -10,6 +10,13 @@ from . import errors
 __all__ = ['write']
 
 ESCAPES = {
+	# Escaping the solidus is a security measure intended for
+	# protecting users from broken browser parsing, if the consumer
+	# is stupid enough to parse JSON by including it directly into
+	# a <script> tag.
+	# 
+	# See: http://t3.dotgnu.info/blog/insecurity/quotes-dont-help.html
+	'/': '\\/',
 	'"': '\\"',
 	'\t': '\\t',
 	'\b': '\\b',
