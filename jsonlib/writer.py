@@ -4,7 +4,7 @@
 """Implements jsonlib.write"""
 
 from decimal import Decimal
-from .util import memoized, KEYWORDS
+from .util import memoized
 from . import errors
 
 __all__ = ['write']
