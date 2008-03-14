@@ -119,8 +119,16 @@ def write_unicode (value, ascii_only):
 	"""Serialize a unicode string to its JSON representation."""
 	return ['"'] + [write_char (char, ascii_only) for char in value] + ['"']
 	
+@memoized
+def write_float (value):
+	disallowed = ('inf', '-inf', 'nan', 'Infinity', '-Infinity', 'NaN')
+	s_value = unicode (value)
+	if s_value in disallowed:
+		raise errors.WriteError ("Cannot write floating-point value %r" % value)
+	return s_value
+	
 # Fundamental types
-_m_str = memoized (str)
+_m_str = memoized (unicode)
 CONTAINER_TYPES = {
 	dict: write_object,
 	list: write_array,
@@ -135,8 +143,8 @@ STR_TYPE_MAPPERS = {
 TYPE_MAPPERS = {
 	int: _m_str,
 	long: _m_str,
-	float: _m_str,
-	Decimal: _m_str,
+	float: write_float,
+	Decimal: write_float,
 	type (True): (lambda val: 'true' if val else 'false'),
 	type (None): lambda _: 'null',
 }

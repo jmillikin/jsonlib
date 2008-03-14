@@ -10,7 +10,12 @@ def memoized (func):
 	cache = {}
 	@wraps (func)
 	def new_func (*args):
-		if args not in cache:
+		try:
+			in_cache = (args in cache)
+		except TypeError:
+			return func (*args)
+			
+		if not in_cache:
 			cache[args] = func (*args)
 		return cache[args]
 	return new_func

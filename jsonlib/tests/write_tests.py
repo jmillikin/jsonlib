@@ -34,6 +34,18 @@ class WriteBasicTests (TestCase):
 		self.assertRaises (errors.UnknownSerializerError, write,
 		                   object ())
 		
+	def test_fail_on_infinity (self):
+		self.assertRaises (errors.WriteError, write, float ('inf'))
+		self.assertRaises (errors.WriteError, write, Decimal ('inf'))
+		
+	def test_fail_on_neg_infinity (self):
+		self.assertRaises (errors.WriteError, write, float ('-inf'))
+		self.assertRaises (errors.WriteError, write, Decimal ('-inf'))
+		
+	def test_fail_on_nan (self):
+		self.assertRaises (errors.WriteError, write, float ('nan'))
+		self.assertRaises (errors.WriteError, write, Decimal ('nan'))
+		
 class WriteArrayTests (TestCase):
 	def test_empty_array (self):
 		self.w ([], u'[]')
