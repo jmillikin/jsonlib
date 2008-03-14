@@ -107,6 +107,9 @@ class WriteObjectTests (TestCase):
 	def test_fail_on_invalid_key (self):
 		self.assertRaises (errors.WriteError, write, {1: True})
 		
+	def test_fail_on_invalid_key (self):
+		self.w ({1: True}, u'{"1": true}', coerce_keys = True)
+		
 	def test_fail_on_self_reference (self):
 		a = {}
 		a['a'] = a

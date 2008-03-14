@@ -24,7 +24,8 @@ def get_indent (indent_string, indent_level):
 		return '', '', ''
 	return '\n', indent_string * (indent_level + 1), indent_string * indent_level
 	
-def write_array (value, sort_keys, indent_string, ascii_only, indent_level):
+def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
+                 indent_level):
 	"""Serialize an iterable to a list of strings in JSON array format."""
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['[', newline]
@@ -34,7 +35,9 @@ def write_array (value, sort_keys, indent_string, ascii_only, indent_level):
 			raise errors.WriteError ("Can't write self-referential values")
 		if indent:
 			retval.append (indent)
-		retval.extend (_write (item, sort_keys, indent_string, ascii_only, indent_level + 1))
+		retval.extend (_write (item, sort_keys, indent_string,
+		                       ascii_only, coerce_keys,
+		                       indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
 				retval.append (',' + newline)
@@ -44,7 +47,8 @@ def write_array (value, sort_keys, indent_string, ascii_only, indent_level):
 	retval.append (']')
 	return retval
 	
-def write_object (value, sort_keys, indent_string, ascii_only, indent_level):
+def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
+                  indent_level):
 	"""Serialize a mapping to a list of strings in JSON object format."""
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['{', newline]
@@ -56,16 +60,25 @@ def write_object (value, sort_keys, indent_string, ascii_only, indent_level):
 	
 	for index, (key, sub_value) in enumerate (items):
 		if not isinstance (key, (str, unicode)):
-			raise errors.WriteError ("Only strings may be used as object keys")
+			if coerce_keys:
+				key = unicode (key)
+			else:
+				raise errors.WriteError ("Only strings may "
+				                         "be used as object "
+				                         "keys.")
 			
 		if sub_value is value:
 			raise errors.WriteError ("Can't write self-referential values")
 			
 		if indent:
 			retval.append (indent)
-		retval.extend (_write (key, sort_keys, indent_string, ascii_only, indent_level + 1))
+		retval.extend (_write (key, sort_keys, indent_string,
+		                       ascii_only, coerce_keys,
+		                       indent_level + 1))
 		retval.append (': ')
-		retval.extend (_write (sub_value, sort_keys, indent_string, ascii_only, indent_level + 1))
+		retval.extend (_write (sub_value, sort_keys, indent_string,
+		                       ascii_only, coerce_keys,
+		                       indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
 				retval.append (',' + newline)
@@ -149,7 +162,8 @@ TYPE_MAPPERS = {
 	type (None): lambda _: 'null',
 }
 
-def _write (value, sort_keys, indent_string, ascii_only, indent_level):
+def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
+            indent_level):
 	"""Serialize a Python value into a list of byte strings.
 	
 	When joined together, result in the value's JSON representation.
@@ -159,7 +173,7 @@ def _write (value, sort_keys, indent_string, ascii_only, indent_level):
 	if v_type in CONTAINER_TYPES:
 		w_func = CONTAINER_TYPES[v_type]
 		return w_func (value, sort_keys, indent_string, ascii_only,
-		               indent_level)
+		               coerce_keys, indent_level)
 	elif v_type in STR_TYPE_MAPPERS:
 		return STR_TYPE_MAPPERS[v_type] (value, ascii_only)
 	elif v_type in TYPE_MAPPERS:
@@ -175,7 +189,8 @@ def _write (value, sort_keys, indent_string, ascii_only, indent_level):
 				
 		raise errors.UnknownSerializerError (value)
 		
-def write (value, sort_keys = False, indent = None, ascii_only = True):
+def write (value, sort_keys = False, indent = None, ascii_only = True,
+           coerce_keys = False):
 	"""Serialize a Python value to a JSON-formatted byte string.
 	
 	value
@@ -195,6 +210,12 @@ def write (value, sort_keys = False, indent = None, ascii_only = True):
 		characters. If this is True, any non-ASCII code points
 		are escaped even if their inclusion would be legal.
 	
+	coerce_keys
+		Whether to coerce invalid object keys to strings. If
+		this is False, an exception will be raised when an
+		invalid key is specified.
+	
 	"""
-	return u''.join (_write (value, sort_keys, indent, ascii_only, 0))
+	return u''.join (_write (value, sort_keys, indent, ascii_only,
+	                         coerce_keys, 0))
 	
