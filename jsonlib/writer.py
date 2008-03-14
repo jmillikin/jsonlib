@@ -89,8 +89,8 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			try:
 				new_key = write_basic (key, ascii_only)
 			except errors.UnknownSerializerError:
-				new_key = str (key)
-			retval.extend ('"%s"' % new_key)
+				new_key = unicode (key)
+			retval.extend (write_unicode (new_key, ascii_only))
 		else:
 			raise errors.WriteError ("Only strings may "
 			                         "be used as object "
