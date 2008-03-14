@@ -170,5 +170,5 @@ def write (value, sort_keys = False, indent = None):
 	          If this is non-None, pretty-printing mode is activated.
 	
 	"""
-	return ''.join (_write (value, sort_keys, indent, 0))
+	return u''.join (_write (value, sort_keys, indent, 0))
 	
