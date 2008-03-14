@@ -24,7 +24,7 @@ def get_indent (indent_string, indent_level):
 		return '', '', ''
 	return '\n', indent_string * (indent_level + 1), indent_string * indent_level
 	
-def write_array (value, sort_keys, indent_string, indent_level):
+def write_array (value, sort_keys, indent_string, ascii_only, indent_level):
 	"""Serialize an iterable to a list of strings in JSON array format."""
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['[', newline]
@@ -34,7 +34,7 @@ def write_array (value, sort_keys, indent_string, indent_level):
 			raise errors.WriteError ("Can't write self-referential values")
 		if indent:
 			retval.append (indent)
-		retval.extend (_write (item, sort_keys, indent_string, indent_level + 1))
+		retval.extend (_write (item, sort_keys, indent_string, ascii_only, indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
 				retval.append (',' + newline)
@@ -44,7 +44,7 @@ def write_array (value, sort_keys, indent_string, indent_level):
 	retval.append (']')
 	return retval
 	
-def write_object (value, sort_keys, indent_string, indent_level):
+def write_object (value, sort_keys, indent_string, ascii_only, indent_level):
 	"""Serialize a mapping to a list of strings in JSON object format."""
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['{', newline]
@@ -63,9 +63,9 @@ def write_object (value, sort_keys, indent_string, indent_level):
 			
 		if indent:
 			retval.append (indent)
-		retval.extend (_write (key, sort_keys, indent_string, indent_level + 1))
+		retval.extend (_write (key, sort_keys, indent_string, ascii_only, indent_level + 1))
 		retval.append (': ')
-		retval.extend (_write (sub_value, sort_keys, indent_string, indent_level + 1))
+		retval.extend (_write (sub_value, sort_keys, indent_string, ascii_only, indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
 				retval.append (',' + newline)
@@ -76,7 +76,7 @@ def write_object (value, sort_keys, indent_string, indent_level):
 	return retval
 	
 @memoized
-def write_char (char):
+def write_char (char, ascii_only):
 	"""Serialize a single unicode character to its JSON representation."""
 	if char in ESCAPES:
 		return ESCAPES[char]
@@ -86,7 +86,7 @@ def write_char (char):
 		return '\\u%04x' % ord (char)
 		
 	# Unicode
-	if ord (char) > 0x7E:
+	if ord (char) > 0x7E and ascii_only:
 		# Split into surrogate pairs
 		if ord (char) > 0xFFFF:
 			unicode_value = ord (char)
@@ -101,10 +101,10 @@ def write_char (char):
 		else:
 			return '\\u%04x' % ord (char)
 			
-	return char.encode ('ascii')
+	return char
 	
 @memoized
-def write_string (value):
+def write_string (value, ascii_only):
 	"""Serialize a string to its JSON representation.
 	
 	This function will use the default codec for decoding the input
@@ -112,12 +112,12 @@ def write_string (value):
 	serialization, so you should always use unicode strings instead.
 	
 	"""
-	return write_unicode (unicode (value))
+	return write_unicode (unicode (value), ascii_only)
 	
 @memoized
-def write_unicode (value):
+def write_unicode (value, ascii_only):
 	"""Serialize a unicode string to its JSON representation."""
-	return ['"'] + [write_char (char) for char in value] + ['"']
+	return ['"'] + [write_char (char, ascii_only) for char in value] + ['"']
 	
 # Fundamental types
 _m_str = memoized (str)
@@ -127,9 +127,12 @@ CONTAINER_TYPES = {
 	tuple: write_array,
 }
 
-TYPE_MAPPERS = {
+STR_TYPE_MAPPERS = {
 	unicode: write_unicode,
 	str: write_string,
+}
+
+TYPE_MAPPERS = {
 	int: _m_str,
 	long: _m_str,
 	float: _m_str,
@@ -138,7 +141,7 @@ TYPE_MAPPERS = {
 	type (None): lambda _: 'null',
 }
 
-def _write (value, sort_keys, indent_string, indent_level):
+def _write (value, sort_keys, indent_string, ascii_only, indent_level):
 	"""Serialize a Python value into a list of byte strings.
 	
 	When joined together, result in the value's JSON representation.
@@ -146,29 +149,44 @@ def _write (value, sort_keys, indent_string, indent_level):
 	"""
 	v_type = type (value)
 	if v_type in CONTAINER_TYPES:
-		return CONTAINER_TYPES[v_type] (value, sort_keys,
-		                                indent_string,
-		                                indent_level)
+		w_func = CONTAINER_TYPES[v_type]
+		return w_func (value, sort_keys, indent_string, ascii_only,
+		               indent_level)
+	elif v_type in STR_TYPE_MAPPERS:
+		return STR_TYPE_MAPPERS[v_type] (value, ascii_only)
 	elif v_type in TYPE_MAPPERS:
 		return TYPE_MAPPERS[v_type] (value)
 	else:
 		# Might be a subclass
+		for mapper_type, mapper in STR_TYPE_MAPPERS.items ():
+			if isinstance (value, mapper_type):
+				return mapper (value, ascii_only)
 		for mapper_type, mapper in TYPE_MAPPERS.items ():
 			if isinstance (value, mapper_type):
 				return mapper (value)
 				
 		raise errors.UnknownSerializerError (value)
 		
-def write (value, sort_keys = False, indent = None):
+def write (value, sort_keys = False, indent = None, ascii_only = True):
 	"""Serialize a Python value to a JSON-formatted byte string.
 	
-	value -- The Python object to serialize.
-	sort_keys -- Whether object keys should be kept sorted. Useful
-	             for tests, or other cases that check against a
-	             constant string value.
-	indent -- A string to be used for indenting arrays and objects.
-	          If this is non-None, pretty-printing mode is activated.
+	value
+		The Python object to serialize.
+		
+	sort_keys
+		Whether object keys should be kept sorted. Useful
+		for tests, or other cases that check against a
+		constant string value.
+		
+	indent
+		A string to be used for indenting arrays and objects.
+		If this is non-None, pretty-printing mode is activated.
+		
+	ascii_only
+		Whether the output should consist of only ASCII
+		characters. If this is True, any non-ASCII code points
+		are escaped even if their inclusion would be legal.
 	
 	"""
-	return u''.join (_write (value, sort_keys, indent, 0))
+	return u''.join (_write (value, sort_keys, indent, ascii_only, 0))
 	

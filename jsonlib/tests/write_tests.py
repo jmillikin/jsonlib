@@ -6,8 +6,8 @@ import unittest
 from .. import write, errors
 
 class TestCase (unittest.TestCase):
-	def w (self, value, expected):
-		serialized = write (value)
+	def w (self, value, expected, **kwargs):
+		serialized = write (value, **kwargs)
 		self.assertEqual (serialized, expected)
 		self.assertEqual (type (serialized), type (expected))
 		
@@ -138,6 +138,11 @@ class WriteStringTests (TestCase):
 				expected = u'"\\u%04x"' % code
 				self.w (char, expected)
 				
+	def test_unicode_passthrough (self):
+		self.w (u'\u00B6\u00D7', u'"\u00b6\u00d7"', ascii_only = False)
+		self.w (u'\u24CA', u'"\u24ca"', ascii_only = False)
+		self.w (u'\U0001D11E', u'"\U0001D11E"', ascii_only = False)
+		
 	def test_escape_short_unicode (self):
 		# Some Latin-1
 		self.w (u'\u00B6\u00D7', u'"\\u00b6\\u00d7"')
