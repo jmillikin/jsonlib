@@ -18,7 +18,7 @@ class UnknownAtomError (ReadError):
 class BadObjectKeyError (ReadError):
 	def __init__ (self, token):
 		msg = '%r is not a valid object key'
-		super (BadObjectKeyError, self).__init__ (msg % token)
+		super (BadObjectKeyError, self).__init__ (msg % (token,))
 		
 class MissingSurrogateError (ReadError):
 	def __init__ (self, first_half):
@@ -31,7 +31,7 @@ class MissingSurrogateError (ReadError):
 class InvalidEscapeCodeError (ReadError):
 	def __init__ (self, code):
 		msg = 'Invalid escape code: "\\%s"'
-		super (InvalidEscapeCodeError, self).__init__ (msg % (code))
+		super (InvalidEscapeCodeError, self).__init__ (msg % (code,))
 		
 class WriteError (ValueError):
 	pass
@@ -39,5 +39,5 @@ class WriteError (ValueError):
 class UnknownSerializerError (WriteError):
 	def __init__ (self, value):
 		msg = 'No known serializer for object: %r'
-		super (UnknownSerializerError, self).__init__ (msg % value)
+		super (UnknownSerializerError, self).__init__ (msg % (value,))
 		
