@@ -25,18 +25,21 @@ def get_indent (indent_string, indent_level):
 	return '\n', indent_string * (indent_level + 1), indent_string * indent_level
 	
 def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
-                 indent_level):
+                 parent_objects, indent_level):
 	"""Serialize an iterable to a list of strings in JSON array format."""
+	
+	if value in parent_objects:
+		raise errors.WriteError ("Can't write self-referential values.")
+		
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['[', newline]
 	
 	for index, item in enumerate (value):
-		if item is value:
-			raise errors.WriteError ("Can't write self-referential values")
 		if indent:
 			retval.append (indent)
 		retval.extend (_write (item, sort_keys, indent_string,
 		                       ascii_only, coerce_keys,
+		                       parent_objects + (value,),
 		                       indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
@@ -48,8 +51,12 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	return retval
 	
 def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
-                  indent_level):
+                  parent_objects, indent_level):
 	"""Serialize a mapping to a list of strings in JSON object format."""
+	
+	if value in parent_objects:
+		raise errors.WriteError ("Can't write self-referential values.")
+		
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['{', newline]
 	
@@ -66,18 +73,17 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 				raise errors.WriteError ("Only strings may "
 				                         "be used as object "
 				                         "keys.")
-			
-		if sub_value is value:
-			raise errors.WriteError ("Can't write self-referential values")
-			
+				
 		if indent:
 			retval.append (indent)
 		retval.extend (_write (key, sort_keys, indent_string,
 		                       ascii_only, coerce_keys,
+		                       parent_objects + (value,),
 		                       indent_level + 1))
 		retval.append (': ')
 		retval.extend (_write (sub_value, sort_keys, indent_string,
 		                       ascii_only, coerce_keys,
+		                       parent_objects + (value,),
 		                       indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
@@ -163,7 +169,7 @@ TYPE_MAPPERS = {
 }
 
 def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
-            indent_level):
+            parent_objects, indent_level):
 	"""Serialize a Python value into a list of byte strings.
 	
 	When joined together, result in the value's JSON representation.
@@ -173,7 +179,7 @@ def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	if v_type in CONTAINER_TYPES:
 		w_func = CONTAINER_TYPES[v_type]
 		return w_func (value, sort_keys, indent_string, ascii_only,
-		               coerce_keys, indent_level)
+		               coerce_keys, parent_objects, indent_level)
 	elif v_type in STR_TYPE_MAPPERS:
 		return STR_TYPE_MAPPERS[v_type] (value, ascii_only)
 	elif v_type in TYPE_MAPPERS:
@@ -217,5 +223,5 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 	
 	"""
 	return u''.join (_write (value, sort_keys, indent, ascii_only,
-	                         coerce_keys, 0))
+	                         coerce_keys, (), 0))
 	

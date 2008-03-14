@@ -116,6 +116,11 @@ class WriteObjectTests (TestCase):
 		
 		self.assertRaises (errors.WriteError, write, a)
 		
+		del[a['a']]
+		a['a'] = [a]
+		
+		self.assertRaises (errors.WriteError, write, a)
+		
 class WriteStringTests (TestCase):
 	def test_empty_string (self):
 		self.w ('', u'""')
