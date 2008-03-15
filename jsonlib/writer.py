@@ -26,6 +26,9 @@ ESCAPES = {
 	'\\': '\\\\'
 }
 
+for char_ord in range (0, 0x20):
+	ESCAPES.setdefault (chr (char_ord), '\\u%04x' % char_ord)
+	
 def get_indent (indent_string, indent_level):
 	if indent_string is None:
 		return '', '', ''
@@ -112,10 +115,6 @@ def write_char (char, ascii_only):
 	if char in ESCAPES:
 		return ESCAPES[char]
 		
-	# Control character
-	if ord (char) in range (0x0, 0x1F + 1):
-		return '\\u%04x' % ord (char)
-		
 	# Unicode
 	if ord (char) > 0x7E and ascii_only:
 		# Split into surrogate pairs
@@ -187,7 +186,7 @@ TYPE_MAPPERS = {
 	long: _m_str,
 	float: write_float,
 	Decimal: write_decimal,
-	type (True): (lambda val: 'true' if val else 'false'),
+	bool: (lambda val: 'true' if val else 'false'),
 	type (None): lambda _: 'null',
 }
 
@@ -195,19 +194,19 @@ def write_basic (value, ascii_only):
 	v_type = type (value)
 	if v_type in STR_TYPE_MAPPERS:
 		return STR_TYPE_MAPPERS[v_type] (value, ascii_only)
-	elif v_type in TYPE_MAPPERS:
+	if v_type in TYPE_MAPPERS:
 		return TYPE_MAPPERS[v_type] (value)
-	else:
-		# Might be a subclass
-		for mapper_type, mapper in STR_TYPE_MAPPERS.items ():
-			if isinstance (value, mapper_type):
-				return mapper (value, ascii_only)
-		for mapper_type, mapper in TYPE_MAPPERS.items ():
-			if isinstance (value, mapper_type):
-				return mapper (value)
-				
-		raise errors.UnknownSerializerError (value)
 		
+	# Might be a subclass
+	for mapper_type, mapper in STR_TYPE_MAPPERS.items ():
+		if isinstance (value, mapper_type):
+			return mapper (value, ascii_only)
+	for mapper_type, mapper in TYPE_MAPPERS.items ():
+		if isinstance (value, mapper_type):
+			return mapper (value)
+			
+	raise errors.UnknownSerializerError (value)
+	
 def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
             parent_objects, indent_level):
 	"""Serialize a Python value into a list of byte strings.
