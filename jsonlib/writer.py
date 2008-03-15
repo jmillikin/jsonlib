@@ -4,7 +4,7 @@
 """Implements jsonlib.write"""
 
 from decimal import Decimal
-from .util import memoized
+from .util import memoized, INFINITY
 from . import errors
 
 __all__ = ['write']
@@ -152,10 +152,21 @@ def write_unicode (value, ascii_only):
 	
 @memoized
 def write_float (value):
-	disallowed = ('inf', '-inf', 'nan', 'Infinity', '-Infinity', 'NaN')
+	if value != value:
+		raise errors.WriteError ("Cannot serialize NaN.")
+	if value == INFINITY:
+		raise errors.WriteError ("Cannot serialize Infinity.")
+	if value == -INFINITY:
+		raise errors.WriteError ("Cannot serialize -Infinity.")
+	return unicode (value)
+	
+@memoized
+def write_decimal (value):
+	if value != value:
+		raise errors.WriteError ("Cannot serialize NaN.")
 	s_value = unicode (value)
-	if s_value in disallowed:
-		raise errors.WriteError ("Cannot write floating-point value %r" % value)
+	if s_value in ('Infinity', '-Infinity'):
+		raise errors.WriteError ("Cannot serialize %r." % value)
 	return s_value
 	
 # Fundamental types
@@ -175,7 +186,7 @@ TYPE_MAPPERS = {
 	int: _m_str,
 	long: _m_str,
 	float: write_float,
-	Decimal: write_float,
+	Decimal: write_decimal,
 	type (True): (lambda val: 'true' if val else 'false'),
 	type (None): lambda _: 'null',
 }
