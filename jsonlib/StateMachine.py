@@ -24,14 +24,25 @@ class StateMachine (object):
 	             *stack_action):
 		"""Connect a transition to a callback.
 		
-		state -- A string representing the expected state.
-		stack -- The value that should be on the stack.
-		value -- The value passed to transition.
-		end_state -- The state to transition to.
-		callback -- If not None, this function will be called with
-		            any extra data passed to transition.
-		stack_action -- The operation to perform on the stack, such
-		                as PUSH, 'var'.
+		state
+			A string representing the expected state.
+			
+		stack
+			The value that should be on the stack.
+			
+		value
+			The value passed to transition.
+			
+		end_state
+			The state to transition to.
+			
+		callback
+			If not None, this function will be called with
+			any extra data passed to transition.
+			
+		stack_action
+			The operation to perform on the stack, such
+			as PUSH, 'var'.
 		
 		"""
 		key = (stack, state, value)
@@ -59,10 +70,12 @@ class StateMachine (object):
 	def transition (self, value, *args, **kwargs):
 		"""Execute a transition between one state and another.
 		
-		value -- Combined with the current state and top of the
-		         stack to discover the transition to take.
-		*args, **kwargs -- Passed to the callback function, if it
-		                   exists.
+		value
+			Combined with the current state and top of the
+			stack to discover the transition to take.
+			
+		*args, **kwargs
+			Passed to the callback function, if it exists.
 		
 		"""
 		key = (self._stack[-1], self._state, value)

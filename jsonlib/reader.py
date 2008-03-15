@@ -71,7 +71,8 @@ EOF = Token ('EOF')
 def tokenize (string):
 	"""Split a JSON string into a stream of tokens.
 	
-	string -- The string to tokenize. Should be in unicode.
+	string
+		The string to tokenize. Should be in unicode.
 	
 	"""
 	basic_types = {u'[': ARRAY_START, u']': ARRAY_END,
