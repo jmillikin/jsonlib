@@ -4,7 +4,15 @@
 from functools import wraps
 
 KEYWORDS = (('null', None), ('true', True), ('false', False))
-
+try:
+	INFINITY = float ('inf')
+except ValueError:
+	INFINITY = 1e300000
+try:
+	NAN = float ('nan')
+except ValueError:
+	NAN = INFINITY/INFINITY
+	
 def memoized (func):
 	"""Store results of a function call in cache for speedy retrieval."""
 	cache = {}

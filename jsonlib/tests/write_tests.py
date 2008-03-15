@@ -3,7 +3,7 @@
 
 from decimal import Decimal
 import unittest
-from .. import write, errors
+from .. import write, errors, util
 
 class TestCase (unittest.TestCase):
 	def w (self, value, expected, **kwargs):
@@ -35,16 +35,16 @@ class WriteBasicTests (TestCase):
 		                   object ())
 		
 	def test_fail_on_infinity (self):
-		self.assertRaises (errors.WriteError, write, float ('inf'))
-		self.assertRaises (errors.WriteError, write, Decimal ('inf'))
+		self.assertRaises (errors.WriteError, write, util.INFINITY)
+		self.assertRaises (errors.WriteError, write, Decimal ('Infinity'))
 		
 	def test_fail_on_neg_infinity (self):
-		self.assertRaises (errors.WriteError, write, float ('-inf'))
-		self.assertRaises (errors.WriteError, write, Decimal ('-inf'))
+		self.assertRaises (errors.WriteError, write, -util.INFINITY)
+		self.assertRaises (errors.WriteError, write, Decimal ('-Infinity'))
 		
 	def test_fail_on_nan (self):
-		self.assertRaises (errors.WriteError, write, float ('nan'))
-		self.assertRaises (errors.WriteError, write, Decimal ('nan'))
+		self.assertRaises (errors.WriteError, write, util.NAN)
+		self.assertRaises (errors.WriteError, write, Decimal ('NaN'))
 		
 class WriteArrayTests (TestCase):
 	def test_empty_array (self):
