@@ -8,6 +8,7 @@ import array
 import collections
 import UserList
 import UserDict
+import UserString
 from .util import memoized, INFINITY
 from . import errors
 
@@ -204,6 +205,7 @@ CONTAINER_TYPES = {
 STR_TYPE_MAPPERS = {
 	unicode: write_unicode,
 	str: write_string,
+	UserString.UserString: write_string,
 }
 
 TYPE_MAPPERS = {

@@ -7,6 +7,7 @@ import collections
 import unittest
 import UserList
 import UserDict
+import UserString
 from .. import write, errors, util
 
 class TestCase (unittest.TestCase):
@@ -241,6 +242,9 @@ class WriteStringTests (TestCase):
 	def test_escape_long_unicode (self):
 		# Should break into two UTF-16 codepoints
 		self.w (u'\U0001D11E', u'"\\ud834\\udd1e"')
+		
+	def test_userstring (self):
+		self.w (UserString.UserString ('test'), u'"test"')
 		
 class WriteSubclassTests (TestCase):
 	def test_int_subclass (self):
