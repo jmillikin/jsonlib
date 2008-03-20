@@ -11,7 +11,12 @@ class TestCase (unittest.TestCase):
 		self.assertEqual (serialized, expected)
 		self.assertEqual (type (serialized), type (expected))
 		
-class WriteBasicTests (TestCase):
+class MiscTests (TestCase):
+	def test_fail_on_unknown (self):
+		self.assertRaises (errors.UnknownSerializerError, write,
+		                   object ())
+		
+class WriteKeywordTests (TestCase):
 	def test_null (self):
 		self.w (None, u'null')
 		
@@ -21,6 +26,7 @@ class WriteBasicTests (TestCase):
 	def test_false (self):
 		self.w (False, u'false')
 		
+class WriteNumberTests (TestCase):
 	def test_int (self):
 		self.w (1, u'1')
 		
@@ -41,10 +47,6 @@ class WriteBasicTests (TestCase):
 	def test_long_decimal (self):
 		pi = Decimal ('3.1415926535897931')
 		self.w (pi, u'3.1415926535897931')
-		
-	def test_fail_on_unknown (self):
-		self.assertRaises (errors.UnknownSerializerError, write,
-		                   object ())
 		
 	def test_fail_on_infinity (self):
 		self.assertRaises (errors.WriteError, write, util.INFINITY)
