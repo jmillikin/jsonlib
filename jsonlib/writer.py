@@ -159,7 +159,6 @@ def write_float (value):
 		raise errors.WriteError ("Cannot serialize -Infinity.")
 	return repr (value)
 	
-@memoized
 def write_decimal (value):
 	if value != value:
 		raise errors.WriteError ("Cannot serialize NaN.")
