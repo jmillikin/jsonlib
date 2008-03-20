@@ -157,7 +157,7 @@ def write_float (value):
 		raise errors.WriteError ("Cannot serialize Infinity.")
 	if value == -INFINITY:
 		raise errors.WriteError ("Cannot serialize -Infinity.")
-	return unicode (value)
+	return repr (value)
 	
 @memoized
 def write_decimal (value):

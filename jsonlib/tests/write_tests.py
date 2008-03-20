@@ -30,6 +30,18 @@ class WriteBasicTests (TestCase):
 	def test_decimal (self):
 		self.w (Decimal ('1.1'), u'1.1')
 		
+	def test_long_float (self):
+		# Value that will give different string representations
+		# depending on whether it is passed to unicode() or repr().
+		pi = 3.1415926535897931
+		self.assertNotEqual (str (pi), repr (pi))
+		self.assertNotEqual (unicode (pi), repr (pi))
+		self.w (pi, u'3.1415926535897931')
+		
+	def test_long_decimal (self):
+		pi = Decimal ('3.1415926535897931')
+		self.w (pi, u'3.1415926535897931')
+		
 	def test_fail_on_unknown (self):
 		self.assertRaises (errors.UnknownSerializerError, write,
 		                   object ())
