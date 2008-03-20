@@ -98,6 +98,20 @@ class WriteArrayTests (TestCase):
 	def test_generator (self):
 		self.w ((_ for _ in (True, True)), u'[true, true]')
 		
+	def test_set (self):
+		self.w (set (('a', 'b')), u'["a", "b"]')
+		
+	def test_set_sorted (self):
+		self.assertEqual (write (set (('e', 'm')), sort_keys = True),
+		                  u'["e", "m"]')
+		
+	def test_frozenset (self):
+		self.w (frozenset (('a', 'b')), u'["a", "b"]')
+		
+	def test_frozenset_sorted (self):
+		self.assertEqual (write (frozenset (('e', 'm')), sort_keys = True),
+		                  u'["e", "m"]')
+		
 	def test_fail_on_self_reference (self):
 		a = []
 		a.append (a)

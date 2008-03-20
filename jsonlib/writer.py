@@ -63,6 +63,10 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 def write_generator (value, *args, **kwargs):
 	return write_array (tuple (value), *args, **kwargs)
 	
+def write_unordered_array (value, sort_keys, *args, **kwargs):
+	return write_array (sorted (value) if sort_keys else value,
+	                    sort_keys, *args, **kwargs)
+	
 def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
                   parent_objects, indent_level):
 	"""Serialize a mapping to a list of strings in JSON object format."""
@@ -182,6 +186,8 @@ CONTAINER_TYPES = {
 	dict: write_object,
 	list: write_array,
 	tuple: write_array,
+	set: write_unordered_array,
+	frozenset: write_unordered_array,
 	type ((_ for _ in ())): write_generator,
 }
 
