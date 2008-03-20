@@ -95,6 +95,9 @@ class WriteArrayTests (TestCase):
 		self.assertEqual (write ([True, [True]], indent = '\t'),
 		                  u'[\n\ttrue,\n\t[\n\t\ttrue\n\t]\n]')
 		
+	def test_generator (self):
+		self.w ((_ for _ in (True, True)), u'[true, true]')
+		
 	def test_fail_on_self_reference (self):
 		a = []
 		a.append (a)
