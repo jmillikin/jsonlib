@@ -167,6 +167,12 @@ def write_decimal (value):
 		raise errors.WriteError ("Cannot serialize %r." % value)
 	return s_value
 	
+def write_complex (value):
+	if value.imag == 0.0:
+		return unicode (value.real)
+	raise errors.WriteError ("Cannot serialize complex numbers with"
+	                         " imaginary components.")
+	
 # Fundamental types
 _m_str = memoized (unicode)
 CONTAINER_TYPES = {
@@ -184,6 +190,7 @@ TYPE_MAPPERS = {
 	int: _m_str,
 	long: _m_str,
 	float: write_float,
+	complex: write_complex,
 	Decimal: write_decimal,
 	bool: (lambda val: 'true' if val else 'false'),
 	type (None): lambda _: 'null',
