@@ -125,7 +125,8 @@ read_keyword (ParserState *state)
 	if ((retval = keyword_compare (state, "false", Py_False)))
 		return retval;
 	
-	PyErr_Format (ReadError, "cannot parse JSON description");
+	/* TODO: use unicode error string? */
+	PyErr_Format (ReadError, "Unexpected \"%c\".", (char)(*state->index));
 	return NULL;
 }
 
@@ -359,7 +360,7 @@ read_number (ParserState *state)
 			}
 			else if (leading_zero && !is_float)
 			{
-				PyErr_Format (LeadingZeroError, "Invalid leading zero");
+				PyErr_Format (LeadingZeroError, "Number with leading zero.");
 				return NULL;
 			}
 			got_digit = TRUE;
@@ -375,7 +376,7 @@ read_number (ParserState *state)
 		case '9':
 			if (leading_zero && !is_float)
 			{
-				PyErr_Format (LeadingZeroError, "Invalid leading zero");
+				PyErr_Format (LeadingZeroError, "Number with leading zero.");
 				return NULL;
 			}
 			got_digit = TRUE;
@@ -420,7 +421,7 @@ read_number (ParserState *state)
 	if (object == NULL)
 	{
 		PyErr_Format (ReadError,
-		              "invalid number starting at position " PY_SSIZE_T_F,
+		              "Invalid number starting at position " PY_SSIZE_T_F ".",
 		              (Py_ssize_t) (state->index - state->start));
 		return NULL;
 	}
@@ -677,7 +678,7 @@ json_read (ParserState *state)
 		object = read_number (state);
 		break;
 	default:
-		PyErr_SetString (ReadError, "Cannot parse JSON expression");
+		PyErr_Format (ReadError, "Unexpected \"%c\".", (char)(*state->index));
 		return NULL;
 	}
 

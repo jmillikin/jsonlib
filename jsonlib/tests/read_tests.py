@@ -39,9 +39,9 @@ class ReadKeywordTests (TestCase):
 		self.r ('false', False)
 		
 	def test_invalid_keyword (self):
-		self.assertRaises (errors.ReadError, read, 'n')
-		self.assertRaises (errors.ReadError, read, 't')
-		self.assertRaises (errors.ReadError, read, 'f')
+		self.e ('n', errors.ReadError, "Unexpected \"n\".")
+		self.e ('t', errors.ReadError, "Unexpected \"t\".")
+		self.e ('f', errors.ReadError, "Unexpected \"f\".")
 		
 class ReadNumberTests (TestCase):
 	def test_zero (self):
@@ -51,10 +51,12 @@ class ReadNumberTests (TestCase):
 		self.r ('-0', 0L)
 		
 	def test_two_zeroes_error (self):
-		self.assertRaises (errors.LeadingZeroError, read, '00')
+		self.e ('00', errors.LeadingZeroError, "Number with leading zero.")
+		self.e ('01', errors.LeadingZeroError, "Number with leading zero.")
 		
 	def test_negative_two_zeroes_error (self):
-		self.assertRaises (errors.LeadingZeroError, read, '-00')
+		self.e ('-00', errors.LeadingZeroError, "Number with leading zero.")
+		self.e ('-01', errors.LeadingZeroError, "Number with leading zero.")
 		
 	def test_int (self):
 		for ii in range (10):
@@ -85,11 +87,14 @@ class ReadNumberTests (TestCase):
 		self.r ('10.5e-2', Decimal ('0.105'))
 		
 	def test_invalid_number (self):
-		self.assertRaises (errors.ReadError, read, '-.')
-		self.assertRaises (errors.ReadError, read, '+1')
+		self.e ('-.', errors.ReadError, "Invalid number starting at position 0.")
+		
+	def test_no_plus_sign (self):
+		self.e ('+1', errors.ReadError, "Unexpected \"+\".")
 		
 	def test_non_ascii_number (self):
-		self.assertRaises (errors.ReadError, read, u'\u0661')
+		self.fail ("No unicode support in errors from _reader yet.")
+		self.e (u'\u0661', errors.ReadError, "Unexpected U+0661.")
 		
 class ReadStringTests (TestCase):
 	def test_empty_string (self):
