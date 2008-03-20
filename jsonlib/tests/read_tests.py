@@ -84,6 +84,7 @@ class ReadNumberTests (TestCase):
 	def test_invalid_number (self):
 		self.assertRaises (errors.ReadError, read, '-.')
 		self.assertRaises (errors.ReadError, read, '+1')
+		self.assertRaises (errors.ReadError, read, '0.')
 		
 	def test_non_ascii_number (self):
 		self.assertRaises (errors.ReadError, read, u'\u0661')

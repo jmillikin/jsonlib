@@ -342,7 +342,7 @@ read_string (ParserState *state)
 static PyObject *
 read_number (ParserState *state)
 {
-	PyObject *object;
+	PyObject *object = NULL;
 	int is_float = FALSE, should_stop = FALSE, got_digit = FALSE,
 	    leading_zero = FALSE, has_exponent = FALSE;
 	Py_UNICODE *ptr, c;
@@ -389,6 +389,7 @@ read_number (ParserState *state)
 			break;
 		case '.':
 			is_float = TRUE;
+			got_digit = FALSE;
 			break;
 		default:
 			should_stop = TRUE;
@@ -399,23 +400,26 @@ read_number (ParserState *state)
 		ptr++;
 	}
 	
-	if (is_float || has_exponent)
+	if (got_digit)
 	{
-		PyObject *str, *unicode;
-		if (!(unicode = PyUnicode_FromUnicode (state->index,
-		                                      ptr - state->index)))
-			return NULL;
-		str = PyUnicode_AsUTF8String (unicode);
-		Py_DECREF (unicode);
-		if (!str) return NULL;
-		object = Decimal (str);
-		Py_DECREF (str);
-	}
-	
-	else
-	{
-		object = PyLong_FromUnicode (state->index,
-		                             ptr - state->index, 10);
+		if (is_float || has_exponent)
+		{
+			PyObject *str, *unicode;
+			if (!(unicode = PyUnicode_FromUnicode (state->index,
+			                                      ptr - state->index)))
+				return NULL;
+			str = PyUnicode_AsUTF8String (unicode);
+			Py_DECREF (unicode);
+			if (!str) return NULL;
+			object = Decimal (str);
+			Py_DECREF (str);
+		}
+		
+		else
+		{
+			object = PyLong_FromUnicode (state->index,
+			                             ptr - state->index, 10);
+		}
 	}
 	
 	if (object == NULL)
