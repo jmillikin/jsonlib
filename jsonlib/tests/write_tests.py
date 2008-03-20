@@ -48,6 +48,12 @@ class WriteNumberTests (TestCase):
 		pi = Decimal ('3.1415926535897931')
 		self.w (pi, u'3.1415926535897931')
 		
+	def test_negative_zero (self):
+		self.w (-0.0, u'-0.0')
+		
+	def test_negative_zero_decimal (self):
+		self.w (Decimal ('-0.0'), u'-0.0')
+		
 	def test_complex (self):
 		self.w (5+0j, u'5.0')
 		self.w (5.5+0j, u'5.5')
