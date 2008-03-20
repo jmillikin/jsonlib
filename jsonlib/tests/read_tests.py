@@ -67,6 +67,10 @@ class ReadNumberTests (TestCase):
 		self.r ('1e2', Decimal ('100.0'))
 		self.r ('10e2', Decimal ('1000.0'))
 		
+	def test_exponent_plus (self):
+		self.r ('1e+2', Decimal ('100.0'))
+		self.r ('10e+2', Decimal ('1000.0'))
+		
 	def test_negative_exponent (self):
 		self.r ('1e-2', Decimal ('0.01'))
 		self.r ('10e-2', Decimal ('0.1'))

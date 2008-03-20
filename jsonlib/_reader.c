@@ -381,6 +381,7 @@ read_number (ParserState *state)
 			got_digit = TRUE;
 			break;
 		case '-':
+		case '+':
 			break;
 		case 'e':
 		case 'E':
