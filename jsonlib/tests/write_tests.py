@@ -2,7 +2,11 @@
 # Author: John Millikin <jmillikin@gmail.com>
 
 from decimal import Decimal
+import array
+import collections
 import unittest
+import UserList
+import UserDict
 from .. import write, errors, util
 
 class TestCase (unittest.TestCase):
@@ -111,6 +115,24 @@ class WriteArrayTests (TestCase):
 	def test_frozenset_sorted (self):
 		self.assertEqual (write (frozenset (('e', 'm')), sort_keys = True),
 		                  u'["e", "m"]')
+		
+	def test_array (self):
+		self.w (array.array('i', [1,2,3]), u'[1, 2, 3]')
+		
+	def test_deque (self):
+		deq = collections.deque ((1, 2, 3))
+		self.w (deq, u'[1, 2, 3]')
+		
+	def test_userlist (self):
+		self.w (UserList.UserList ((1, 2, 3)), u'[1, 2, 3]')
+		
+	def test_defaultdict (self):
+		defdict = collections.defaultdict (lambda: 9)
+		defdict['a'] = 42
+		self.w (defdict, u'{"a": 42}')
+		
+	def test_userdict (self):
+		self.w (UserDict.UserDict (a = 42), u'{"a": 42}')
 		
 	def test_fail_on_self_reference (self):
 		a = []

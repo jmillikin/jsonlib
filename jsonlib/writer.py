@@ -4,6 +4,10 @@
 """Implements jsonlib.write"""
 
 from decimal import Decimal
+import array
+import collections
+import UserList
+import UserDict
 from .util import memoized, INFINITY
 from . import errors
 
@@ -186,6 +190,10 @@ CONTAINER_TYPES = {
 	dict: write_object,
 	list: write_array,
 	tuple: write_array,
+	UserList.UserList: write_array,
+	UserDict.UserDict: write_object,
+	collections.deque: write_array,
+	array.array: write_array,
 	set: write_unordered_array,
 	frozenset: write_unordered_array,
 	type ((_ for _ in ())): write_generator,
@@ -230,9 +238,15 @@ def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	When joined together, result in the value's JSON representation.
 	
 	"""
-	v_type = type (value)
-	if v_type in CONTAINER_TYPES:
-		w_func = CONTAINER_TYPES[v_type]
+	w_func = CONTAINER_TYPES.get (type (value))
+	
+	# Might be a subclass
+	if w_func is None:
+		for mapper_type, mapper in CONTAINER_TYPES.items ():
+			if isinstance (value, mapper_type):
+				w_func = mapper
+				
+	if w_func:
 		return w_func (value, sort_keys, indent_string, ascii_only,
 		               coerce_keys, parent_objects, indent_level)
 	return write_basic (value, ascii_only)
