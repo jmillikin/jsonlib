@@ -126,14 +126,6 @@ class WriteArrayTests (TestCase):
 	def test_userlist (self):
 		self.w (UserList.UserList ((1, 2, 3)), u'[1, 2, 3]')
 		
-	def test_defaultdict (self):
-		defdict = collections.defaultdict (lambda: 9)
-		defdict['a'] = 42
-		self.w (defdict, u'{"a": 42}')
-		
-	def test_userdict (self):
-		self.w (UserDict.UserDict (a = 42), u'{"a": 42}')
-		
 	def test_fail_on_self_reference (self):
 		a = []
 		a.append (a)
@@ -177,6 +169,14 @@ class WriteObjectTests (TestCase):
 		self.w ({1: True}, u'{"1": true}', coerce_keys = True)
 		self.w ({True: 1}, u'{"true": 1}', coerce_keys = True)
 		self.w ({(): 1}, u'{"()": 1}', coerce_keys = True)
+		
+	def test_defaultdict (self):
+		defdict = collections.defaultdict (lambda: 9)
+		defdict['a'] = 42
+		self.w (defdict, u'{"a": 42}')
+		
+	def test_userdict (self):
+		self.w (UserDict.UserDict (a = 42), u'{"a": 42}')
 		
 	def test_fail_on_self_reference (self):
 		a = {}
