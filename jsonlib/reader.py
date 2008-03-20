@@ -301,6 +301,24 @@ def _py_read (string):
 			
 	return read_item_stack[0][0]
 	
+def safe_unichr (codepoint):
+	"""Similar to unichr(), except handles narrow builds.
+	
+	If a codepoint above 0x10000 is passed to this function, and the
+	system cannot handle wide characters, the return value will be a
+	string of length 2 containing the surrogate pair."""
+	if codepoint >= 0x10000 > sys.maxunicode:
+		# No wide character support
+		upper = (codepoint & 0xFFC00 - 0x10000) >> 10
+		lower = codepoint & 0x3FF
+		
+		upper += 0xD800
+		lower += 0xDC00
+		
+		return unichr (upper) + unichr (lower)
+	else:
+		return unichr (codepoint)
+		
 def unicode_autodetect_encoding (bytes):
 	"""Intelligently convert a byte string to Unicode.
 	
@@ -315,7 +333,7 @@ def unicode_autodetect_encoding (bytes):
 	def struct_decode (format):
 		"""Helper for decoding UTF-32."""
 		codes = struct.unpack (format % (len (bytes) / 4), bytes)
-		return u''.join (unichr (code) for code in codes)
+		return u''.join (safe_unichr (code) for code in codes)
 		
 	# UTF-32 codecs are not available
 	if header == [0, 0, 0, 1]:

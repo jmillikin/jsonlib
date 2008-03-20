@@ -215,6 +215,14 @@ class UnicodeEncodingDetectionTests (TestCase):
 		s = '"\x00\x00\x00t\x00\x00\x00e\x00\x00\x00s\x00\x00\x00t\x00\x00\x00i\x00\x00\x00n\x00\x00\x00g\x00\x00\x00"\x00\x00\x00'
 		self.r (s, u'testing')
 		
+	def test_utf32_be_astral (self):
+		s = '\x00\x00\x00"\x00\x01\xd1\x1e\x00\x00\x00"'
+		self.r (s, u'\U0001d11e')
+		
+	def test_utf32_le_astral (self):
+		s = '"\x00\x00\x00\x1e\xd1\x01\x00"\x00\x00\x00'
+		self.r (s, u'\U0001d11e')
+		
 	def test_utf16_be (self):
 		self.de ('utf-16-be')
 		
