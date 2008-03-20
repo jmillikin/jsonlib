@@ -42,7 +42,8 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
                  parent_objects, indent_level):
 	"""Serialize an iterable to a list of strings in JSON array format."""
 	
-	if value in parent_objects:
+	v_id = id (value)
+	if v_id in parent_objects:
 		raise errors.WriteError ("Can't write self-referential values.")
 		
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
@@ -53,7 +54,7 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			retval.append (indent)
 		retval.extend (_write (item, sort_keys, indent_string,
 		                       ascii_only, coerce_keys,
-		                       parent_objects + (value,),
+		                       parent_objects + (v_id,),
 		                       indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
@@ -75,7 +76,8 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
                   parent_objects, indent_level):
 	"""Serialize a mapping to a list of strings in JSON object format."""
 	
-	if value in parent_objects:
+	v_id = id (value)
+	if v_id in parent_objects:
 		raise errors.WriteError ("Can't write self-referential values.")
 		
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
@@ -112,7 +114,7 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 		retval.append (': ')
 		retval.extend (_write (sub_value, sort_keys, indent_string,
 		                       ascii_only, coerce_keys,
-		                       parent_objects + (value,),
+		                       parent_objects + (v_id,),
 		                       indent_level + 1))
 		if (index + 1) < len (value):
 			retval.append (separator)
