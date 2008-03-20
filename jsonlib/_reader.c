@@ -647,7 +647,7 @@ json_read (ParserState *state)
 	skip_spaces (state);
 	switch (*state->index) {
 	case 0:
-		PyErr_SetString (ReadError, "Empty JSON expression");
+		PyErr_SetString (ReadError, "No expression found.");
 		return NULL;
 	case '{':
 		object = read_object (state);

@@ -16,10 +16,17 @@ class TestCase (unittest.TestCase):
 		self.assertEqual (value, expected)
 		self.assertEqual (type (value), type (expected))
 		
+	def e (self, string, expected_error_type, expected_error_string):
+		try:
+			read (string, __speedboost = True)
+			self.fail ("No exception raised.")
+		except expected_error_type, error:
+			self.assertEqual (unicode (error), expected_error_string)
+			
 class MiscTests (TestCase):
 	def test_fail_on_empty (self):
-		self.assertRaises (errors.ReadError, read, '')
-		self.assertRaises (errors.ReadError, read, ' ')
+		self.e ('', errors.ReadError, "No expression found.")
+		self.e (' ', errors.ReadError, "No expression found.")
 		
 class ReadKeywordTests (TestCase):
 	def test_null (self):
