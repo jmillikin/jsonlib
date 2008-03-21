@@ -375,5 +375,8 @@ def read (string, **kwargs):
 			from _reader import _read
 		except ImportError:
 			pass
-	return _read (unicode_autodetect_encoding (string))
+	value = _read (unicode_autodetect_encoding (string))
+	if not isinstance (value, (dict, list)):
+		raise errors.ReadError ("Tried to deserialize a basic value.")
+	return value
 	
