@@ -61,7 +61,7 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			if newline:
 				retval.append (',' + newline)
 			else:
-				retval.append (', ')
+				retval.append (',')
 	retval.append (newline + next_indent)
 	retval.append (']')
 	return retval
@@ -92,7 +92,7 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	if newline:
 		separator = ',' + newline
 	else:
-		separator = ', '
+		separator = ','
 	for index, (key, sub_value) in enumerate (items):
 		is_string = isinstance (key, str)
 		is_unicode = isinstance (key, unicode)
@@ -112,7 +112,10 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			raise errors.WriteError ("Only strings may "
 			                         "be used as object "
 			                         "keys.")
-		retval.append (': ')
+		if newline:
+			retval.append (': ')
+		else:
+			retval.append (':')
 		retval.extend (_write (sub_value, sort_keys, indent_string,
 		                       ascii_only, coerce_keys,
 		                       parent_objects + (v_id,),

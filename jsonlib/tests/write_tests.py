@@ -89,7 +89,7 @@ class WriteArrayTests (TestCase):
 		self.w ([True], u'[true]')
 		
 	def test_multiple_value_array (self):
-		self.w ([True, True], u'[true, true]')
+		self.w ([True, True], u'[true,true]')
 		
 	def test_empty_indent (self):
 		self.assertEqual (write ([True, True], indent = ''),
@@ -104,31 +104,31 @@ class WriteArrayTests (TestCase):
 		                  u'[\n\ttrue,\n\t[\n\t\ttrue\n\t]\n]')
 		
 	def test_generator (self):
-		self.w ((_ for _ in (True, True)), u'[true, true]')
+		self.w ((_ for _ in (True, True)), u'[true,true]')
 		
 	def test_set (self):
-		self.w (set (('a', 'b')), u'["a", "b"]')
+		self.w (set (('a', 'b')), u'["a","b"]')
 		
 	def test_set_sorted (self):
 		self.assertEqual (write (set (('e', 'm')), sort_keys = True),
-		                  u'["e", "m"]')
+		                  u'["e","m"]')
 		
 	def test_frozenset (self):
-		self.w (frozenset (('a', 'b')), u'["a", "b"]')
+		self.w (frozenset (('a', 'b')), u'["a","b"]')
 		
 	def test_frozenset_sorted (self):
 		self.assertEqual (write (frozenset (('e', 'm')), sort_keys = True),
-		                  u'["e", "m"]')
+		                  u'["e","m"]')
 		
 	def test_array (self):
-		self.w (array.array('i', [1,2,3]), u'[1, 2, 3]')
+		self.w (array.array('i', [1,2,3]), u'[1,2,3]')
 		
 	def test_deque (self):
 		deq = collections.deque ((1, 2, 3))
-		self.w (deq, u'[1, 2, 3]')
+		self.w (deq, u'[1,2,3]')
 		
 	def test_userlist (self):
-		self.w (UserList.UserList ((1, 2, 3)), u'[1, 2, 3]')
+		self.w (UserList.UserList ((1, 2, 3)), u'[1,2,3]')
 		
 	def test_fail_on_self_reference (self):
 		a = []
@@ -141,15 +141,15 @@ class WriteObjectTests (TestCase):
 		self.w ({}, u'{}')
 		
 	def test_single_value_object (self):
-		self.w ({'a': True}, u'{"a": true}')
+		self.w ({'a': True}, u'{"a":true}')
 		
 	def test_multiple_value_object (self):
-		self.w ({'a': True, 'b': True}, u'{"a": true, "b": true}')
+		self.w ({'a': True, 'b': True}, u'{"a":true,"b":true}')
 		
 	def test_sort_keys (self):
 		self.assertEqual (write ({'e': True, 'm': True},
 		                         sort_keys = True),
-		                  u'{"e": true, "m": true}')
+		                  u'{"e":true,"m":true}')
 		
 	def test_empty_indent (self):
 		self.assertEqual (write ({'a': True, 'b': True},
@@ -170,17 +170,17 @@ class WriteObjectTests (TestCase):
 		self.assertRaises (errors.WriteError, write, {1: True})
 		
 	def test_coerce_invalid_key (self):
-		self.w ({1: True}, u'{"1": true}', coerce_keys = True)
-		self.w ({True: 1}, u'{"true": 1}', coerce_keys = True)
-		self.w ({(): 1}, u'{"()": 1}', coerce_keys = True)
+		self.w ({1: True}, u'{"1":true}', coerce_keys = True)
+		self.w ({True: 1}, u'{"true":1}', coerce_keys = True)
+		self.w ({(): 1}, u'{"()":1}', coerce_keys = True)
 		
 	def test_defaultdict (self):
 		defdict = collections.defaultdict (lambda: 9)
 		defdict['a'] = 42
-		self.w (defdict, u'{"a": 42}')
+		self.w (defdict, u'{"a":42}')
 		
 	def test_userdict (self):
-		self.w (UserDict.UserDict (a = 42), u'{"a": 42}')
+		self.w (UserDict.UserDict (a = 42), u'{"a":42}')
 		
 	def test_fail_on_self_reference (self):
 		a = {}
