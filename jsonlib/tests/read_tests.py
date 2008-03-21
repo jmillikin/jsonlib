@@ -17,25 +17,46 @@ class TestCase (unittest.TestCase):
 		self.assertEqual (value, expected)
 		self.assertEqual (type (value), type (expected))
 		
-	def e (self, string, expected_error_type, expected_error_string):
+	def e (self, string, expected_error_type, line, column, position,
+	       expected_error_message):
+		full_expected = ("JSON parsing error at line %d, column %d"
+		                 " (position %d): %s" % (line, column,
+		                                         position,
+		                                         expected_error_message))
 		try:
 			read (string, __speedboost = True)
 			self.fail ("No exception raised.")
 		except expected_error_type, error:
-			self.assertEqual (unicode (error), expected_error_string)
+			self.assertEqual (unicode (error), full_expected)
 			
 class MiscTests (TestCase):
 	def test_fail_on_empty (self):
-		self.e ('', errors.ReadError, "No expression found.")
-		self.e (' ', errors.ReadError, "No expression found.")
+		self.e ('', errors.ReadError, 1, 1, 0,
+		        "No expression found.")
+		self.e (' ', errors.ReadError, 1, 1, 0,
+		        "No expression found.")
 		
 	def test_fail_on_invalid_whitespace (self):
-		self.assertRaises (errors.ReadError, read, u'[\u000B]')
-		self.assertRaises (errors.ReadError, read, u'[\u000D]')
-		self.assertRaises (errors.ReadError, read, u'[\u00A0]')
-		self.assertRaises (errors.ReadError, read, u'[\u2002]')
-		self.assertRaises (errors.ReadError, read, u'[\u2028]')
-		self.assertRaises (errors.ReadError, read, u'[\u2029]')
+		self.e (u'[\u000B]', errors.ReadError, 1, 2, 1,
+		        "Unexpected U+000B.")
+		self.e (u'[\u000D]', errors.ReadError, 1, 2, 1,
+		        "Unexpected U+000D.")
+		self.e (u'[\u00A0]', errors.ReadError, 1, 2, 1,
+		        "Unexpected U+00A0.")
+		self.e (u'[\u2002]', errors.ReadError, 1, 2, 1,
+		        "Unexpected U+2002.")
+		self.e (u'[\u2028]', errors.ReadError, 1, 2, 1,
+		        "Unexpected U+2028.")
+		self.e (u'[\u2029]', errors.ReadError, 1, 2, 1,
+		        "Unexpected U+2029.")
+		
+	def test_unexpected_character (self):
+		self.e (u'[+]', errors.ReadError, 1, 2, 1,
+		        "Unexpected U+002B.")
+		
+	def test_unexpected_character_astral (self):
+		self.e (u'[\U0001d11e]', errors.ReadError, 1, 2, 1,
+		        "Unexpected U+0001D11E.")
 		
 class ReadKeywordTests (TestCase):
 	def test_null (self):
@@ -48,9 +69,9 @@ class ReadKeywordTests (TestCase):
 		self.r ('[false]', [False])
 		
 	def test_invalid_keyword (self):
-		self.e ('n', errors.ReadError, "Unexpected \"n\".")
-		self.e ('t', errors.ReadError, "Unexpected \"t\".")
-		self.e ('f', errors.ReadError, "Unexpected \"f\".")
+		self.e ('n', errors.ReadError, 1, 1, 0, "Unexpected U+006E.")
+		self.e ('t', errors.ReadError, 1, 1, 0, "Unexpected U+0074.")
+		self.e ('f', errors.ReadError, 1, 1, 0, "Unexpected U+0066.")
 		
 class ReadNumberTests (TestCase):
 	def test_zero (self):
@@ -60,12 +81,12 @@ class ReadNumberTests (TestCase):
 		self.r ('[-0]', [0L])
 		
 	def test_two_zeroes_error (self):
-		self.e ('00', errors.LeadingZeroError, "Number with leading zero.")
-		self.e ('01', errors.LeadingZeroError, "Number with leading zero.")
+		self.e ('00', errors.LeadingZeroError, 1, 1, 0, "Number with leading zero.")
+		self.e ('01', errors.LeadingZeroError, 1, 1, 0, "Number with leading zero.")
 		
 	def test_negative_two_zeroes_error (self):
-		self.e ('-00', errors.LeadingZeroError, "Number with leading zero.")
-		self.e ('-01', errors.LeadingZeroError, "Number with leading zero.")
+		self.e ('-00', errors.LeadingZeroError, 1, 1, 0, "Number with leading zero.")
+		self.e ('-01', errors.LeadingZeroError, 1, 1, 0, "Number with leading zero.")
 		
 	def test_int (self):
 		for ii in range (10):
@@ -100,15 +121,14 @@ class ReadNumberTests (TestCase):
 		self.r ('[10.5e-2]', [Decimal ('0.105')])
 		
 	def test_invalid_number (self):
-		self.e ('-.', errors.ReadError, "Invalid number starting at position 0.")
-		self.e ('0.', errors.ReadError, "Invalid number starting at position 0.")
+		self.e ('-.', errors.ReadError, 1, 1, 0, "Invalid number.")
+		self.e ('0.', errors.ReadError, 1, 1, 0, "Invalid number.")
 		
 	def test_no_plus_sign (self):
-		self.e ('+1', errors.ReadError, "Unexpected \"+\".")
+		self.e ('+1', errors.ReadError, 1, 1, 0, "Unexpected U+002B.")
 		
 	def test_non_ascii_number (self):
-		self.fail ("No unicode support in errors from _reader yet.")
-		self.e (u'[\u0661]', errors.ReadError, "Unexpected U+0661.")
+		self.e (u'[\u0661]', errors.ReadError, 1, 2, 1, "Unexpected U+0661.")
 		
 class ReadStringTests (TestCase):
 	def test_empty_string (self):
