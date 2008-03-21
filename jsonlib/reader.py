@@ -21,10 +21,20 @@ NUMBER_SPLITTER = re.compile (
 re.UNICODE)
 
 TOKEN_SPLITTER = re.compile (
-	r'\s*([\[\]{}:,])|'         # Basic tokens
-	r'\s*("(?:[^"\\]|\\.)*")|' # String atom
-	r'\s*([^\s\[\]{}:,]+)|'     # Non-string atom
-	r'(.+?)',                  # Anything else, will trigger an exception
+	# Basic tokens
+	r'([\[\]{}:,])|'
+	
+	# String atom
+	r'("(?:[^"\\]|\\.)*")|'
+	
+	# Non-string atom
+	ur'([^\u0009\u0020\u000a\u000c\[\]{}:,]+)|'
+	
+	# Whitespace
+	ur'([\u0009\u0020\u000a\u000c])|'
+	
+	# Anything else, will trigger an exception
+	r'(.+?)',
 re.UNICODE)
 
 ESCAPES = {
@@ -80,13 +90,15 @@ def tokenize (string):
 	               u':': COLON, u',': COMMA}
 	
 	for match in TOKEN_SPLITTER.findall (string):
-		basic_string, string_atom, other_atom, unknown_token = match
+		basic_string, string_atom, other_atom, whitespace, unknown_token = match
 		if basic_string:
 			yield basic_types[basic_string] (basic_string)
 		elif string_atom:
 			yield ATOM (string_atom)
 		elif other_atom:
 			yield ATOM (other_atom)
+		elif whitespace:
+			pass
 		else:
 			raise errors.ReadError ("Unknown token: %r" % unknown_token)
 			

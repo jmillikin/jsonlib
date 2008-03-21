@@ -63,7 +63,16 @@ static PyObject *_Decimal;
 static void
 skip_spaces (ParserState *state)
 {
-	while (state->index && Py_UNICODE_ISSPACE (*state->index))
+	/* Don't use Py_UNICODE_ISSPACE, because it returns TRUE for
+	 * codepoints that are not valid JSON whitespace.
+	**/
+	Py_UNICODE c;
+	while ((c = (*state->index)) && (
+		c == 0x0009 ||
+		c == 0x0020 ||
+		c == 0x000A ||
+		c == 0x000C
+	))
 		state->index++;
 }
 

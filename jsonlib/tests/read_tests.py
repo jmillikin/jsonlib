@@ -22,6 +22,14 @@ class MiscTests (TestCase):
 		self.assertRaises (errors.ReadError, read, '')
 		self.assertRaises (errors.ReadError, read, ' ')
 		
+	def test_fail_on_invalid_whitespace (self):
+		self.assertRaises (errors.ReadError, read, u'[\u000B]')
+		self.assertRaises (errors.ReadError, read, u'[\u000D]')
+		self.assertRaises (errors.ReadError, read, u'[\u00A0]')
+		self.assertRaises (errors.ReadError, read, u'[\u2002]')
+		self.assertRaises (errors.ReadError, read, u'[\u2028]')
+		self.assertRaises (errors.ReadError, read, u'[\u2029]')
+		
 class ReadKeywordTests (TestCase):
 	def test_null (self):
 		self.r ('[null]', [None])
