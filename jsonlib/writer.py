@@ -253,7 +253,10 @@ def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	if w_func:
 		return w_func (value, sort_keys, indent_string, ascii_only,
 		               coerce_keys, parent_objects, indent_level)
-	return write_basic (value, ascii_only)
+		
+	if parent_objects:
+		return write_basic (value, ascii_only)
+	raise errors.WriteError ("The outermost container must be an array or object.")
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False):

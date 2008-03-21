@@ -19,27 +19,30 @@ class TestCase (unittest.TestCase):
 class MiscTests (TestCase):
 	def test_fail_on_unknown (self):
 		self.assertRaises (errors.UnknownSerializerError, write,
-		                   object ())
+		                   [object ()])
+		
+	def test_fail_on_unwrapped_atom (self):
+		self.assertRaises (errors.WriteError, write, 1)
 		
 class WriteKeywordTests (TestCase):
 	def test_null (self):
-		self.w (None, u'null')
+		self.w ([None], u'[null]')
 		
 	def test_true (self):
-		self.w (True, u'true')
+		self.w ([True], u'[true]')
 		
 	def test_false (self):
-		self.w (False, u'false')
+		self.w ([False], u'[false]')
 		
 class WriteNumberTests (TestCase):
 	def test_int (self):
-		self.w (1, u'1')
+		self.w ([1], u'[1]')
 		
 	def test_long (self):
-		self.w (1L, u'1')
+		self.w ([1L], u'[1]')
 		
 	def test_decimal (self):
-		self.w (Decimal ('1.1'), u'1.1')
+		self.w ([Decimal ('1.1')], u'[1.1]')
 		
 	def test_long_float (self):
 		# Value that will give different string representations
@@ -47,36 +50,36 @@ class WriteNumberTests (TestCase):
 		pi = 3.1415926535897931
 		self.assertNotEqual (str (pi), repr (pi))
 		self.assertNotEqual (unicode (pi), repr (pi))
-		self.w (pi, u'3.1415926535897931')
+		self.w ([pi], u'[3.1415926535897931]')
 		
 	def test_long_decimal (self):
 		pi = Decimal ('3.1415926535897931')
-		self.w (pi, u'3.1415926535897931')
+		self.w ([pi], u'[3.1415926535897931]')
 		
 	def test_negative_zero (self):
-		self.w (-0.0, u'-0.0')
+		self.w ([-0.0], u'[-0.0]')
 		
 	def test_negative_zero_decimal (self):
-		self.w (Decimal ('-0.0'), u'-0.0')
+		self.w ([Decimal ('-0.0')], u'[-0.0]')
 		
 	def test_complex (self):
-		self.w (5+0j, u'5.0')
-		self.w (5.5+0j, u'5.5')
+		self.w ([5+0j], u'[5.0]')
+		self.w ([5.5+0j], u'[5.5]')
 		
 	def test_fail_complex (self):
-		self.assertRaises (errors.WriteError, write, 5+1j)
+		self.assertRaises (errors.WriteError, write, [5+1j])
 		
 	def test_fail_on_infinity (self):
-		self.assertRaises (errors.WriteError, write, util.INFINITY)
-		self.assertRaises (errors.WriteError, write, Decimal ('Infinity'))
+		self.assertRaises (errors.WriteError, write, [util.INFINITY])
+		self.assertRaises (errors.WriteError, write, [Decimal ('Infinity')])
 		
 	def test_fail_on_neg_infinity (self):
-		self.assertRaises (errors.WriteError, write, -util.INFINITY)
-		self.assertRaises (errors.WriteError, write, Decimal ('-Infinity'))
+		self.assertRaises (errors.WriteError, write, [-util.INFINITY])
+		self.assertRaises (errors.WriteError, write, [Decimal ('-Infinity')])
 		
 	def test_fail_on_nan (self):
-		self.assertRaises (errors.WriteError, write, util.NAN)
-		self.assertRaises (errors.WriteError, write, Decimal ('NaN'))
+		self.assertRaises (errors.WriteError, write, [util.NAN])
+		self.assertRaises (errors.WriteError, write, [Decimal ('NaN')])
 		
 class WriteArrayTests (TestCase):
 	def test_empty_array (self):
@@ -192,31 +195,31 @@ class WriteObjectTests (TestCase):
 		
 class WriteStringTests (TestCase):
 	def test_empty_string (self):
-		self.w ('', u'""')
+		self.w ([''], u'[""]')
 		
 	def test_escape_quote (self):
-		self.w ('"', ur'"\""')
+		self.w (['"'], u'["\\""]')
 		
 	def test_escape_reverse_solidus (self):
-		self.w ('\\', ur'"\\"')
+		self.w (['\\'], u'["\\\\"]')
 		
 	def test_escape_solidus (self):
-		self.w ('/', u'"\\/"')
+		self.w (['/'], u'["\\/"]')
 		
 	def test_escape_backspace (self):
-		self.w ('\b', ur'"\b"')
+		self.w (['\b'], u'["\\b"]')
 		
 	def test_escape_form_feed (self):
-		self.w ('\f', ur'"\f"')
+		self.w (['\f'], u'["\\f"]')
 		
 	def test_escape_line_feed (self):
-		self.w ('\n', ur'"\n"')
+		self.w (['\n'], u'["\\n"]')
 		
 	def test_escape_carriage_return (self):
-		self.w ('\r', ur'"\r"')
+		self.w (['\r'], u'["\\r"]')
 		
 	def test_escape_tab (self):
-		self.w ('\t', ur'"\t"')
+		self.w (['\t'], u'["\\t"]')
 		
 	def test_escape_control_characters (self):
 		special_escapes = tuple ('\b\t\n\f\r')
@@ -224,31 +227,31 @@ class WriteStringTests (TestCase):
 		for code in range (0x0, 0x1F + 1):
 			char = unichr (code)
 			if char not in special_escapes:
-				expected = u'"\\u%04x"' % code
-				self.w (char, expected)
+				expected = u'["\\u%04x"]' % code
+				self.w ([char], expected)
 				
 	def test_unicode_passthrough (self):
-		self.w (u'\u00B6\u00D7', u'"\u00b6\u00d7"', ascii_only = False)
-		self.w (u'\u24CA', u'"\u24ca"', ascii_only = False)
-		self.w (u'\U0001D11E', u'"\U0001D11E"', ascii_only = False)
+		self.w ([u'\u00B6\u00D7'], u'["\u00b6\u00d7"]', ascii_only = False)
+		self.w ([u'\u24CA'], u'["\u24ca"]', ascii_only = False)
+		self.w ([u'\U0001D11E'], u'["\U0001D11E"]', ascii_only = False)
 		
 	def test_escape_short_unicode (self):
 		# Some Latin-1
-		self.w (u'\u00B6\u00D7', u'"\\u00b6\\u00d7"')
+		self.w ([u'\u00B6\u00D7'], u'["\\u00b6\\u00d7"]')
 		
 		# Higher planes
-		self.w (u'\u24CA', u'"\\u24ca"')
+		self.w ([u'\u24CA'], u'["\\u24ca"]')
 		
 	def test_escape_long_unicode (self):
 		# Should break into two UTF-16 codepoints
-		self.w (u'\U0001D11E', u'"\\ud834\\udd1e"')
+		self.w ([u'\U0001D11E'], u'["\\ud834\\udd1e"]')
 		
 	def test_userstring (self):
-		self.w (UserString.UserString ('test'), u'"test"')
+		self.w ([UserString.UserString ('test')], u'["test"]')
 		
 class WriteSubclassTests (TestCase):
 	def test_int_subclass (self):
 		class MyInt (int):
 			pass
-		self.w (MyInt (10), u'10')
+		self.w ([MyInt (10)], u'[10]')
 		
