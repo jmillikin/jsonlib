@@ -4,6 +4,11 @@
 """Implements jsonlib.write"""
 
 from decimal import Decimal
+import array
+import collections
+import UserList
+import UserDict
+import UserString
 from .util import memoized, INFINITY
 from . import errors
 
@@ -38,7 +43,8 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
                  parent_objects, indent_level):
 	"""Serialize an iterable to a list of strings in JSON array format."""
 	
-	if value in parent_objects:
+	v_id = id (value)
+	if v_id in parent_objects:
 		raise errors.WriteError ("Can't write self-referential values.")
 		
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
@@ -49,22 +55,30 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			retval.append (indent)
 		retval.extend (_write (item, sort_keys, indent_string,
 		                       ascii_only, coerce_keys,
-		                       parent_objects + (value,),
+		                       parent_objects + (v_id,),
 		                       indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
 				retval.append (',' + newline)
 			else:
-				retval.append (', ')
+				retval.append (',')
 	retval.append (newline + next_indent)
 	retval.append (']')
 	return retval
+	
+def write_generator (value, *args, **kwargs):
+	return write_array (tuple (value), *args, **kwargs)
+	
+def write_unordered_array (value, sort_keys, *args, **kwargs):
+	return write_array (sorted (value) if sort_keys else value,
+	                    sort_keys, *args, **kwargs)
 	
 def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
                   parent_objects, indent_level):
 	"""Serialize a mapping to a list of strings in JSON object format."""
 	
-	if value in parent_objects:
+	v_id = id (value)
+	if v_id in parent_objects:
 		raise errors.WriteError ("Can't write self-referential values.")
 		
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
@@ -78,7 +92,7 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	if newline:
 		separator = ',' + newline
 	else:
-		separator = ', '
+		separator = ','
 	for index, (key, sub_value) in enumerate (items):
 		is_string = isinstance (key, str)
 		is_unicode = isinstance (key, unicode)
@@ -98,10 +112,13 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			raise errors.WriteError ("Only strings may "
 			                         "be used as object "
 			                         "keys.")
-		retval.append (': ')
+		if newline:
+			retval.append (': ')
+		else:
+			retval.append (':')
 		retval.extend (_write (sub_value, sort_keys, indent_string,
 		                       ascii_only, coerce_keys,
-		                       parent_objects + (value,),
+		                       parent_objects + (v_id,),
 		                       indent_level + 1))
 		if (index + 1) < len (value):
 			retval.append (separator)
@@ -157,9 +174,8 @@ def write_float (value):
 		raise errors.WriteError ("Cannot serialize Infinity.")
 	if value == -INFINITY:
 		raise errors.WriteError ("Cannot serialize -Infinity.")
-	return unicode (value)
+	return repr (value)
 	
-@memoized
 def write_decimal (value):
 	if value != value:
 		raise errors.WriteError ("Cannot serialize NaN.")
@@ -168,23 +184,38 @@ def write_decimal (value):
 		raise errors.WriteError ("Cannot serialize %r." % value)
 	return s_value
 	
+def write_complex (value):
+	if value.imag == 0.0:
+		return unicode (value.real)
+	raise errors.WriteError ("Cannot serialize complex numbers with"
+	                         " imaginary components.")
+	
 # Fundamental types
 _m_str = memoized (unicode)
 CONTAINER_TYPES = {
 	dict: write_object,
 	list: write_array,
 	tuple: write_array,
+	UserList.UserList: write_array,
+	UserDict.UserDict: write_object,
+	collections.deque: write_array,
+	array.array: write_array,
+	set: write_unordered_array,
+	frozenset: write_unordered_array,
+	type ((_ for _ in ())): write_generator,
 }
 
 STR_TYPE_MAPPERS = {
 	unicode: write_unicode,
 	str: write_string,
+	UserString.UserString: write_string,
 }
 
 TYPE_MAPPERS = {
 	int: _m_str,
 	long: _m_str,
 	float: write_float,
+	complex: write_complex,
 	Decimal: write_decimal,
 	bool: (lambda val: 'true' if val else 'false'),
 	type (None): lambda _: 'null',
@@ -214,12 +245,21 @@ def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	When joined together, result in the value's JSON representation.
 	
 	"""
-	v_type = type (value)
-	if v_type in CONTAINER_TYPES:
-		w_func = CONTAINER_TYPES[v_type]
+	w_func = CONTAINER_TYPES.get (type (value))
+	
+	# Might be a subclass
+	if w_func is None:
+		for mapper_type, mapper in CONTAINER_TYPES.items ():
+			if isinstance (value, mapper_type):
+				w_func = mapper
+				
+	if w_func:
 		return w_func (value, sort_keys, indent_string, ascii_only,
 		               coerce_keys, parent_objects, indent_level)
-	return write_basic (value, ascii_only)
+		
+	if parent_objects:
+		return write_basic (value, ascii_only)
+	raise errors.WriteError ("The outermost container must be an array or object.")
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False):

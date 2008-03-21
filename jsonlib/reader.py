@@ -21,10 +21,20 @@ NUMBER_SPLITTER = re.compile (
 re.UNICODE)
 
 TOKEN_SPLITTER = re.compile (
-	r'\s*([\[\]{}:,])|'         # Basic tokens
-	r'\s*("(?:[^"\\]|\\.)*")|' # String atom
-	r'\s*([^\s\[\]{}:,]+)|'     # Non-string atom
-	r'(.+?)',                  # Anything else, will trigger an exception
+	# Basic tokens
+	r'([\[\]{}:,])|'
+	
+	# String atom
+	r'("(?:[^"\\]|\\.)*")|'
+	
+	# Non-string atom
+	ur'([^\u0009\u0020\u000a\u000c\[\]{}:,]+)|'
+	
+	# Whitespace
+	ur'([\u0009\u0020\u000a\u000c])|'
+	
+	# Anything else, will trigger an exception
+	r'(.+?)',
 re.UNICODE)
 
 ESCAPES = {
@@ -80,13 +90,15 @@ def tokenize (string):
 	               u':': COLON, u',': COMMA}
 	
 	for match in TOKEN_SPLITTER.findall (string):
-		basic_string, string_atom, other_atom, unknown_token = match
+		basic_string, string_atom, other_atom, whitespace, unknown_token = match
 		if basic_string:
 			yield basic_types[basic_string] (basic_string)
 		elif string_atom:
 			yield ATOM (string_atom)
 		elif other_atom:
 			yield ATOM (other_atom)
+		elif whitespace:
+			pass
 		else:
 			raise errors.ReadError ("Unknown token: %r" % unknown_token)
 			
@@ -138,7 +150,10 @@ def read_unichars (string):
 	"""Read unicode characters from an escaped string."""
 	escaped = False
 	stream = iter (string)
+	illegal = map (unichr, range (0x20))
 	for char in stream:
+		if char in illegal:
+			raise errors.ReadError ("Illegal character U-%04X." % ord (char))
 		if escaped:
 			if char in ESCAPES:
 				yield ESCAPES[char]
@@ -330,9 +345,10 @@ def unicode_autodetect_encoding (bytes):
 		return bytes
 		
 	header = [((ord (b) and 1) or 0) for b in bytes[:4]]
-	def struct_decode (format):
+	def struct_decode (format, offset = 0):
 		"""Helper for decoding UTF-32."""
-		codes = struct.unpack (format % (len (bytes) / 4), bytes)
+		_bytes = bytes[offset:]
+		codes = struct.unpack (format % (len (_bytes) / 4), _bytes)
 		return u''.join (safe_unichr (code) for code in codes)
 		
 	# UTF-32 codecs are not available
@@ -341,10 +357,22 @@ def unicode_autodetect_encoding (bytes):
 	if header == [1, 0, 0, 0]:
 		return struct_decode ('<%dl')
 	if header[:2] == [0, 1]:
-		return unicode (bytes, 'utf-16-be')
+		return bytes.decode ('utf-16-be')
 	if header[:2] == [1, 0]:
-		return unicode (bytes, 'utf-16-le')
-	return unicode (bytes, 'utf-8')
+		return bytes.decode ('utf-16-le')
+		
+	# Check for a BOM
+	if bytes[:4] == '\x00\x00\xfe\xff':
+		return struct_decode ('>%dl', 4)
+	if bytes[:4] == '\xff\xfe\x00\x00':
+		return struct_decode ('<%dl', 4)
+	if bytes[:2] == '\xfe\xff':
+		return bytes[2:].decode ('utf-16-be')
+	if bytes[:2] == '\xff\xfe':
+		return bytes[2:].decode ('utf-16-le')
+		
+	# Default to UTF-8
+	return bytes.decode ('utf-8')
 	
 def read (string, **kwargs):
 	"""Parse a JSON expression into a Python value.
@@ -359,5 +387,8 @@ def read (string, **kwargs):
 			from _reader import _read
 		except ImportError:
 			pass
-	return _read (unicode_autodetect_encoding (string))
+	value = _read (unicode_autodetect_encoding (string))
+	if not isinstance (value, (dict, list)):
+		raise errors.ReadError ("Tried to deserialize a basic value.")
+	return value
 	

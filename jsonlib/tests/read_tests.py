@@ -4,6 +4,7 @@
 import codecs
 from decimal import Decimal
 import unittest
+import functools
 from .. import read, errors
 
 class TestCase (unittest.TestCase):
@@ -28,15 +29,23 @@ class MiscTests (TestCase):
 		self.e ('', errors.ReadError, "No expression found.")
 		self.e (' ', errors.ReadError, "No expression found.")
 		
+	def test_fail_on_invalid_whitespace (self):
+		self.assertRaises (errors.ReadError, read, u'[\u000B]')
+		self.assertRaises (errors.ReadError, read, u'[\u000D]')
+		self.assertRaises (errors.ReadError, read, u'[\u00A0]')
+		self.assertRaises (errors.ReadError, read, u'[\u2002]')
+		self.assertRaises (errors.ReadError, read, u'[\u2028]')
+		self.assertRaises (errors.ReadError, read, u'[\u2029]')
+		
 class ReadKeywordTests (TestCase):
 	def test_null (self):
-		self.r ('null', None)
+		self.r ('[null]', [None])
 		
 	def test_true (self):
-		self.r ('true', True)
+		self.r ('[true]', [True])
 		
 	def test_false (self):
-		self.r ('false', False)
+		self.r ('[false]', [False])
 		
 	def test_invalid_keyword (self):
 		self.e ('n', errors.ReadError, "Unexpected \"n\".")
@@ -45,10 +54,10 @@ class ReadKeywordTests (TestCase):
 		
 class ReadNumberTests (TestCase):
 	def test_zero (self):
-		self.r ('0', 0L)
+		self.r ('[0]', [0L])
 		
 	def test_negative_zero (self):
-		self.r ('-0', 0L)
+		self.r ('[-0]', [0L])
 		
 	def test_two_zeroes_error (self):
 		self.e ('00', errors.LeadingZeroError, "Number with leading zero.")
@@ -60,104 +69,115 @@ class ReadNumberTests (TestCase):
 		
 	def test_int (self):
 		for ii in range (10):
-			self.r ('%d' % ii, long (ii))
-			self.r ('-%d' % ii, long (-ii))
+			self.r ('[%d]' % ii, [long (ii)])
+			self.r ('[-%d]' % ii, [long (-ii)])
 			
 	def test_decimal (self):
-		self.r ('1.2345', Decimal ('1.2345'))
+		self.r ('[1.2345]', [Decimal ('1.2345')])
 		
 	def test_negative_decimal (self):
-		self.r ('-1.2345', Decimal ('-1.2345'))
+		self.r ('[-1.2345]', [Decimal ('-1.2345')])
 		
 	def test_zero_after_decimal (self):
-		self.r ('0.01', Decimal ('0.01'))
+		self.r ('[0.01]', [Decimal ('0.01')])
 		
 	def test_exponent (self):
-		self.r ('1e2', Decimal ('100.0'))
-		self.r ('10e2', Decimal ('1000.0'))
+		self.r ('[1e2]', [Decimal ('100.0')])
+		self.r ('[10e2]', [Decimal ('1000.0')])
+		
+	def test_exponent_plus (self):
+		self.r ('[1e+2]', [Decimal ('100.0')])
+		self.r ('[10e+2]', [Decimal ('1000.0')])
 		
 	def test_negative_exponent (self):
-		self.r ('1e-2', Decimal ('0.01'))
-		self.r ('10e-2', Decimal ('0.1'))
+		self.r ('[1e-2]', [Decimal ('0.01')])
+		self.r ('[10e-2]', [Decimal ('0.1')])
 		
 	def test_decimal_exponent (self):
-		self.r ('10.5e2', Decimal ('1050.0'))
+		self.r ('[10.5e2]', [Decimal ('1050.0')])
 		
 	def test_negative_decimal_exponent (self):
-		self.r ('10.5e-2', Decimal ('0.105'))
+		self.r ('[10.5e-2]', [Decimal ('0.105')])
 		
 	def test_invalid_number (self):
 		self.e ('-.', errors.ReadError, "Invalid number starting at position 0.")
+		self.e ('0.', errors.ReadError, "Invalid number starting at position 0.")
 		
 	def test_no_plus_sign (self):
 		self.e ('+1', errors.ReadError, "Unexpected \"+\".")
 		
 	def test_non_ascii_number (self):
 		self.fail ("No unicode support in errors from _reader yet.")
-		self.e (u'\u0661', errors.ReadError, "Unexpected U+0661.")
+		self.e (u'[\u0661]', errors.ReadError, "Unexpected U+0661.")
 		
 class ReadStringTests (TestCase):
 	def test_empty_string (self):
-		self.r ('""', u'')
+		self.r ('[""]', [u''])
 		
 	def test_basic_string (self):
-		self.r ('"test"', u'test')
+		self.r ('["test"]', [u'test'])
 		
 	def test_unescape_quote (self):
-		self.r (r'"\""', u'"')
+		self.r ('["\\""]', [u'"'])
 		
 	def test_unescape_reverse_solidus (self):
-		self.r (r'"\\"', u'\\')
+		self.r ('["\\\\"]', [u'\\'])
 		
 	def test_unescape_solidus (self):
-		self.r (r'"\/"', u'/')
+		self.r ('["\\/"]', [u'/'])
 		
 	def test_unescape_backspace (self):
-		self.r (r'"\b"', u'\b')
+		self.r ('["\\b"]', [u'\b'])
 		
 	def test_unescape_form_feed (self):
-		self.r (r'"\f"', u'\f')
+		self.r ('["\\f"]', [u'\f'])
 		
 	def test_unescape_line_feed (self):
-		self.r (r'"\n"', u'\n')
+		self.r ('["\\n"]', [u'\n'])
 		
 	def test_unescape_carriage_return (self):
-		self.r (r'"\r"', u'\r')
+		self.r ('["\\r"]', [u'\r'])
 		
 	def test_unescape_tab (self):
-		self.r (r'"\t"', u'\t')
+		self.r ('["\\t"]', [u'\t'])
 		
 	def test_string_with_whitespace (self):
-		self.r ('" \\" "', u" \" ")
+		self.r ('[" \\" "]', [u" \" "])
 		
 	def test_unescape_single_unicode (self):
-		self.r (r'"\u005C"', u'\\')
-		self.r (r'"\u005c"', u'\\')
+		self.r ('["\\u005C"]', [u'\\'])
+		self.r ('["\\u005c"]', [u'\\'])
 		
 	def test_unescape_double_unicode (self):
-		self.r (r'"\uD834\uDD1E"', u'\U0001d11e')
-		self.r (r'"\ud834\udd1e"', u'\U0001d11e')
+		self.r ('["\\uD834\\uDD1E"]', [u'\U0001d11e'])
+		self.r ('["\\ud834\\udd1e"]', [u'\U0001d11e'])
 		
 	def test_unescape_unicode_followed_by_normal (self):
-		self.r (r'"\u00e9a"', u'\u00e9a')
+		self.r ('["\\u00e9a"]', [u'\u00e9a'])
 		
 	def test_end_of_stream (self):
-		self.assertRaises (errors.ReadError, read, r'"\uD834\u"')
+		self.assertRaises (errors.ReadError, read, '["\\uD834\\u"]')
 		
 	def test_missing_surrogate (self):
-		self.assertRaises (errors.MissingSurrogateError, read, r'"\uD834"')
-		self.assertRaises (errors.MissingSurrogateError, read, r'"\uD834\u"')
-		self.assertRaises (errors.MissingSurrogateError, read, r'"\uD834testing"')
+		self.assertRaises (errors.MissingSurrogateError, read, '["\\uD834"]')
+		self.assertRaises (errors.MissingSurrogateError, read, '["\\uD834\\u"]')
+		self.assertRaises (errors.MissingSurrogateError, read, '["\\uD834testing"]')
 		
 	def test_direct_unicode (self):
-		self.r (u'"\U0001d11e"', u'\U0001d11e')
+		self.r (u'["\U0001d11e"]', [u'\U0001d11e'])
 		
 	def test_bmp_unicode (self):
-		self.r (u'"\u24CA"'.encode ('utf-8'), u'\u24CA')
+		self.r (u'["\u24CA"]'.encode ('utf-8'), [u'\u24CA'])
 		
 	def test_astral_unicode (self):
-		self.r (u'"\U0001d11e"'.encode ('utf-8'), u'\U0001d11e')
+		self.r (u'["\U0001d11e"]'.encode ('utf-8'), [u'\U0001d11e'])
 		
+	def test_invalid_characters (self):
+		ar = functools.partial (self.assertRaises, errors.ReadError,
+		                        read)
+		for char in map (unichr, range (0x20)):
+			ar (u'"%s"' % char)
+			
 class ReadArrayTests (TestCase):
 	def test_empty_array (self):
 		self.r ('[]', [])
@@ -206,40 +226,106 @@ class ReadObjectTests (TestCase):
 		self.assertRaises (errors.ReadError, read, '{"a": 1 "b": 2}')
 		
 class UnicodeEncodingDetectionTests (TestCase):
-	def de (self, encoding):
+	def de (self, encoding, bom = ''):
 		def read_encoded (string, expected):
-			self.r (string.encode (encoding), expected)
+			self.r (bom + string.encode (encoding), expected)
 			
 		# Test various string lengths
-		read_encoded (u'1', 1L)
-		read_encoded (u'12', 12L)
-		read_encoded (u'123', 123L)
-		read_encoded (u'1234', 1234L)
-		read_encoded (u'12345', 12345L)
+		read_encoded (u'[1]', [1L])
+		read_encoded (u'[12]', [12L])
+		read_encoded (u'[123]', [123L])
+		read_encoded (u'[1234]', [1234L])
+		read_encoded (u'[12345]', [12345L])
 		
 	def test_utf32_be (self):
-		# u'"testing"'
-		s = '\x00\x00\x00"\x00\x00\x00t\x00\x00\x00e\x00\x00\x00s\x00\x00\x00t\x00\x00\x00i\x00\x00\x00n\x00\x00\x00g\x00\x00\x00"'
-		self.r (s, u'testing')
+		# u'["testing"]'
+		s = ('\x00\x00\x00['
+		     '\x00\x00\x00"'
+		     '\x00\x00\x00t'
+		     '\x00\x00\x00e'
+		     '\x00\x00\x00s'
+		     '\x00\x00\x00t'
+		     '\x00\x00\x00i'
+		     '\x00\x00\x00n'
+		     '\x00\x00\x00g'
+		     '\x00\x00\x00"'
+		     '\x00\x00\x00]')
+		self.r (s, [u'testing'])
+		
+	def test_utf32_be_bom (self):
+		# u'["testing"]'
+		s = ('\x00\x00\xfe\xff'
+		     '\x00\x00\x00['
+		     '\x00\x00\x00"'
+		     '\x00\x00\x00t'
+		     '\x00\x00\x00e'
+		     '\x00\x00\x00s'
+		     '\x00\x00\x00t'
+		     '\x00\x00\x00i'
+		     '\x00\x00\x00n'
+		     '\x00\x00\x00g'
+		     '\x00\x00\x00"'
+		     '\x00\x00\x00]')
+		self.r (s, [u'testing'])
 		
 	def test_utf32_le (self):
-		# u'"testing"'
-		s = '"\x00\x00\x00t\x00\x00\x00e\x00\x00\x00s\x00\x00\x00t\x00\x00\x00i\x00\x00\x00n\x00\x00\x00g\x00\x00\x00"\x00\x00\x00'
-		self.r (s, u'testing')
+		# u'["testing"]'
+		s = ('[\x00\x00\x00'
+		     '"\x00\x00\x00'
+		     't\x00\x00\x00'
+		     'e\x00\x00\x00'
+		     's\x00\x00\x00'
+		     't\x00\x00\x00'
+		     'i\x00\x00\x00'
+		     'n\x00\x00\x00'
+		     'g\x00\x00\x00'
+		     '"\x00\x00\x00'
+		     ']\x00\x00\x00')
+		self.r (s, [u'testing'])
+		
+	def test_utf32_le_bom (self):
+		# u'["testing"]'
+		s = ('\xff\xfe\x00\x00'
+		     '[\x00\x00\x00'
+		     '"\x00\x00\x00'
+		     't\x00\x00\x00'
+		     'e\x00\x00\x00'
+		     's\x00\x00\x00'
+		     't\x00\x00\x00'
+		     'i\x00\x00\x00'
+		     'n\x00\x00\x00'
+		     'g\x00\x00\x00'
+		     '"\x00\x00\x00'
+		     ']\x00\x00\x00')
+		self.r (s, [u'testing'])
 		
 	def test_utf32_be_astral (self):
-		s = '\x00\x00\x00"\x00\x01\xd1\x1e\x00\x00\x00"'
-		self.r (s, u'\U0001d11e')
+		s = ('\x00\x00\x00['
+		     '\x00\x00\x00"'
+		     '\x00\x01\xd1\x1e'
+		     '\x00\x00\x00"'
+		     '\x00\x00\x00]')
+		self.r (s, [u'\U0001d11e'])
 		
 	def test_utf32_le_astral (self):
-		s = '"\x00\x00\x00\x1e\xd1\x01\x00"\x00\x00\x00'
-		self.r (s, u'\U0001d11e')
+		s = ('[\x00\x00\x00'
+		     '"\x00\x00\x00'
+		     '\x1e\xd1\x01\x00'
+		     '"\x00\x00\x00'
+		     ']\x00\x00\x00')
+		self.r (s, [u'\U0001d11e'])
 		
 	def test_utf16_be (self):
 		self.de ('utf-16-be')
 		
+	def test_utf16_be_bom (self):
+		self.de ('utf-16-be', '\xfe\xff')
+		
 	def test_utf16_le (self):
 		self.de ('utf-16-le')
+		
+	def test_utf16_le_bom (self):
+		self.de ('utf-16-le', '\xff\xfe')
 		
 	def test_utf8 (self):
 		self.de ('utf-8')

@@ -63,7 +63,16 @@ static PyObject *_Decimal;
 static void
 skip_spaces (ParserState *state)
 {
-	while (state->index && Py_UNICODE_ISSPACE (*state->index))
+	/* Don't use Py_UNICODE_ISSPACE, because it returns TRUE for
+	 * codepoints that are not valid JSON whitespace.
+	**/
+	Py_UNICODE c;
+	while ((c = (*state->index)) && (
+		c == 0x0009 ||
+		c == 0x0020 ||
+		c == 0x000A ||
+		c == 0x000C
+	))
 		state->index++;
 }
 
@@ -241,6 +250,15 @@ read_string (ParserState *state)
 			return NULL;
 		}
 		
+		/* Check for illegal characters */
+		if (c < 0x20)
+		{
+			PyErr_Format (ReadError,
+			              "Illegal character at position " PY_SSIZE_T_F,
+			              (Py_ssize_t) (state->index - state->start));
+			return NULL;
+		}
+		
 		if (escaped)
 		{
 			/* Invalid escape codes will be caught
@@ -343,7 +361,7 @@ read_string (ParserState *state)
 static PyObject *
 read_number (ParserState *state)
 {
-	PyObject *object;
+	PyObject *object = NULL;
 	int is_float = FALSE, should_stop = FALSE, got_digit = FALSE,
 	    leading_zero = FALSE, has_exponent = FALSE;
 	Py_UNICODE *ptr, c;
@@ -382,6 +400,7 @@ read_number (ParserState *state)
 			got_digit = TRUE;
 			break;
 		case '-':
+		case '+':
 			break;
 		case 'e':
 		case 'E':
@@ -389,6 +408,7 @@ read_number (ParserState *state)
 			break;
 		case '.':
 			is_float = TRUE;
+			got_digit = FALSE;
 			break;
 		default:
 			should_stop = TRUE;
@@ -399,23 +419,26 @@ read_number (ParserState *state)
 		ptr++;
 	}
 	
-	if (is_float || has_exponent)
+	if (got_digit)
 	{
-		PyObject *str, *unicode;
-		if (!(unicode = PyUnicode_FromUnicode (state->index,
-		                                      ptr - state->index)))
-			return NULL;
-		str = PyUnicode_AsUTF8String (unicode);
-		Py_DECREF (unicode);
-		if (!str) return NULL;
-		object = Decimal (str);
-		Py_DECREF (str);
-	}
-	
-	else
-	{
-		object = PyLong_FromUnicode (state->index,
-		                             ptr - state->index, 10);
+		if (is_float || has_exponent)
+		{
+			PyObject *str, *unicode;
+			if (!(unicode = PyUnicode_FromUnicode (state->index,
+			                                      ptr - state->index)))
+				return NULL;
+			str = PyUnicode_AsUTF8String (unicode);
+			Py_DECREF (unicode);
+			if (!str) return NULL;
+			object = Decimal (str);
+			Py_DECREF (str);
+		}
+		
+		else
+		{
+			object = PyLong_FromUnicode (state->index,
+			                             ptr - state->index, 10);
+		}
 	}
 	
 	if (object == NULL)
