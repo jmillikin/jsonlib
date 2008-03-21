@@ -206,9 +206,9 @@ class ReadObjectTests (TestCase):
 		self.assertRaises (errors.ReadError, read, '{"a": 1 "b": 2}')
 		
 class UnicodeEncodingDetectionTests (TestCase):
-	def de (self, encoding):
+	def de (self, encoding, bom = ''):
 		def read_encoded (string, expected):
-			self.r (string.encode (encoding), expected)
+			self.r (bom + string.encode (encoding), expected)
 			
 		# Test various string lengths
 		read_encoded (u'1', 1L)
@@ -222,9 +222,19 @@ class UnicodeEncodingDetectionTests (TestCase):
 		s = '\x00\x00\x00"\x00\x00\x00t\x00\x00\x00e\x00\x00\x00s\x00\x00\x00t\x00\x00\x00i\x00\x00\x00n\x00\x00\x00g\x00\x00\x00"'
 		self.r (s, u'testing')
 		
+	def test_utf32_be_bom (self):
+		# u'"testing"'
+		s = '\x00\x00\xfe\xff\x00\x00\x00"\x00\x00\x00t\x00\x00\x00e\x00\x00\x00s\x00\x00\x00t\x00\x00\x00i\x00\x00\x00n\x00\x00\x00g\x00\x00\x00"'
+		self.r (s, u'testing')
+		
 	def test_utf32_le (self):
 		# u'"testing"'
 		s = '"\x00\x00\x00t\x00\x00\x00e\x00\x00\x00s\x00\x00\x00t\x00\x00\x00i\x00\x00\x00n\x00\x00\x00g\x00\x00\x00"\x00\x00\x00'
+		self.r (s, u'testing')
+		
+	def test_utf32_le_bom (self):
+		# u'"testing"'
+		s = '\xff\xfe\x00\x00"\x00\x00\x00t\x00\x00\x00e\x00\x00\x00s\x00\x00\x00t\x00\x00\x00i\x00\x00\x00n\x00\x00\x00g\x00\x00\x00"\x00\x00\x00'
 		self.r (s, u'testing')
 		
 	def test_utf32_be_astral (self):
@@ -238,8 +248,14 @@ class UnicodeEncodingDetectionTests (TestCase):
 	def test_utf16_be (self):
 		self.de ('utf-16-be')
 		
+	def test_utf16_be_bom (self):
+		self.de ('utf-16-be', '\xfe\xff')
+		
 	def test_utf16_le (self):
 		self.de ('utf-16-le')
+		
+	def test_utf16_le_bom (self):
+		self.de ('utf-16-le', '\xff\xfe')
 		
 	def test_utf8 (self):
 		self.de ('utf-8')

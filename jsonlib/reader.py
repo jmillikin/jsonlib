@@ -333,9 +333,10 @@ def unicode_autodetect_encoding (bytes):
 		return bytes
 		
 	header = [((ord (b) and 1) or 0) for b in bytes[:4]]
-	def struct_decode (format):
+	def struct_decode (format, offset = 0):
 		"""Helper for decoding UTF-32."""
-		codes = struct.unpack (format % (len (bytes) / 4), bytes)
+		_bytes = bytes[offset:]
+		codes = struct.unpack (format % (len (_bytes) / 4), _bytes)
 		return u''.join (safe_unichr (code) for code in codes)
 		
 	# UTF-32 codecs are not available
@@ -344,10 +345,22 @@ def unicode_autodetect_encoding (bytes):
 	if header == [1, 0, 0, 0]:
 		return struct_decode ('<%dl')
 	if header[:2] == [0, 1]:
-		return unicode (bytes, 'utf-16-be')
+		return bytes.decode ('utf-16-be')
 	if header[:2] == [1, 0]:
-		return unicode (bytes, 'utf-16-le')
-	return unicode (bytes, 'utf-8')
+		return bytes.decode ('utf-16-le')
+		
+	# Check for a BOM
+	if bytes[:4] == '\x00\x00\xfe\xff':
+		return struct_decode ('>%dl', 4)
+	if bytes[:4] == '\xff\xfe\x00\x00':
+		return struct_decode ('<%dl', 4)
+	if bytes[:2] == '\xfe\xff':
+		return bytes[2:].decode ('utf-16-be')
+	if bytes[:2] == '\xff\xfe':
+		return bytes[2:].decode ('utf-16-le')
+		
+	# Default to UTF-8
+	return bytes.decode ('utf-8')
 	
 def read (string, **kwargs):
 	"""Parse a JSON expression into a Python value.
