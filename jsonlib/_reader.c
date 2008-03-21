@@ -240,6 +240,15 @@ read_string (ParserState *state)
 			return NULL;
 		}
 		
+		/* Check for illegal characters */
+		if (c < 0x20)
+		{
+			PyErr_Format (ReadError,
+			              "Illegal character at position " PY_SSIZE_T_F,
+			              (Py_ssize_t) (state->index - state->start));
+			return NULL;
+		}
+		
 		if (escaped)
 		{
 			/* Invalid escape codes will be caught

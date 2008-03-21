@@ -4,6 +4,7 @@
 import codecs
 from decimal import Decimal
 import unittest
+import functools
 from .. import read, errors
 
 class TestCase (unittest.TestCase):
@@ -151,6 +152,12 @@ class ReadStringTests (TestCase):
 	def test_astral_unicode (self):
 		self.r (u'"\U0001d11e"'.encode ('utf-8'), u'\U0001d11e')
 		
+	def test_invalid_characters (self):
+		ar = functools.partial (self.assertRaises, errors.ReadError,
+		                        read)
+		for char in map (unichr, range (0x20)):
+			ar (u'"%s"' % char)
+			
 class ReadArrayTests (TestCase):
 	def test_empty_array (self):
 		self.r ('[]', [])

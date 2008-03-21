@@ -138,7 +138,10 @@ def read_unichars (string):
 	"""Read unicode characters from an escaped string."""
 	escaped = False
 	stream = iter (string)
+	illegal = map (unichr, range (0x20))
 	for char in stream:
+		if char in illegal:
+			raise errors.ReadError ("Illegal character U-%04X." % ord (char))
 		if escaped:
 			if char in ESCAPES:
 				yield ESCAPES[char]
