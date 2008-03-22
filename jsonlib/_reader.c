@@ -95,14 +95,6 @@ static void
 count_row_column (Py_UNICODE *start, Py_UNICODE *pos, unsigned long *offset,
                   unsigned long *row, unsigned long *column)
 {
-	/*
-	lineno = doc.count('\n', 0, pos) + 1
-	if lineno == 1:
-		colno = pos
-	else:
-		colno = pos - doc.rindex('\n', 0, pos)
-	return lineno, colno
-	*/
 	Py_UNICODE *ptr;
 	*offset = (pos - start);
 	*row = 1;
