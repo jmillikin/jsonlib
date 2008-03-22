@@ -176,12 +176,19 @@ class ReadStringTests (TestCase):
 		self.r ('["\\u00e9a"]', [u'\u00e9a'])
 		
 	def test_end_of_stream (self):
-		self.assertRaises (errors.ReadError, read, '["\\uD834\\u"]')
+		self.e ('["test\\u"]', errors.ReadError,
+		        1, 7, 6, "Unterminated unicode escape.")
 		
 	def test_missing_surrogate (self):
-		self.assertRaises (errors.MissingSurrogateError, read, '["\\uD834"]')
-		self.assertRaises (errors.MissingSurrogateError, read, '["\\uD834\\u"]')
-		self.assertRaises (errors.MissingSurrogateError, read, '["\\uD834testing"]')
+		self.e ('["\\uD834"]', errors.MissingSurrogateError,
+		        1, 9, 8, "Missing surrogate pair half.")
+		self.e ('["\\uD834\\u"]', errors.MissingSurrogateError,
+		        1, 9, 8, "Missing surrogate pair half.")
+		self.e ('["\\uD834\\u", "hello world"]',
+		        errors.MissingSurrogateError,
+		        1, 9, 8, "Missing surrogate pair half.")
+		self.e ('["\\uD834testing"]', errors.MissingSurrogateError,
+		        1, 9, 8, "Missing surrogate pair half.")
 		
 	def test_direct_unicode (self):
 		self.r (u'["\U0001d11e"]', [u'\U0001d11e'])

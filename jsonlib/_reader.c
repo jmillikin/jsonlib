@@ -255,7 +255,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 	
 	if (remaining < 4)
 	{
-		set_error (state, ReadError, state->index,
+		set_error (state, ReadError, state->index + (*index_ptr) - 1,
 		           "Unterminated unicode escape.");
 		return FALSE;
 	}
@@ -272,7 +272,8 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 		
 		if (remaining < 10)
 		{
-			set_error (state, MissingSurrogateError, state->index,
+			set_error (state, MissingSurrogateError,
+			           state->index + (*index_ptr) + 1,
 			           "Missing surrogate pair half.");
 			return FALSE;
 		}
@@ -280,7 +281,8 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 		if (string_start[(*index_ptr)] != '\\' ||
 		    string_start[(*index_ptr) + 1] != 'u')
 		{
-			set_error (state, MissingSurrogateError, state->index,
+			set_error (state, MissingSurrogateError,
+			           state->index + (*index_ptr) + 1,
 			           "Missing surrogate pair half.");
 			return FALSE;
 		}
