@@ -588,10 +588,8 @@ read_array_impl (PyObject *list, ParserState *state)
 			PyObject *value;
 			if (array_state == ARRAY_GOT_VALUE)
 			{
-				PyErr_Format (ReadError,
-				              "Expecting comma at "
-				              "position " PY_SSIZE_T_F,
-				              (Py_ssize_t) (state->index - state->start));
+				set_error (state, ReadError, state->index,
+				           "Expecting comma.");
 				return FALSE;
 			}
 			
@@ -638,10 +636,8 @@ read_object_impl (PyObject *object, ParserState *state)
 		c = *state->index;
 		if (c == 0)
 		{
-			PyErr_Format (ReadError,
-			              "Unterminated object starting at "
-			              "position " PY_SSIZE_T_F,
-			              (Py_ssize_t) (start - state->start));
+			set_error (state, ReadError, start,
+			           "Unterminated object.");
 			return FALSE;
 		}
 		
@@ -649,10 +645,8 @@ read_object_impl (PyObject *object, ParserState *state)
 		{
 			if (object_state == OBJECT_NEED_KEY)
 			{
-				PyErr_Format (ReadError,
-				              "Expecting object property name "
-				              "at position " PY_SSIZE_T_F,
-				              (Py_ssize_t) (state->index - state->start));
+				set_error (state, BadObjectKeyError, state->index,
+				           "Expecting property name.");
 				return FALSE;
 			}
 			state->index++;
@@ -663,10 +657,8 @@ read_object_impl (PyObject *object, ParserState *state)
 		{
 			if (object_state != OBJECT_GOT_VALUE)
 			{
-				PyErr_Format (ReadError,
-				              "Expecting object property name "
-				              "at position " PY_SSIZE_T_F,
-				              (Py_ssize_t) (state->index - state->start));
+				set_error (state, BadObjectKeyError, state->index,
+				           "Expecting property name.");
 				return FALSE;
 			}
 			object_state = OBJECT_NEED_KEY;
@@ -680,10 +672,8 @@ read_object_impl (PyObject *object, ParserState *state)
 			
 			if (object_state == OBJECT_GOT_VALUE)
 			{
-				PyErr_Format (ReadError,
-				              "Expecting comma at "
-				              "position " PY_SSIZE_T_F,
-				              (Py_ssize_t) (state->index - state->start));
+				set_error (state, ReadError, state->index,
+				           "Expecting comma.");
 				return FALSE;
 			}
 			
@@ -693,10 +683,9 @@ read_object_impl (PyObject *object, ParserState *state)
 			skip_spaces (state);
 			if (*state->index != ':')
 			{
-				PyErr_Format (ReadError,
-				              "Missing colon after object "
-				              "property name at position " PY_SSIZE_T_F,
-				              (Py_ssize_t) (state->index - state->start));
+				set_error (state, ReadError, state->index,
+				           "Expected colon after object"
+				           " property name.");
 				Py_DECREF (key);
 				return FALSE;
 			}
@@ -721,10 +710,8 @@ read_object_impl (PyObject *object, ParserState *state)
 		
 		else
 		{
-			PyErr_Format (BadObjectKeyError,
-			              "Expecting property name in "
-			              "object at position " PY_SSIZE_T_F,
-			              (Py_ssize_t) (state->index - state->start));
+			set_error (state, BadObjectKeyError, state->index,
+			           "Expecting property name.");
 			return FALSE;
 		}
 	}

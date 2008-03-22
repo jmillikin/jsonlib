@@ -16,10 +16,8 @@ class UnknownAtomError (ReadError):
 	pass
 	
 class BadObjectKeyError (ReadError):
-	def __init__ (self, token):
-		msg = '%r is not a valid object key'
-		super (BadObjectKeyError, self).__init__ (msg % (token,))
-		
+	pass
+	
 class MissingSurrogateError (ReadError):
 	def __init__ (self, first_half):
 		if isinstance (first_half, (str, unicode)):

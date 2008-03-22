@@ -27,6 +27,7 @@ class TestCase (unittest.TestCase):
 			read (string, __speedboost = True)
 			self.fail ("No exception raised.")
 		except expected_error_type, error:
+			self.assertEqual (type (error), expected_error_type)
 			self.assertEqual (unicode (error), full_expected)
 			
 class MiscTests (TestCase):
@@ -222,7 +223,8 @@ class ReadArrayTests (TestCase):
 		self.r ('[1, "b", ["c", "d"]]', [1L, "b", ["c", "d"]])
 		
 	def test_failure_missing_comma (self):
-		self.assertRaises (errors.ReadError, read, '[1 2]')
+		self.e ('[1 2]', errors.ReadError, 1, 4, 3,
+		        "Expecting comma.")
 		
 class ReadObjectTests (TestCase):
 	def test_empty_object (self):
@@ -242,15 +244,25 @@ class ReadObjectTests (TestCase):
 		self.r ('{"a": 1, "b": {"c": "2"}}',
 		        {"a": 1L, "b": {"c": "2"}})
 		
+	def test_failure_unterminated (self):
+		self.e ('[[], {"a": 1', errors.ReadError, 1, 6, 5,
+		        "Unterminated object.")
+		
 	def test_failure_no_colon (self):
-		self.assertRaises (errors.ReadError, read, '{"a"}')
+		self.e ('{"a"}', errors.ReadError, 1, 5, 4,
+		        "Expected colon after object property name.")
 		
 	def test_failure_invalid_key (self):
-		self.assertRaises (errors.BadObjectKeyError, read,
-		                   '{1: 2}')
+		self.e ('{1: 2}', errors.BadObjectKeyError, 1, 2, 1,
+		        "Expecting property name.")
+		self.e ('{"a": 1,}', errors.BadObjectKeyError, 1, 9, 8,
+		        "Expecting property name.")
+		self.e ('{,}', errors.BadObjectKeyError, 1, 2, 1,
+		        "Expecting property name.")
 		
 	def test_failure_missing_comma (self):
-		self.assertRaises (errors.ReadError, read, '{"a": 1 "b": 2}')
+		self.e ('{"a": 1 "b": 2}', errors.ReadError, 1, 9, 8,
+		        "Expecting comma.")
 		
 class UnicodeEncodingDetectionTests (TestCase):
 	def de (self, encoding, bom = ''):
