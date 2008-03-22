@@ -77,12 +77,12 @@ skip_spaces (ParserState *state)
 }
 
 static unsigned long
-next_ucs4_unichar (ParserState *state)
+next_ucs4_unichar (ParserState *state, Py_UNICODE *index)
 {
-	unsigned long value = state->index[0];
+	unsigned long value = index[0];
 	if (value >= 0xD800)
 	{
-		unsigned long upper = value, lower = state->index[1];
+		unsigned long upper = value, lower = index[1];
 		
 		if (lower)
 		{
@@ -122,13 +122,13 @@ count_row_column (Py_UNICODE *start, Py_UNICODE *pos, unsigned long *offset,
 }
 
 static void
-set_error_unexpected (ParserState *state)
+set_error_unexpected (ParserState *state, Py_UNICODE *position)
 {
 	PyObject *err_str, *err_str_tmpl, *err_format_args;
-	unsigned long c = next_ucs4_unichar (state);
+	unsigned long c = next_ucs4_unichar (state, position);
 	unsigned long row, column, char_offset;
 	
-	count_row_column (state->start, state->index, &char_offset,
+	count_row_column (state->start, position, &char_offset,
 	                  &row, &column);
 	
 	if (c > 0xFFFF)
@@ -224,7 +224,7 @@ read_keyword (ParserState *state)
 	if ((retval = keyword_compare (state, "false", Py_False)))
 		return retval;
 	
-	set_error_unexpected (state);
+	set_error_unexpected (state, state->index);
 	return NULL;
 }
 
@@ -340,7 +340,7 @@ read_string (ParserState *state)
 		/* Check for illegal characters */
 		if (c < 0x20)
 		{
-			set_error_unexpected (state);
+			set_error_unexpected (state, start + ii);
 			return NULL;
 		}
 		
@@ -408,10 +408,7 @@ read_string (ParserState *state)
 				
 				default:
 				{
-					PyErr_Format (ReadError,
-					              "Illegal escape code '" PY_UNICODE_F "' at position " PY_SSIZE_T_F,
-					              c, (Py_ssize_t) (start - state->start) + ii);
-					
+					set_error (state, ReadError, start + ii - 1, "Unknown escape code.");
 					PyMem_Free (buffer);
 					return NULL;
 				}
@@ -764,7 +761,7 @@ json_read (ParserState *state)
 		case '9':
 			return read_number (state);
 		default:
-			set_error_unexpected (state);
+			set_error_unexpected (state, state->index);
 			return NULL;
 	}
 }
@@ -791,10 +788,8 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 		skip_spaces (&state);
 		if (state.index < state.end)
 		{
-			PyErr_Format (ReadError,
-			              "Extra data after JSON expression "
-			              "at position " PY_SSIZE_T_F,
-			              (Py_ssize_t) (state.index - state.start));
+			set_error (&state, ReadError, state.index,
+			           "Extra data after JSON expression.");
 			Py_DECREF (result);
 			result = NULL;
 		}
@@ -840,4 +835,3 @@ init_reader (void)
 	if (!(_Decimal = PyObject_GetAttrString (decimal_module, "Decimal")))
 		return;
 }
-

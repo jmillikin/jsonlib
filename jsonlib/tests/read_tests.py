@@ -59,6 +59,10 @@ class MiscTests (TestCase):
 		self.e (u'[\U0001d11e]', errors.ReadError, 1, 2, 1,
 		        "Unexpected U+0001D11E.")
 		
+	def test_extra_data (self):
+		self.e ('[][]', errors.ReadError, 1, 3, 2,
+		        "Extra data after JSON expression.")
+		
 class ReadKeywordTests (TestCase):
 	def test_null (self):
 		self.r ('[null]', [None])
@@ -191,6 +195,10 @@ class ReadStringTests (TestCase):
 		self.e ('["\\uD834testing"]', errors.MissingSurrogateError,
 		        1, 9, 8, "Missing surrogate pair half.")
 		
+	def test_invalid_escape (self):
+		self.e (u'["\\a"]', errors.ReadError, 1, 3, 2,
+		        "Unknown escape code.")
+		
 	def test_direct_unicode (self):
 		self.r (u'["\U0001d11e"]', [u'\U0001d11e'])
 		
@@ -201,11 +209,13 @@ class ReadStringTests (TestCase):
 		self.r (u'["\U0001d11e"]'.encode ('utf-8'), [u'\U0001d11e'])
 		
 	def test_invalid_characters (self):
-		ar = functools.partial (self.assertRaises, errors.ReadError,
-		                        read)
-		for char in map (unichr, range (0x20)):
-			ar (u'"%s"' % char)
-			
+		self.e (u'["\u0001"]', errors.ReadError, 1, 3, 2,
+		        "Unexpected U+0001.")
+		self.e (u'["\u0002"]', errors.ReadError, 1, 3, 2,
+		        "Unexpected U+0002.")
+		self.e (u'["\u001F"]', errors.ReadError, 1, 3, 2,
+		        "Unexpected U+001F.")
+		
 class ReadArrayTests (TestCase):
 	def test_empty_array (self):
 		self.r ('[]', [])
