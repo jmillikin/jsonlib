@@ -55,9 +55,6 @@ static PyObject *read_object (ParserState *state);
 static PyObject *json_read (ParserState *state);
 
 static PyObject *ReadError;
-static PyObject *LeadingZeroError;
-static PyObject *BadObjectKeyError;
-static PyObject *MissingSurrogateError;
 static PyObject *_Decimal;
 
 static void
@@ -145,8 +142,7 @@ set_error_unexpected (ParserState *state, Py_UNICODE *position)
 }
 
 static void
-set_error (ParserState *state, PyObject *error, Py_UNICODE *position,
-           const char *description)
+set_error (ParserState *state, Py_UNICODE *position, const char *description)
 {
 	const char *tmpl = "JSON parsing error at line %d, column %d"
 	                   " (position %d): %s";
@@ -162,7 +158,7 @@ set_error (ParserState *state, PyObject *error, Py_UNICODE *position,
 	err_str = PyString_Format (err_str_tmpl, err_format_args);
 	Py_DECREF (err_str_tmpl);
 	Py_DECREF (err_format_args);
-	PyErr_SetObject (error, err_str);
+	PyErr_SetObject (ReadError, err_str);
 	Py_DECREF (err_str);
 }
 
@@ -255,7 +251,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 	
 	if (remaining < 4)
 	{
-		set_error (state, ReadError, state->index + (*index_ptr) - 1,
+		set_error (state, state->index + (*index_ptr) - 1,
 		           "Unterminated unicode escape.");
 		return FALSE;
 	}
@@ -272,8 +268,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 		
 		if (remaining < 10)
 		{
-			set_error (state, MissingSurrogateError,
-			           state->index + (*index_ptr) + 1,
+			set_error (state, state->index + (*index_ptr) + 1,
 			           "Missing surrogate pair half.");
 			return FALSE;
 		}
@@ -281,8 +276,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 		if (string_start[(*index_ptr)] != '\\' ||
 		    string_start[(*index_ptr) + 1] != 'u')
 		{
-			set_error (state, MissingSurrogateError,
-			           state->index + (*index_ptr) + 1,
+			set_error (state, state->index + (*index_ptr) + 1,
 			           "Missing surrogate pair half.");
 			return FALSE;
 		}
@@ -332,7 +326,7 @@ read_string (ParserState *state)
 		c = start[ii];
 		if (c == 0)
 		{
-			set_error (state, ReadError, state->index,
+			set_error (state, state->index,
 			           "Unterminated string.");
 			return NULL;
 		}
@@ -408,7 +402,8 @@ read_string (ParserState *state)
 				
 				default:
 				{
-					set_error (state, ReadError, start + ii - 1, "Unknown escape code.");
+					set_error (state, start + ii - 1,
+					           "Unknown escape code.");
 					PyMem_Free (buffer);
 					return NULL;
 				}
@@ -460,8 +455,7 @@ read_number (ParserState *state)
 			}
 			else if (leading_zero && !is_float)
 			{
-				set_error (state, LeadingZeroError,
-				           state->index,
+				set_error (state, state->index,
 				           "Number with leading zero.");
 				return NULL;
 			}
@@ -478,8 +472,7 @@ read_number (ParserState *state)
 		case '9':
 			if (leading_zero && !is_float)
 			{
-				set_error (state, LeadingZeroError,
-				           state->index,
+				set_error (state, state->index,
 				           "Number with leading zero.");
 				return NULL;
 			}
@@ -529,7 +522,7 @@ read_number (ParserState *state)
 	
 	if (object == NULL)
 	{
-		set_error (state, ReadError, state->index, "Invalid number.");
+		set_error (state, state->index, "Invalid number.");
 		return NULL;
 	}
 	
@@ -551,7 +544,7 @@ read_array_impl (PyObject *list, ParserState *state)
 		c = *state->index;
 		if (c == 0)
 		{
-			set_error (state, ReadError, state->index,
+			set_error (state, state->index,
 			           "Unterminated array.");
 			return FALSE;
 		}
@@ -560,7 +553,7 @@ read_array_impl (PyObject *list, ParserState *state)
 		{
 			if (array_state == ARRAY_NEED_VALUE)
 			{
-				set_error (state, ReadError, state->index,
+				set_error (state, state->index,
 				           "Expecting array item.");
 				return FALSE;
 			}
@@ -572,7 +565,7 @@ read_array_impl (PyObject *list, ParserState *state)
 		{
 			if (array_state != ARRAY_GOT_VALUE)
 			{
-				set_error (state, ReadError, state->index,
+				set_error (state, state->index,
 				           "Expecting array item.");
 				return FALSE;
 			}
@@ -585,7 +578,7 @@ read_array_impl (PyObject *list, ParserState *state)
 			PyObject *value;
 			if (array_state == ARRAY_GOT_VALUE)
 			{
-				set_error (state, ReadError, state->index,
+				set_error (state, state->index,
 				           "Expecting comma.");
 				return FALSE;
 			}
@@ -633,7 +626,7 @@ read_object_impl (PyObject *object, ParserState *state)
 		c = *state->index;
 		if (c == 0)
 		{
-			set_error (state, ReadError, start,
+			set_error (state, start,
 			           "Unterminated object.");
 			return FALSE;
 		}
@@ -642,7 +635,7 @@ read_object_impl (PyObject *object, ParserState *state)
 		{
 			if (object_state == OBJECT_NEED_KEY)
 			{
-				set_error (state, BadObjectKeyError, state->index,
+				set_error (state, state->index,
 				           "Expecting property name.");
 				return FALSE;
 			}
@@ -654,7 +647,7 @@ read_object_impl (PyObject *object, ParserState *state)
 		{
 			if (object_state != OBJECT_GOT_VALUE)
 			{
-				set_error (state, BadObjectKeyError, state->index,
+				set_error (state, state->index,
 				           "Expecting property name.");
 				return FALSE;
 			}
@@ -669,7 +662,7 @@ read_object_impl (PyObject *object, ParserState *state)
 			
 			if (object_state == OBJECT_GOT_VALUE)
 			{
-				set_error (state, ReadError, state->index,
+				set_error (state, state->index,
 				           "Expecting comma.");
 				return FALSE;
 			}
@@ -680,7 +673,7 @@ read_object_impl (PyObject *object, ParserState *state)
 			skip_spaces (state);
 			if (*state->index != ':')
 			{
-				set_error (state, ReadError, state->index,
+				set_error (state, state->index,
 				           "Expected colon after object"
 				           " property name.");
 				Py_DECREF (key);
@@ -707,7 +700,7 @@ read_object_impl (PyObject *object, ParserState *state)
 		
 		else
 		{
-			set_error (state, BadObjectKeyError, state->index,
+			set_error (state, state->index,
 			           "Expecting property name.");
 			return FALSE;
 		}
@@ -735,7 +728,7 @@ json_read (ParserState *state)
 	switch (*state->index)
 	{
 		case 0:
-			set_error (state, ReadError, state->start,
+			set_error (state, state->start,
 			           "No expression found.");
 			return NULL;
 		case '{':
@@ -788,7 +781,7 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 		skip_spaces (&state);
 		if (state.index < state.end)
 		{
-			set_error (&state, ReadError, state.index,
+			set_error (&state, state.index,
 			           "Extra data after JSON expression.");
 			Py_DECREF (result);
 			result = NULL;
@@ -822,12 +815,6 @@ init_reader (void)
 	if (!(errors = PyImport_ImportModule ("errors")))
 		return;
 	if (!(ReadError = PyObject_GetAttrString (errors, "ReadError")))
-		return;
-	if (!(LeadingZeroError = PyObject_GetAttrString (errors, "LeadingZeroError")))
-		return;
-	if (!(BadObjectKeyError = PyObject_GetAttrString (errors, "BadObjectKeyError")))
-		return;
-	if (!(MissingSurrogateError = PyObject_GetAttrString (errors, "MissingSurrogateError")))
 		return;
 	
 	if (!(decimal_module = PyImport_ImportModule ("decimal")))

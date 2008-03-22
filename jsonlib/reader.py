@@ -10,7 +10,7 @@ import sys
 
 from .util import memoized, chunk, KEYWORDS
 from .StateMachine import StateMachine, PUSH, POP
-from . import errors
+from .errors import ReadError
 
 __all__ = ['read']
 
@@ -100,7 +100,7 @@ def tokenize (string):
 		elif whitespace:
 			pass
 		else:
-			raise errors.ReadError ("Unknown token: %r" % unknown_token)
+			raise ReadError ("Unknown token: %r" % unknown_token)
 			
 	yield EOF ('EOF')
 	
@@ -127,10 +127,10 @@ def read_unicode_escape (stream):
 		try:
 			next_escape = get_n (2)
 			if next_escape != '\\u':
-				raise errors.MissingSurrogateError (first_half)
+				raise ReadError (first_half)
 			second_half = int (get_n (4), 16)
 		except StopIteration:
-			raise errors.MissingSurrogateError (first_half)
+			raise ReadError (first_half)
 			
 		if sys.maxunicode <= 65535:
 			# No wide character support
@@ -153,7 +153,7 @@ def read_unichars (string):
 	illegal = map (unichr, range (0x20))
 	for char in stream:
 		if char in illegal:
-			raise errors.ReadError ("Illegal character U-%04X." % ord (char))
+			raise ReadError ("Illegal character U-%04X." % ord (char))
 		if escaped:
 			if char in ESCAPES:
 				yield ESCAPES[char]
@@ -162,7 +162,7 @@ def read_unichars (string):
 				yield read_unicode_escape (stream)
 				escaped = False
 			else:
-				raise errors.InvalidEscapeCodeError (char)
+				raise ReadError (char)
 				
 		elif char == u'\\':
 			escaped = True
@@ -173,7 +173,7 @@ def parse_long (string, base = 10):
 	"""Convert a string to a long, forbidding leading zeros."""
 	if string[0] == '0':
 		if len (string) > 1:
-			raise errors.LeadingZeroError (string)
+			raise ReadError (string)
 		return 0L
 	return long (string, base)
 	
@@ -219,7 +219,7 @@ def _parse_atom_string (string):
 	if number_match:
 		return parse_number (number_match)
 		
-	raise errors.UnknownAtomError ()
+	raise ReadError ()
 	
 def parse_atom (atom):
 	"""Parse a JSON atom into a Python value."""
@@ -228,10 +228,10 @@ def parse_atom (atom):
 		# Pass in only the atom's value, so the function
 		# can be memoized
 		return _parse_atom_string (atom.value)
-	except errors.UnknownAtomError:
+	except ReadError:
 		# Errors thrown within parse_atom_string don't have
 		# the atom's value attached.
-		raise errors.UnknownAtomError (atom)
+		raise ReadError (atom)
 		
 def _py_read (string):
 	"""Parse a unicode string in JSON format into a Python value."""
@@ -257,7 +257,7 @@ def _py_read (string):
 		if isinstance (key, unicode):
 			read_item_stack[-1].append (key)
 		else:
-			raise errors.BadObjectKeyError (token)
+			raise ReadError (token)
 			
 	def on_object_end (_):
 		"""Called when an object has ended."""
@@ -309,10 +309,10 @@ def _py_read (string):
 	for token in tokenize (string):
 		try:
 			machine.transition (token.type, token)
-		except errors.ReadError:
+		except ReadError:
 			raise
 		except ValueError, error:
-			raise errors.ReadError (error.message)
+			raise ReadError (error.message)
 			
 	return read_item_stack[0][0]
 	
@@ -389,6 +389,6 @@ def read (string, **kwargs):
 			pass
 	value = _read (unicode_autodetect_encoding (string))
 	if not isinstance (value, (dict, list)):
-		raise errors.ReadError ("Tried to deserialize a basic value.")
+		raise ReadError ("Tried to deserialize a basic value.")
 	return value
 	
