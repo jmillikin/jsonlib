@@ -29,6 +29,12 @@ class TestCase (unittest.TestCase):
 		except expected_error_type, error:
 			self.assertEqual (type (error), expected_error_type)
 			self.assertEqual (unicode (error), full_expected)
+		try:
+			read (string, __speedboost = False)
+			self.fail ("No exception raised.")
+		except expected_error_type, error:
+			self.assertEqual (type (error), expected_error_type)
+			self.assertEqual (unicode (error), full_expected)
 			
 class MiscTests (TestCase):
 	def test_fail_on_empty (self):
