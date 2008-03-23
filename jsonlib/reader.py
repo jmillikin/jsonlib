@@ -219,7 +219,8 @@ def parse_number (atom, match):
 	
 	"""
 	if match.group ('frac'):
-		value = Decimal ('%s.%s' % (match.group ('int'),
+		int_part = parse_long (atom, match.group ('int'))
+		value = Decimal ('%d.%s' % (int_part,
 		                 match.group ('frac')))
 	else:
 		value = parse_long (atom, match.group ('int'))
