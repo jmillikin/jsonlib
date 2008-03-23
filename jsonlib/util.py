@@ -1,7 +1,13 @@
 # Copyright (C) 2008 John Millikin. See LICENSE.txt for details.
 # Author: John Millikin <jmillikin@gmail.com>
 
-from functools import wraps
+try:
+	from functools import wraps
+except ImportError:
+	def wraps (original):
+		def decorator (func):
+			return func
+		return decorator
 
 KEYWORDS = (('null', None), ('true', True), ('false', False))
 try:

@@ -4,8 +4,7 @@
 import codecs
 from decimal import Decimal
 import unittest
-import functools
-from .. import read, errors
+from jsonlib import read, errors
 
 class TestCase (unittest.TestCase):
 	def r (self, string, expected):
@@ -161,8 +160,9 @@ class ReadStringTests (TestCase):
 		self.r (u'["\U0001d11e"]'.encode ('utf-8'), [u'\U0001d11e'])
 		
 	def test_invalid_characters (self):
-		ar = functools.partial (self.assertRaises, errors.ReadError,
-		                        read)
+		def ar (*args, **kwargs):
+			self.assertRaises (errors.ReadError, read, *args,
+			                   **kwargs)
 		for char in map (unichr, range (0x20)):
 			ar (u'"%s"' % char)
 			

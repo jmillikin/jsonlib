@@ -8,7 +8,7 @@ import unittest
 import UserList
 import UserDict
 import UserString
-from .. import write, errors, util
+from jsonlib import write, errors, util
 
 class TestCase (unittest.TestCase):
 	def w (self, value, expected, **kwargs):
