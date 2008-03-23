@@ -266,38 +266,39 @@ def parse_atom (atom):
 	
 def _py_read (string):
 	"""Parse a unicode string in JSON format into a Python value."""
-	read_item_stack = [[]]
+	read_item_stack = [([], 0)]
 	
 	# Callbacks
 	def on_atom (atom):
 		"""Called when an atom token is retrieved."""
-		read_item_stack[-1].append (parse_atom (atom))
+		read_item_stack[-1][0].append (parse_atom (atom))
 		
-	def on_container_start (_):
+	def on_container_start (token):
 		"""Called when an array or object begins."""
-		read_item_stack.append ([])
+		read_item_stack.append (([], token.offset))
 		
 	def on_array_end (_):
 		"""Called when an array has ended."""
-		array = read_item_stack.pop ()
-		read_item_stack[-1].append (array)
+		array, _ = read_item_stack.pop ()
+		read_item_stack[-1][0].append (array)
 		
 	def on_object_key (token):
 		"""Called when an object key is retrieved."""
 		key = parse_atom (token)
 		if isinstance (key, unicode):
-			read_item_stack[-1].append (key)
+			read_item_stack[-1][0].append (key)
 		else:
 			error = format_error (token, "Expecting property name.")
 			raise ReadError (error)
 			
 	def on_object_end (_):
 		"""Called when an object has ended."""
-		pairs = read_item_stack.pop ()
-		read_item_stack[-1].append (dict (chunk (pairs, 2)))
+		pairs, _ = read_item_stack.pop ()
+		read_item_stack[-1][0].append (dict (chunk (pairs, 2)))
 		
 	def on_unterminated_object (token):
-		error = format_error (token, "Unterminated object.")
+		_, start = read_item_stack[-1]
+		error = format_error (token.full_string, start, "Unterminated object.")
 		raise ReadError (error)
 		
 	def on_expected_colon (token):
@@ -380,7 +381,7 @@ def _py_read (string):
 		except ValueError, error:
 			raise ReadError (error.message)
 			
-	return read_item_stack[0][0]
+	return read_item_stack[0][0][0]
 	
 def safe_unichr (codepoint):
 	"""Similar to unichr(), except handles narrow builds.
