@@ -91,7 +91,7 @@ def format_error (*args):
 	if line == 1:
 		column = offset + 1
 	else:
-		column = offset - string.rindex ('\n', 0, offset) + 1
+		column = offset - string.rindex ('\n', 0, offset)
 		
 	error = "JSON parsing error at line %d, column %d (position %d): %s"
 	return error % (line, column, offset, description)

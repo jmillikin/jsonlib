@@ -46,6 +46,9 @@ class MiscTests (TestCase):
 		self.e (u'[\u2028]', 1, 2, 1, "Unexpected U+2028.")
 		self.e (u'[\u2029]', 1, 2, 1, "Unexpected U+2029.")
 		
+	def test_with_two_lines (self):
+		self.e (u'\n[\u000B]', 2, 2, 2, "Unexpected U+000B.")
+		
 	def test_unexpected_character (self):
 		self.e (u'[+]', 1, 2, 1, "Unexpected U+002B.")
 		

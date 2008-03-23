@@ -107,7 +107,8 @@ count_row_column (Py_UNICODE *start, Py_UNICODE *pos, unsigned long *offset,
 	
 	/* Loop backwards to find the column */
 	while (ptr > start && *ptr != '\n') ptr--;
-	*column = (pos - ptr) + 1;
+	*column = (pos - ptr);
+	if (*row == 1) (*column)++;
 }
 
 static void
