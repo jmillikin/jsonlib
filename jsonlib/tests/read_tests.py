@@ -24,12 +24,12 @@ class TestCase (unittest.TestCase):
 		                                         expected_error_message))
 		try:
 			read (string, __speedboost = True)
-			self.fail ("No exception raised.")
+			self.fail ("No exception raised in C implementation.")
 		except errors.ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
 		try:
 			read (string, __speedboost = False)
-			self.fail ("No exception raised.")
+			self.fail ("No exception raised in Python implementation.")
 		except errors.ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
 			
