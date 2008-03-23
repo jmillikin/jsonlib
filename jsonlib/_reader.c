@@ -77,7 +77,7 @@ static unsigned long
 next_ucs4_unichar (ParserState *state, Py_UNICODE *index)
 {
 	unsigned long value = index[0];
-	if (value >= 0xD800)
+	if (value >= 0xD800 && value <= 0xDBFF)
 	{
 		unsigned long upper = value, lower = index[1];
 		
