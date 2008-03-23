@@ -124,7 +124,7 @@ def tokenize (string):
 		
 	yield EOF (string, position, 'EOF')
 	
-def read_unicode_escape (stream):
+def read_unicode_escape (atom, index, stream):
 	r"""Read a JSON-style Unicode escape.
 	
 	Unicode escapes may take one of two forms:
@@ -146,11 +146,20 @@ def read_unicode_escape (stream):
 		first_half = unicode_value
 		try:
 			next_escape = get_n (2)
-			if next_escape != '\\u':
-				raise ReadError ('[1] ' + str (first_half))
+		except StopIteration:
+			error = format_error (atom.full_string, index + 5,
+			                      "Missing surrogate pair half.")
+			raise ReadError (error)
+		if next_escape != '\\u':
+			error = format_error (atom.full_string, index + 5,
+			                      "Missing surrogate pair half.")
+			raise ReadError (error)
+		try:
 			second_half = int (get_n (4), 16)
 		except StopIteration:
-			raise ReadError ('[2] ' + str (first_half))
+			error = format_error (atom.full_string, index + 5,
+			                      "Missing surrogate pair half.")
+			raise ReadError (error)
 			
 		if sys.maxunicode <= 65535:
 			# No wide character support
@@ -182,7 +191,7 @@ def read_unichars (atom):
 				yield ESCAPES[char]
 				escaped = False
 			elif char == 'u':
-				yield read_unicode_escape (stream)
+				yield read_unicode_escape (atom, full_idx, stream)
 				escaped = False
 			else:
 				error = format_error (atom.full_string, full_idx - 1,
