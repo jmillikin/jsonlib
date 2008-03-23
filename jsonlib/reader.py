@@ -251,10 +251,13 @@ def parse_atom (atom):
 		assert atom.value.endswith ('"')
 		return u''.join (read_unichars (atom))
 		
-	number_match = NUMBER_SPLITTER.match (atom.value)
-	
-	if number_match:
-		return parse_number (atom, number_match)
+	if atom.value[0] in ('-1234567890'):
+		number_match = NUMBER_SPLITTER.match (atom.value)
+		
+		if number_match:
+			return parse_number (atom, number_match)
+		error = format_error (atom, "Invalid number.")
+		raise ReadError (error)
 		
 	if ord (atom.value[0]) > 0xffff:
 		error = format_error (atom,
