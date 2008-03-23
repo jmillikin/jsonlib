@@ -250,8 +250,12 @@ def parse_atom (atom):
 	if number_match:
 		return parse_number (atom, number_match)
 		
-	error = format_error (atom,
-	                      "Unexpected U+%04X." % ord (atom.value[0]))
+	if ord (atom.value[0]) > 0xffff:
+		error = format_error (atom,
+		                      "Unexpected U+%08X." % ord (atom.value[0]))
+	else:
+		error = format_error (atom,
+		                      "Unexpected U+%04X." % ord (atom.value[0]))
 	raise ReadError (error)
 	
 def _py_read (string):
