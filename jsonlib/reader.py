@@ -238,6 +238,17 @@ def parse_number (atom, match):
 	else:
 		return value
 		
+def next_char_ord (string):
+	value = ord (string[0])
+	if (0xD800 <= value <= 0xDBFF) and len (string) >= 2:
+		upper = value
+		lower = ord (string[1])
+		upper -= 0xD800
+		lower -= 0xDC00
+		value = ((upper << 10) + lower) + 0x10000
+		
+	return value
+	
 def parse_atom (atom):
 	"""Parse a JSON atom into a Python value."""
 	assert atom.type == ATOM
@@ -259,12 +270,13 @@ def parse_atom (atom):
 		error = format_error (atom, "Invalid number.")
 		raise ReadError (error)
 		
-	if ord (atom.value[0]) > 0xffff:
+	char_ord = next_char_ord (atom.value)
+	if char_ord > 0xffff:
 		error = format_error (atom,
-		                      "Unexpected U+%08X." % ord (atom.value[0]))
+		                      "Unexpected U+%08X." % char_ord)
 	else:
 		error = format_error (atom,
-		                      "Unexpected U+%04X." % ord (atom.value[0]))
+		                      "Unexpected U+%04X." % char_ord)
 	raise ReadError (error)
 	
 def _py_read (string):
