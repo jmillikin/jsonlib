@@ -16,18 +16,46 @@ class TestCase (unittest.TestCase):
 		self.assertEqual (value, expected)
 		self.assertEqual (type (value), type (expected))
 		
+	def e (self, string, line, column, position, expected_error_message):
+		full_expected = ("JSON parsing error at line %d, column %d"
+		                 " (position %d): %s" % (line, column,
+		                                         position,
+		                                         expected_error_message))
+		try:
+			read (string, __speedboost = True)
+			self.fail ("No exception raised in C implementation.")
+		except errors.ReadError, error:
+			self.assertEqual (unicode (error), full_expected)
+		try:
+			read (string, __speedboost = False)
+			self.fail ("No exception raised in Python implementation.")
+		except errors.ReadError, error:
+			self.assertEqual (unicode (error), full_expected)
+			
 class MiscTests (TestCase):
 	def test_fail_on_empty (self):
-		self.assertRaises (errors.ReadError, read, '')
-		self.assertRaises (errors.ReadError, read, ' ')
+		self.e ('', 1, 1, 0, "No expression found.")
+		self.e (' ', 1, 1, 0, "No expression found.")
 		
 	def test_fail_on_invalid_whitespace (self):
-		self.assertRaises (errors.ReadError, read, u'[\u000B]')
-		self.assertRaises (errors.ReadError, read, u'[\u000D]')
-		self.assertRaises (errors.ReadError, read, u'[\u00A0]')
-		self.assertRaises (errors.ReadError, read, u'[\u2002]')
-		self.assertRaises (errors.ReadError, read, u'[\u2028]')
-		self.assertRaises (errors.ReadError, read, u'[\u2029]')
+		self.e (u'[\u000B]', 1, 2, 1, "Unexpected U+000B.")
+		self.e (u'[\u000D]', 1, 2, 1, "Unexpected U+000D.")
+		self.e (u'[\u00A0]', 1, 2, 1, "Unexpected U+00A0.")
+		self.e (u'[\u2002]', 1, 2, 1, "Unexpected U+2002.")
+		self.e (u'[\u2028]', 1, 2, 1, "Unexpected U+2028.")
+		self.e (u'[\u2029]', 1, 2, 1, "Unexpected U+2029.")
+		
+	def test_with_two_lines (self):
+		self.e (u'\n[\u000B]', 2, 2, 2, "Unexpected U+000B.")
+		
+	def test_unexpected_character (self):
+		self.e (u'[+]', 1, 2, 1, "Unexpected U+002B.")
+		
+	def test_unexpected_character_astral (self):
+		self.e (u'[\U0001d11e]', 1, 2, 1, "Unexpected U+0001D11E.")
+		
+	def test_extra_data (self):
+		self.e ('[][]', 1, 3, 2, "Extra data after JSON expression.")
 		
 class ReadKeywordTests (TestCase):
 	def test_null (self):
@@ -40,9 +68,9 @@ class ReadKeywordTests (TestCase):
 		self.r ('[false]', [False])
 		
 	def test_invalid_keyword (self):
-		self.assertRaises (errors.ReadError, read, 'n')
-		self.assertRaises (errors.ReadError, read, 't')
-		self.assertRaises (errors.ReadError, read, 'f')
+		self.e ('n', 1, 1, 0, "Unexpected U+006E.")
+		self.e ('t', 1, 1, 0, "Unexpected U+0074.")
+		self.e ('f', 1, 1, 0, "Unexpected U+0066.")
 		
 class ReadNumberTests (TestCase):
 	def test_zero (self):
@@ -52,10 +80,14 @@ class ReadNumberTests (TestCase):
 		self.r ('[-0]', [0L])
 		
 	def test_two_zeroes_error (self):
-		self.assertRaises (errors.LeadingZeroError, read, '00')
+		self.e ('[00]', 1, 2, 1, "Number with leading zero.")
+		self.e ('[01]', 1, 2, 1, "Number with leading zero.")
+		self.e ('[00.1]', 1, 2, 1, "Number with leading zero.")
 		
 	def test_negative_two_zeroes_error (self):
-		self.assertRaises (errors.LeadingZeroError, read, '-00')
+		self.e ('[-00]', 1, 2, 1, "Number with leading zero.")
+		self.e ('[-01]', 1, 2, 1, "Number with leading zero.")
+		self.e ('[-00.1]', 1, 2, 1, "Number with leading zero.")
 		
 	def test_int (self):
 		for ii in range (10):
@@ -90,12 +122,14 @@ class ReadNumberTests (TestCase):
 		self.r ('[10.5e-2]', [Decimal ('0.105')])
 		
 	def test_invalid_number (self):
-		self.assertRaises (errors.ReadError, read, '-.')
-		self.assertRaises (errors.ReadError, read, '+1')
-		self.assertRaises (errors.ReadError, read, '0.')
+		self.e ('-.', 1, 1, 0, "Invalid number.")
+		self.e ('0.', 1, 1, 0, "Invalid number.")
+		
+	def test_no_plus_sign (self):
+		self.e ('+1', 1, 1, 0, "Unexpected U+002B.")
 		
 	def test_non_ascii_number (self):
-		self.assertRaises (errors.ReadError, read, u'[\u0661]')
+		self.e (u'[\u0661]', 1, 2, 1, "Unexpected U+0661.")
 		
 class ReadStringTests (TestCase):
 	def test_empty_string (self):
@@ -143,12 +177,21 @@ class ReadStringTests (TestCase):
 		self.r ('["\\u00e9a"]', [u'\u00e9a'])
 		
 	def test_end_of_stream (self):
-		self.assertRaises (errors.ReadError, read, '["\\uD834\\u"]')
+		self.e ('["test\\u"]', 1, 7, 6,
+		        "Unterminated unicode escape.")
 		
 	def test_missing_surrogate (self):
-		self.assertRaises (errors.MissingSurrogateError, read, '["\\uD834"]')
-		self.assertRaises (errors.MissingSurrogateError, read, '["\\uD834\\u"]')
-		self.assertRaises (errors.MissingSurrogateError, read, '["\\uD834testing"]')
+		self.e ('["\\uD834"]', 1, 9, 8,
+		        "Missing surrogate pair half.")
+		self.e ('["\\uD834\\u"]', 1, 9, 8,
+		        "Missing surrogate pair half.")
+		self.e ('["\\uD834\\u", "hello world"]', 1, 9, 8,
+		        "Missing surrogate pair half.")
+		self.e ('["\\uD834testing"]', 1, 9, 8,
+		        "Missing surrogate pair half.")
+		
+	def test_invalid_escape (self):
+		self.e (u'["\\a"]', 1, 3, 2, "Unknown escape code.")
 		
 	def test_direct_unicode (self):
 		self.r (u'["\U0001d11e"]', [u'\U0001d11e'])
@@ -160,12 +203,10 @@ class ReadStringTests (TestCase):
 		self.r (u'["\U0001d11e"]'.encode ('utf-8'), [u'\U0001d11e'])
 		
 	def test_invalid_characters (self):
-		def ar (*args, **kwargs):
-			self.assertRaises (errors.ReadError, read, *args,
-			                   **kwargs)
-		for char in map (unichr, range (0x20)):
-			ar (u'"%s"' % char)
-			
+		self.e (u'["\u0001"]', 1, 3, 2, "Unexpected U+0001.")
+		self.e (u'["\u0002"]', 1, 3, 2, "Unexpected U+0002.")
+		self.e (u'["\u001F"]', 1, 3, 2, "Unexpected U+001F.")
+		
 class ReadArrayTests (TestCase):
 	def test_empty_array (self):
 		self.r ('[]', [])
@@ -183,7 +224,7 @@ class ReadArrayTests (TestCase):
 		self.r ('[1, "b", ["c", "d"]]', [1L, "b", ["c", "d"]])
 		
 	def test_failure_missing_comma (self):
-		self.assertRaises (errors.ReadError, read, '[1 2]')
+		self.e ('[1 2]', 1, 4, 3, "Expecting comma.")
 		
 class ReadObjectTests (TestCase):
 	def test_empty_object (self):
@@ -203,15 +244,20 @@ class ReadObjectTests (TestCase):
 		self.r ('{"a": 1, "b": {"c": "2"}}',
 		        {"a": 1L, "b": {"c": "2"}})
 		
+	def test_failure_unterminated (self):
+		self.e ('[[], {"a": 1', 1, 6, 5, "Unterminated object.")
+		
 	def test_failure_no_colon (self):
-		self.assertRaises (errors.ReadError, read, '{"a"}')
+		self.e ('{"a"}', 1, 5, 4,
+		        "Expected colon after object property name.")
 		
 	def test_failure_invalid_key (self):
-		self.assertRaises (errors.BadObjectKeyError, read,
-		                   '{1: 2}')
+		self.e ('{1: 2}', 1, 2, 1, "Expecting property name.")
+		self.e ('{"a": 1,}', 1, 9, 8, "Expecting property name.")
+		self.e ('{,}', 1, 2, 1, "Expecting property name.")
 		
 	def test_failure_missing_comma (self):
-		self.assertRaises (errors.ReadError, read, '{"a": 1 "b": 2}')
+		self.e ('{"a": 1 "b": 2}', 1, 9, 8, "Expecting comma.")
 		
 class UnicodeEncodingDetectionTests (TestCase):
 	def de (self, encoding, bom = ''):

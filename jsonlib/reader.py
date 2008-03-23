@@ -10,7 +10,7 @@ import sys
 
 from jsonlib.util import memoized, chunk, KEYWORDS
 from jsonlib.StateMachine import StateMachine, PUSH, POP
-from jsonlib import errors
+from jsonlib.errors import ReadError
 
 __all__ = ['read']
 
@@ -55,14 +55,16 @@ class Token (object):
 		self.name = name
 	def __repr__ (self):
 		return 'Token<%r>' % self.name
-	def __call__ (self, value):
-		return TokenInstance (self, value)
+	def __call__ (self, full_string, offset, value):
+		return TokenInstance (self, full_string, offset, value)
 		
 class TokenInstance (object):
 	"""Instance of a JSON token"""
-	__slots__ = ['type', 'value']
-	def __init__ (self, token_type, value):
+	__slots__ = ['type', 'value', 'offset', 'full_string']
+	def __init__ (self, token_type, full_string, offset, value):
 		self.type = token_type
+		self.offset = offset
+		self.full_string = full_string
 		self.value = value
 	def __repr__ (self):
 		return '%s<%r>' % (self.type.name, self.value)
@@ -78,6 +80,22 @@ COMMA = Token ('COMMA')
 ATOM = Token ('ATOM')
 EOF = Token ('EOF')
 
+def format_error (*args):
+	if len (args) == 2:
+		token, description = args
+		string = token.full_string
+		offset = token.offset
+	else:
+		string, offset, description = args
+	line = string.count ('\n', 0, offset) + 1
+	if line == 1:
+		column = offset + 1
+	else:
+		column = offset - string.rindex ('\n', 0, offset)
+		
+	error = "JSON parsing error at line %d, column %d (position %d): %s"
+	return error % (line, column, offset, description)
+	
 def tokenize (string):
 	"""Split a JSON string into a stream of tokens.
 	
@@ -89,22 +107,24 @@ def tokenize (string):
 	               u'{': OBJECT_START, u'}': OBJECT_END,
 	               u':': COLON, u',': COMMA}
 	
+	position = 0
 	for match in TOKEN_SPLITTER.findall (string):
 		basic_string, string_atom, other_atom, whitespace, unknown_token = match
 		if basic_string:
-			yield basic_types[basic_string] (basic_string)
+			yield basic_types[basic_string] (string, position, basic_string)
 		elif string_atom:
-			yield ATOM (string_atom)
+			yield ATOM (string, position, string_atom)
 		elif other_atom:
-			yield ATOM (other_atom)
+			yield ATOM (string, position, other_atom)
 		elif whitespace:
 			pass
 		else:
-			raise errors.ReadError ("Unknown token: %r" % unknown_token)
-			
-	yield EOF ('EOF')
+			raise ReadError ("Unknown token: %r" % unknown_token)
+		position += sum (map (len, match))
+		
+	yield EOF (string, position, 'EOF')
 	
-def read_unicode_escape (stream):
+def read_unicode_escape (atom, index, stream):
 	r"""Read a JSON-style Unicode escape.
 	
 	Unicode escapes may take one of two forms:
@@ -119,18 +139,32 @@ def read_unicode_escape (stream):
 	"""
 	get_n = lambda n: u''.join ([stream.next () for ii in xrange (n)])
 	
-	unicode_value = int (get_n (4), 16)
-	
+	try:
+		unicode_value = int (get_n (4), 16)
+	except StopIteration:
+		error = format_error (atom.full_string, index - 1,
+		                      "Unterminated unicode escape.")
+		raise ReadError (error)
+		
 	# Check if it's a UTF-16 surrogate pair
 	if unicode_value >= 0xD800 and unicode_value <= 0xDBFF:
 		first_half = unicode_value
 		try:
 			next_escape = get_n (2)
-			if next_escape != '\\u':
-				raise errors.MissingSurrogateError (first_half)
+		except StopIteration:
+			error = format_error (atom.full_string, index + 5,
+			                      "Missing surrogate pair half.")
+			raise ReadError (error)
+		if next_escape != '\\u':
+			error = format_error (atom.full_string, index + 5,
+			                      "Missing surrogate pair half.")
+			raise ReadError (error)
+		try:
 			second_half = int (get_n (4), 16)
 		except StopIteration:
-			raise errors.MissingSurrogateError (first_half)
+			error = format_error (atom.full_string, index + 5,
+			                      "Missing surrogate pair half.")
+			raise ReadError (error)
 			
 		if sys.maxunicode <= 65535:
 			# No wide character support
@@ -146,48 +180,55 @@ def read_unicode_escape (stream):
 	else:
 		return unichr (unicode_value)
 	
-def read_unichars (string):
+def read_unichars (atom):
 	"""Read unicode characters from an escaped string."""
 	escaped = False
-	stream = iter (string)
+	stream = iter (atom.value[1:-1])
 	illegal = map (unichr, range (0x20))
-	for char in stream:
+	for index, char in enumerate (stream):
+		full_idx = atom.offset + index + 1
 		if char in illegal:
-			raise errors.ReadError ("Illegal character U-%04X." % ord (char))
+			error = format_error (atom.full_string, full_idx,
+			                      "Unexpected U+%04X." % ord (char))
+			raise ReadError (error)
 		if escaped:
 			if char in ESCAPES:
 				yield ESCAPES[char]
 				escaped = False
 			elif char == 'u':
-				yield read_unicode_escape (stream)
+				yield read_unicode_escape (atom, full_idx, stream)
 				escaped = False
 			else:
-				raise errors.InvalidEscapeCodeError (char)
+				error = format_error (atom.full_string, full_idx - 1,
+				                      "Unknown escape code.")
+				raise ReadError (error)
 				
 		elif char == u'\\':
 			escaped = True
 		else:
 			yield char
 			
-def parse_long (string, base = 10):
+def parse_long (atom, string, base = 10):
 	"""Convert a string to a long, forbidding leading zeros."""
 	if string[0] == '0':
 		if len (string) > 1:
-			raise errors.LeadingZeroError (string)
+			error = format_error (atom, "Number with leading zero.")
+			raise ReadError (error)
 		return 0L
 	return long (string, base)
 	
-def parse_number (match):
+def parse_number (atom, match):
 	"""Parse a number from a regex match.
 	
 	Expects to have a match object from NUMBER_SPLITTER.
 	
 	"""
 	if match.group ('frac'):
-		value = Decimal ('%s.%s' % (match.group ('int'),
+		int_part = parse_long (atom, match.group ('int'))
+		value = Decimal ('%d.%s' % (int_part,
 		                 match.group ('frac')))
 	else:
-		value = parse_long (match.group ('int'))
+		value = parse_long (atom, match.group ('int'))
 		
 	if match.group ('exp'):
 		value = Decimal (str (value) + match.group ('exp'))
@@ -197,72 +238,104 @@ def parse_number (match):
 	else:
 		return value
 		
-@memoized
-def _parse_atom_string (string):
-	"""Parse a JSON atom into a Python value.
-	
-	This function is used to implement parse_atom, so the result
-	can be memoized.
-	
-	"""
-	for keyword, value in KEYWORDS:
-		if string == keyword:
-			return value
-			
-	# String
-	if string.startswith ('"'):
-		assert string.endswith ('"')
-		return u''.join (read_unichars (string[1:-1]))
+def next_char_ord (string):
+	value = ord (string[0])
+	if (0xD800 <= value <= 0xDBFF) and len (string) >= 2:
+		upper = value
+		lower = ord (string[1])
+		upper -= 0xD800
+		lower -= 0xDC00
+		value = ((upper << 10) + lower) + 0x10000
 		
-	number_match = NUMBER_SPLITTER.match (string)
-	
-	if number_match:
-		return parse_number (number_match)
-		
-	raise errors.UnknownAtomError ()
+	return value
 	
 def parse_atom (atom):
 	"""Parse a JSON atom into a Python value."""
 	assert atom.type == ATOM
-	try:
-		# Pass in only the atom's value, so the function
-		# can be memoized
-		return _parse_atom_string (atom.value)
-	except errors.UnknownAtomError:
-		# Errors thrown within parse_atom_string don't have
-		# the atom's value attached.
-		raise errors.UnknownAtomError (atom)
+	
+	for keyword, value in KEYWORDS:
+		if atom.value == keyword:
+			return value
+			
+	# String
+	if atom.value.startswith ('"'):
+		assert atom.value.endswith ('"')
+		return u''.join (read_unichars (atom))
 		
+	if atom.value[0] in ('-1234567890'):
+		number_match = NUMBER_SPLITTER.match (atom.value)
+		
+		if number_match:
+			return parse_number (atom, number_match)
+		error = format_error (atom, "Invalid number.")
+		raise ReadError (error)
+		
+	char_ord = next_char_ord (atom.value)
+	if char_ord > 0xffff:
+		error = format_error (atom,
+		                      "Unexpected U+%08X." % char_ord)
+	else:
+		error = format_error (atom,
+		                      "Unexpected U+%04X." % char_ord)
+	raise ReadError (error)
+	
 def _py_read (string):
 	"""Parse a unicode string in JSON format into a Python value."""
-	read_item_stack = [[]]
+	read_item_stack = [([], 0)]
 	
 	# Callbacks
 	def on_atom (atom):
 		"""Called when an atom token is retrieved."""
-		read_item_stack[-1].append (parse_atom (atom))
+		read_item_stack[-1][0].append (parse_atom (atom))
 		
-	def on_container_start (_):
+	def on_container_start (token):
 		"""Called when an array or object begins."""
-		read_item_stack.append ([])
+		read_item_stack.append (([], token.offset))
 		
 	def on_array_end (_):
 		"""Called when an array has ended."""
-		array = read_item_stack.pop ()
-		read_item_stack[-1].append (array)
+		array, _ = read_item_stack.pop ()
+		read_item_stack[-1][0].append (array)
 		
 	def on_object_key (token):
 		"""Called when an object key is retrieved."""
 		key = parse_atom (token)
 		if isinstance (key, unicode):
-			read_item_stack[-1].append (key)
+			read_item_stack[-1][0].append (key)
 		else:
-			raise errors.BadObjectKeyError (token)
+			error = format_error (token, "Expecting property name.")
+			raise ReadError (error)
 			
 	def on_object_end (_):
 		"""Called when an object has ended."""
-		pairs = read_item_stack.pop ()
-		read_item_stack[-1].append (dict (chunk (pairs, 2)))
+		pairs, _ = read_item_stack.pop ()
+		read_item_stack[-1][0].append (dict (chunk (pairs, 2)))
+		
+	def on_unterminated_object (token):
+		_, start = read_item_stack[-1]
+		error = format_error (token.full_string, start, "Unterminated object.")
+		raise ReadError (error)
+		
+	def on_expected_colon (token):
+		error = format_error (token, "Expected colon after object"
+		                             " property name.")
+		raise ReadError (error)
+		
+	def on_empty_expression (token):
+		error = format_error (token.full_string, 0, "No expression found.")
+		raise ReadError (error)
+		
+	def on_missing_object_key (token):
+		error = format_error (token, "Expecting property name.")
+		raise ReadError (error)
+		
+	def on_expecting_comma (token):
+		error = format_error (token, "Expecting comma.")
+		raise ReadError (error)
+		
+	def on_extra_data (token):
+		error = format_error (token, "Extra data after JSON expression.")
+		raise ReadError (error)
 		
 	machine = StateMachine ('need-value', ['root'])
 	
@@ -271,8 +344,11 @@ def _py_read (string):
 		('root', 'need-value',
 			(ATOM, 'complete', on_atom),
 			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object')),
-		('root', 'got-value', (EOF, 'complete')),
+			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
+			(EOF, 'error', on_empty_expression)),
+		('root', 'got-value',
+			(EOF, 'complete'),
+			(ARRAY_START, 'error', on_extra_data)),
 		('root', 'complete', (EOF, 'complete')),
 		
 		('array', 'empty',
@@ -286,35 +362,41 @@ def _py_read (string):
 			(ATOM, 'got-value', on_atom)),
 		('array', 'got-value',
 			(ARRAY_END, 'got-value', on_array_end, POP),
-			(COMMA, 'need-value')),
+			(COMMA, 'need-value'),
+			(ATOM, 'error', on_expecting_comma)),
 		
 		('object', 'empty',
 			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
 			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
 			(OBJECT_END, 'got-value', on_object_end, POP),
-			(ATOM, 'with-key', on_object_key)),
+			(ATOM, 'with-key', on_object_key),
+			(COMMA, 'error', on_missing_object_key)),
 		('object', 'with-key',
-			(COLON, 'need-value')),
+			(COLON, 'need-value'),
+			(OBJECT_END, 'error', on_expected_colon)),
 		('object', 'need-value',
 			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
 			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
 			(ATOM, 'got-value', on_atom)),
 		('object', 'got-value',
 			(OBJECT_END, 'got-value', on_object_end, POP),
-			(COMMA, 'need-key')),
+			(COMMA, 'need-key'),
+			(EOF, 'error', on_unterminated_object),
+			(ATOM, 'error', on_expecting_comma)),
 		('object', 'need-key',
-			(ATOM, 'with-key', on_object_key)),
+			(ATOM, 'with-key', on_object_key),
+			(OBJECT_END, 'error', on_missing_object_key)),
 	)
 	
 	for token in tokenize (string):
 		try:
 			machine.transition (token.type, token)
-		except errors.ReadError:
+		except ReadError:
 			raise
 		except ValueError, error:
-			raise errors.ReadError (error.message)
+			raise ReadError (error.message)
 			
-	return read_item_stack[0][0]
+	return read_item_stack[0][0][0]
 	
 def safe_unichr (codepoint):
 	"""Similar to unichr(), except handles narrow builds.
@@ -389,6 +471,6 @@ def read (string, **kwargs):
 			pass
 	value = _read (unicode_autodetect_encoding (string))
 	if not isinstance (value, (dict, list)):
-		raise errors.ReadError ("Tried to deserialize a basic value.")
+		raise ReadError ("Tried to deserialize a basic value.")
 	return value
 	
