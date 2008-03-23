@@ -8,9 +8,9 @@ import re
 import struct
 import sys
 
-from .util import memoized, chunk, KEYWORDS
-from .StateMachine import StateMachine, PUSH, POP
-from .errors import ReadError
+from jsonlib.util import memoized, chunk, KEYWORDS
+from jsonlib.StateMachine import StateMachine, PUSH, POP
+from jsonlib.errors import ReadError
 
 __all__ = ['read']
 

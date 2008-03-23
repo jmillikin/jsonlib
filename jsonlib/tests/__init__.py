@@ -1,5 +1,5 @@
 import unittest
-from . import read_tests, write_tests
+from jsonlib.tests import read_tests, write_tests
 
 def suite ():
 	from_module = unittest.TestLoader ().loadTestsFromModule

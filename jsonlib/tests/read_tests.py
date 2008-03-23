@@ -4,8 +4,7 @@
 import codecs
 from decimal import Decimal
 import unittest
-import functools
-from .. import read, errors
+from jsonlib import read, errors
 
 class TestCase (unittest.TestCase):
 	def r (self, string, expected):

@@ -8,7 +8,7 @@ import unittest
 import UserList
 import UserDict
 import UserString
-from .. import write, errors, util
+from jsonlib import write, errors, util
 
 class TestCase (unittest.TestCase):
 	def w (self, value, expected, **kwargs):
@@ -174,11 +174,12 @@ class WriteObjectTests (TestCase):
 		self.w ({True: 1}, u'{"true":1}', coerce_keys = True)
 		self.w ({(): 1}, u'{"()":1}', coerce_keys = True)
 		
-	def test_defaultdict (self):
-		defdict = collections.defaultdict (lambda: 9)
-		defdict['a'] = 42
-		self.w (defdict, u'{"a":42}')
-		
+	if hasattr (collections, 'defaultdict'):
+		def test_defaultdict (self):
+			defdict = collections.defaultdict (lambda: 9)
+			defdict['a'] = 42
+			self.w (defdict, u'{"a":42}')
+			
 	def test_userdict (self):
 		self.w (UserDict.UserDict (a = 42), u'{"a":42}')
 		

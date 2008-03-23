@@ -10,5 +10,9 @@ class WriteError (ValueError):
 class UnknownSerializerError (WriteError):
 	def __init__ (self, value):
 		msg = 'No known serializer for object: %r'
-		super (UnknownSerializerError, self).__init__ (msg % (value,))
+		if isinstance (UnknownSerializerError, type):
+			parent = super (UnknownSerializerError, self)
+			parent.__init__ (msg % (value,))
+		else:
+			WriteError.__init__ (self, msg % (value,))
 		

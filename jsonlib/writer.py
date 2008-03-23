@@ -9,8 +9,8 @@ import collections
 import UserList
 import UserDict
 import UserString
-from .util import memoized, INFINITY
-from . import errors
+from jsonlib.util import memoized, INFINITY
+from jsonlib import errors
 
 __all__ = ['write']
 
@@ -70,8 +70,9 @@ def write_generator (value, *args, **kwargs):
 	return write_array (tuple (value), *args, **kwargs)
 	
 def write_unordered_array (value, sort_keys, *args, **kwargs):
-	return write_array (sorted (value) if sort_keys else value,
-	                    sort_keys, *args, **kwargs)
+	if sort_keys:
+		value = sorted (value)
+	return write_array (value, sort_keys, *args, **kwargs)
 	
 def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
                   parent_objects, indent_level):
@@ -217,7 +218,7 @@ TYPE_MAPPERS = {
 	float: write_float,
 	complex: write_complex,
 	Decimal: write_decimal,
-	bool: (lambda val: 'true' if val else 'false'),
+	bool: (lambda val: val and 'true' or 'false'),
 	type (None): lambda _: 'null',
 }
 
