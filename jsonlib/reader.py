@@ -139,8 +139,13 @@ def read_unicode_escape (atom, index, stream):
 	"""
 	get_n = lambda n: u''.join ([stream.next () for ii in xrange (n)])
 	
-	unicode_value = int (get_n (4), 16)
-	
+	try:
+		unicode_value = int (get_n (4), 16)
+	except StopIteration:
+		error = format_error (atom.full_string, index - 1,
+		                      "Unterminated unicode escape.")
+		raise ReadError (error)
+		
 	# Check if it's a UTF-16 surrogate pair
 	if unicode_value >= 0xD800 and unicode_value <= 0xDBFF:
 		first_half = unicode_value
