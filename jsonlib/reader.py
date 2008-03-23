@@ -250,7 +250,9 @@ def parse_atom (atom):
 	if number_match:
 		return parse_number (atom, number_match)
 		
-	raise ReadError ('test-' + str (atom))
+	error = format_error (atom,
+	                      "Unexpected U+%04X." % ord (atom.value[0]))
+	raise ReadError (error)
 	
 def _py_read (string):
 	"""Parse a unicode string in JSON format into a Python value."""
