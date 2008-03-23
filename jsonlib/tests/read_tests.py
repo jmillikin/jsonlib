@@ -78,12 +78,14 @@ class ReadNumberTests (TestCase):
 		self.r ('[-0]', [0L])
 		
 	def test_two_zeroes_error (self):
-		self.e ('00', 1, 1, 0, "Number with leading zero.")
-		self.e ('01', 1, 1, 0, "Number with leading zero.")
+		self.e ('[00]', 1, 2, 1, "Number with leading zero.")
+		self.e ('[01]', 1, 2, 1, "Number with leading zero.")
+		self.e ('[00.1]', 1, 2, 1, "Number with leading zero.")
 		
 	def test_negative_two_zeroes_error (self):
-		self.e ('-00', 1, 1, 0, "Number with leading zero.")
-		self.e ('-01', 1, 1, 0, "Number with leading zero.")
+		self.e ('[-00]', 1, 2, 1, "Number with leading zero.")
+		self.e ('[-01]', 1, 2, 1, "Number with leading zero.")
+		self.e ('[-00.1]', 1, 2, 1, "Number with leading zero.")
 		
 	def test_int (self):
 		for ii in range (10):
