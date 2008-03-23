@@ -310,7 +310,7 @@ def _py_read (string):
 		raise ReadError (error)
 		
 	def on_empty_expression (token):
-		error = format_error (token, "No expression found.")
+		error = format_error (token.full_string, 0, "No expression found.")
 		raise ReadError (error)
 		
 	def on_missing_object_key (token):
