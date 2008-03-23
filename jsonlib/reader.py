@@ -55,15 +55,17 @@ class Token (object):
 		self.name = name
 	def __repr__ (self):
 		return 'Token<%r>' % self.name
-	def __call__ (self, value):
-		return TokenInstance (self, value)
+	def __call__ (self, full_string, value):
+		return TokenInstance (full_string, self, value)
 		
 class TokenInstance (object):
 	"""Instance of a JSON token"""
-	__slots__ = ['type', 'value']
-	def __init__ (self, token_type, value):
+	__slots__ = ['type', 'value', 'offset', 'full_string']
+	def __init__ (self, full_string, token_type, value):
 		self.type = token_type
 		self.value = value
+		self.offset = 0
+		self.full_string = full_string
 	def __repr__ (self):
 		return '%s<%r>' % (self.type.name, self.value)
 		
@@ -78,6 +80,22 @@ COMMA = Token ('COMMA')
 ATOM = Token ('ATOM')
 EOF = Token ('EOF')
 
+def format_error (*args):
+	if len (args) == 2:
+		token, description = args
+		string = token.full_string
+		offset = token.offset
+	else:
+		string, offset, description = args
+	line = string.count ('\n', 0, offset) + 1
+	if line == 1:
+		column = offset
+	else:
+		column = offset - string.rindex ('\n', 0, offset)
+		
+	error = "JSON parsing error at line %d, column %d (position %d): %s"
+	return error % (line, column, offset, description)
+	
 def tokenize (string):
 	"""Split a JSON string into a stream of tokens.
 	
@@ -92,17 +110,17 @@ def tokenize (string):
 	for match in TOKEN_SPLITTER.findall (string):
 		basic_string, string_atom, other_atom, whitespace, unknown_token = match
 		if basic_string:
-			yield basic_types[basic_string] (basic_string)
+			yield basic_types[basic_string] (string, basic_string)
 		elif string_atom:
-			yield ATOM (string_atom)
+			yield ATOM (string, string_atom)
 		elif other_atom:
-			yield ATOM (other_atom)
+			yield ATOM (string, other_atom)
 		elif whitespace:
 			pass
 		else:
 			raise ReadError ("Unknown token: %r" % unknown_token)
 			
-	yield EOF ('EOF')
+	yield EOF (string, 'EOF')
 	
 def read_unicode_escape (stream):
 	r"""Read a JSON-style Unicode escape.
@@ -127,10 +145,10 @@ def read_unicode_escape (stream):
 		try:
 			next_escape = get_n (2)
 			if next_escape != '\\u':
-				raise ReadError (first_half)
+				raise ReadError ('[1] ' + str (first_half))
 			second_half = int (get_n (4), 16)
 		except StopIteration:
-			raise ReadError (first_half)
+			raise ReadError ('[2] ' + str (first_half))
 			
 		if sys.maxunicode <= 65535:
 			# No wide character support
@@ -264,6 +282,15 @@ def _py_read (string):
 		pairs = read_item_stack.pop ()
 		read_item_stack[-1].append (dict (chunk (pairs, 2)))
 		
+	def on_unterminated_object (token):
+		error = format_error (token, "Unterminated object.")
+		raise ReadError (error)
+		
+	def on_expected_colon (token):
+		error = format_error (token, "Expected colon after object"
+		                             " property name.")
+		raise ReadError (error)
+		
 	machine = StateMachine ('need-value', ['root'])
 	
 	# Register state transitions
@@ -294,14 +321,16 @@ def _py_read (string):
 			(OBJECT_END, 'got-value', on_object_end, POP),
 			(ATOM, 'with-key', on_object_key)),
 		('object', 'with-key',
-			(COLON, 'need-value')),
+			(COLON, 'need-value'),
+			(OBJECT_END, 'error', on_expected_colon)),
 		('object', 'need-value',
 			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
 			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
 			(ATOM, 'got-value', on_atom)),
 		('object', 'got-value',
 			(OBJECT_END, 'got-value', on_object_end, POP),
-			(COMMA, 'need-key')),
+			(COMMA, 'need-key'),
+			(EOF, 'error', on_unterminated_object)),
 		('object', 'need-key',
 			(ATOM, 'with-key', on_object_key)),
 	)
