@@ -55,17 +55,17 @@ class Token (object):
 		self.name = name
 	def __repr__ (self):
 		return 'Token<%r>' % self.name
-	def __call__ (self, full_string, value):
-		return TokenInstance (full_string, self, value)
+	def __call__ (self, full_string, offset, value):
+		return TokenInstance (self, full_string, offset, value)
 		
 class TokenInstance (object):
 	"""Instance of a JSON token"""
 	__slots__ = ['type', 'value', 'offset', 'full_string']
-	def __init__ (self, full_string, token_type, value):
+	def __init__ (self, token_type, full_string, offset, value):
 		self.type = token_type
-		self.value = value
-		self.offset = 0
+		self.offset = offset
 		self.full_string = full_string
+		self.value = value
 	def __repr__ (self):
 		return '%s<%r>' % (self.type.name, self.value)
 		
@@ -107,20 +107,22 @@ def tokenize (string):
 	               u'{': OBJECT_START, u'}': OBJECT_END,
 	               u':': COLON, u',': COMMA}
 	
+	position = 0
 	for match in TOKEN_SPLITTER.findall (string):
 		basic_string, string_atom, other_atom, whitespace, unknown_token = match
 		if basic_string:
-			yield basic_types[basic_string] (string, basic_string)
+			yield basic_types[basic_string] (string, position, basic_string)
 		elif string_atom:
-			yield ATOM (string, string_atom)
+			yield ATOM (string, position, string_atom)
 		elif other_atom:
-			yield ATOM (string, other_atom)
+			yield ATOM (string, position, other_atom)
 		elif whitespace:
 			pass
 		else:
 			raise ReadError ("Unknown token: %r" % unknown_token)
-			
-	yield EOF (string, 'EOF')
+		position += sum (map (len, match))
+		
+	yield EOF (string, position, 'EOF')
 	
 def read_unicode_escape (stream):
 	r"""Read a JSON-style Unicode escape.
