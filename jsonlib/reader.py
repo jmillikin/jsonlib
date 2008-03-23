@@ -89,9 +89,9 @@ def format_error (*args):
 		string, offset, description = args
 	line = string.count ('\n', 0, offset) + 1
 	if line == 1:
-		column = offset
+		column = offset + 1
 	else:
-		column = offset - string.rindex ('\n', 0, offset)
+		column = offset - string.rindex ('\n', 0, offset) + 1
 		
 	error = "JSON parsing error at line %d, column %d (position %d): %s"
 	return error % (line, column, offset, description)
@@ -166,14 +166,17 @@ def read_unicode_escape (stream):
 	else:
 		return unichr (unicode_value)
 	
-def read_unichars (string):
+def read_unichars (atom):
 	"""Read unicode characters from an escaped string."""
 	escaped = False
-	stream = iter (string)
+	stream = iter (atom.value[1:-1])
 	illegal = map (unichr, range (0x20))
-	for char in stream:
+	for index, char in enumerate (stream):
+		full_idx = atom.offset + index + 1
 		if char in illegal:
-			raise ReadError ("Illegal character U-%04X." % ord (char))
+			error = format_error (atom.full_string, full_idx,
+			                      "Unexpected U+%04X." % ord (char))
+			raise ReadError (error)
 		if escaped:
 			if char in ESCAPES:
 				yield ESCAPES[char]
@@ -182,22 +185,25 @@ def read_unichars (string):
 				yield read_unicode_escape (stream)
 				escaped = False
 			else:
-				raise ReadError (char)
+				error = format_error (atom.full_string, full_idx - 1,
+				                      "Unknown escape code.")
+				raise ReadError (error)
 				
 		elif char == u'\\':
 			escaped = True
 		else:
 			yield char
 			
-def parse_long (string, base = 10):
+def parse_long (atom, string, base = 10):
 	"""Convert a string to a long, forbidding leading zeros."""
 	if string[0] == '0':
 		if len (string) > 1:
-			raise ReadError (string)
+			error = format_error (atom, "Number with leading zero.")
+			raise ReadError (error)
 		return 0L
 	return long (string, base)
 	
-def parse_number (match):
+def parse_number (atom, match):
 	"""Parse a number from a regex match.
 	
 	Expects to have a match object from NUMBER_SPLITTER.
@@ -207,7 +213,7 @@ def parse_number (match):
 		value = Decimal ('%s.%s' % (match.group ('int'),
 		                 match.group ('frac')))
 	else:
-		value = parse_long (match.group ('int'))
+		value = parse_long (atom, match.group ('int'))
 		
 	if match.group ('exp'):
 		value = Decimal (str (value) + match.group ('exp'))
@@ -217,42 +223,26 @@ def parse_number (match):
 	else:
 		return value
 		
-@memoized
-def _parse_atom_string (string):
-	"""Parse a JSON atom into a Python value.
-	
-	This function is used to implement parse_atom, so the result
-	can be memoized.
-	
-	"""
-	for keyword, value in KEYWORDS:
-		if string == keyword:
-			return value
-			
-	# String
-	if string.startswith ('"'):
-		assert string.endswith ('"')
-		return u''.join (read_unichars (string[1:-1]))
-		
-	number_match = NUMBER_SPLITTER.match (string)
-	
-	if number_match:
-		return parse_number (number_match)
-		
-	raise ReadError ()
-	
 def parse_atom (atom):
 	"""Parse a JSON atom into a Python value."""
 	assert atom.type == ATOM
-	try:
-		# Pass in only the atom's value, so the function
-		# can be memoized
-		return _parse_atom_string (atom.value)
-	except ReadError:
-		# Errors thrown within parse_atom_string don't have
-		# the atom's value attached.
-		raise ReadError (atom)
+	
+	for keyword, value in KEYWORDS:
+		if atom.value == keyword:
+			return value
+			
+	# String
+	if atom.value.startswith ('"'):
+		assert atom.value.endswith ('"')
+		return u''.join (read_unichars (atom))
 		
+	number_match = NUMBER_SPLITTER.match (atom.value)
+	
+	if number_match:
+		return parse_number (atom, number_match)
+		
+	raise ReadError ('test-' + str (atom))
+	
 def _py_read (string):
 	"""Parse a unicode string in JSON format into a Python value."""
 	read_item_stack = [[]]
@@ -277,7 +267,8 @@ def _py_read (string):
 		if isinstance (key, unicode):
 			read_item_stack[-1].append (key)
 		else:
-			raise ReadError (token)
+			error = format_error (token, "Expecting property name.")
+			raise ReadError (error)
 			
 	def on_object_end (_):
 		"""Called when an object has ended."""
@@ -293,6 +284,22 @@ def _py_read (string):
 		                             " property name.")
 		raise ReadError (error)
 		
+	def on_empty_expression (token):
+		error = format_error (token, "No expression found.")
+		raise ReadError (error)
+		
+	def on_missing_object_key (token):
+		error = format_error (token, "Expecting property name.")
+		raise ReadError (error)
+		
+	def on_expecting_comma (token):
+		error = format_error (token, "Expecting comma.")
+		raise ReadError (error)
+		
+	def on_extra_data (token):
+		error = format_error (token, "Extra data after JSON expression.")
+		raise ReadError (error)
+		
 	machine = StateMachine ('need-value', ['root'])
 	
 	# Register state transitions
@@ -300,8 +307,11 @@ def _py_read (string):
 		('root', 'need-value',
 			(ATOM, 'complete', on_atom),
 			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object')),
-		('root', 'got-value', (EOF, 'complete')),
+			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
+			(EOF, 'error', on_empty_expression)),
+		('root', 'got-value',
+			(EOF, 'complete'),
+			(ARRAY_START, 'error', on_extra_data)),
 		('root', 'complete', (EOF, 'complete')),
 		
 		('array', 'empty',
@@ -315,13 +325,15 @@ def _py_read (string):
 			(ATOM, 'got-value', on_atom)),
 		('array', 'got-value',
 			(ARRAY_END, 'got-value', on_array_end, POP),
-			(COMMA, 'need-value')),
+			(COMMA, 'need-value'),
+			(ATOM, 'error', on_expecting_comma)),
 		
 		('object', 'empty',
 			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
 			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
 			(OBJECT_END, 'got-value', on_object_end, POP),
-			(ATOM, 'with-key', on_object_key)),
+			(ATOM, 'with-key', on_object_key),
+			(COMMA, 'error', on_missing_object_key)),
 		('object', 'with-key',
 			(COLON, 'need-value'),
 			(OBJECT_END, 'error', on_expected_colon)),
@@ -332,9 +344,11 @@ def _py_read (string):
 		('object', 'got-value',
 			(OBJECT_END, 'got-value', on_object_end, POP),
 			(COMMA, 'need-key'),
-			(EOF, 'error', on_unterminated_object)),
+			(EOF, 'error', on_unterminated_object),
+			(ATOM, 'error', on_expecting_comma)),
 		('object', 'need-key',
-			(ATOM, 'with-key', on_object_key)),
+			(ATOM, 'with-key', on_object_key),
+			(OBJECT_END, 'error', on_missing_object_key)),
 	)
 	
 	for token in tokenize (string):
