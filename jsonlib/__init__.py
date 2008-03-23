@@ -4,8 +4,4 @@
 from .reader import read
 from .writer import write
 
-from .errors import (ReadError, UnterminatedStringError, LeadingZeroError,
-                     UnknownAtomError, BadObjectKeyError, MissingSurrogateError,
-                     InvalidEscapeCodeError)
-
-from .errors import (WriteError, UnknownSerializerError)
+from .errors import ReadError, WriteError, UnknownSerializerError
