@@ -17,7 +17,7 @@ class TestCase (unittest.TestCase):
 		self.assertEqual (serialized, expected)
 		self.assertEqual (type (serialized), type (expected))
 		
-	def e (self, string, line, column, position, expected_error_message):
+	def re (self, string, line, column, position, expected_error_message):
 		full_expected = ("JSON parsing error at line %d, column %d"
 		                 " (position %d): %s" % (line, column,
 		                                         position,
@@ -32,4 +32,12 @@ class TestCase (unittest.TestCase):
 			self.fail ("No exception raised in Python implementation.")
 		except errors.ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
+			
+	def we (self, value, expected_error_message, **kwargs):
+		try:
+			write (value, **kwargs)
+			self.fail ("No exception raised.")
+		except errors.WriteError, error:
+			self.assertEqual (unicode (error),
+			                  expected_error_message)
 			
