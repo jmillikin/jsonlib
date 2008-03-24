@@ -45,7 +45,7 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	
 	v_id = id (value)
 	if v_id in parent_objects:
-		raise errors.WriteError ("Can't write self-referential values.")
+		raise errors.WriteError ("Cannot serialize self-referential values.")
 		
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['[', newline]
@@ -80,7 +80,7 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	
 	v_id = id (value)
 	if v_id in parent_objects:
-		raise errors.WriteError ("Can't write self-referential values.")
+		raise errors.WriteError ("Cannot serialize self-referential values.")
 		
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['{', newline]
@@ -182,7 +182,7 @@ def write_decimal (value):
 		raise errors.WriteError ("Cannot serialize NaN.")
 	s_value = unicode (value)
 	if s_value in ('Infinity', '-Infinity'):
-		raise errors.WriteError ("Cannot serialize %r." % value)
+		raise errors.WriteError ("Cannot serialize %s." % s_value)
 	return s_value
 	
 def write_complex (value):

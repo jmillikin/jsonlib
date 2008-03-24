@@ -12,11 +12,11 @@ from jsonlib.tests.common import TestCase
 
 class MiscTests (TestCase):
 	def test_fail_on_unknown (self):
-		self.assertRaises (errors.UnknownSerializerError, write,
-		                   [object ()])
+		obj = object ()
+		self.we ([obj], "No known serializer for object: %r" % obj)
 		
 	def test_fail_on_unwrapped_atom (self):
-		self.assertRaises (errors.WriteError, write, 1)
+		self.we (1, "The outermost container must be an array or object.")
 		
 class WriteKeywordTests (TestCase):
 	def test_null (self):
@@ -61,19 +61,20 @@ class WriteNumberTests (TestCase):
 		self.w ([5.5+0j], u'[5.5]')
 		
 	def test_fail_complex (self):
-		self.assertRaises (errors.WriteError, write, [5+1j])
+		self.we ([5+1j], "Cannot serialize complex numbers"
+		                 " with imaginary components.")
 		
 	def test_fail_on_infinity (self):
-		self.assertRaises (errors.WriteError, write, [util.INFINITY])
-		self.assertRaises (errors.WriteError, write, [Decimal ('Infinity')])
+		self.we ([util.INFINITY], "Cannot serialize Infinity.")
+		self.we ([Decimal ('Infinity')], "Cannot serialize Infinity.")
 		
 	def test_fail_on_neg_infinity (self):
-		self.assertRaises (errors.WriteError, write, [-util.INFINITY])
-		self.assertRaises (errors.WriteError, write, [Decimal ('-Infinity')])
+		self.we ([-util.INFINITY], "Cannot serialize -Infinity.")
+		self.we ([Decimal ('-Infinity')], "Cannot serialize -Infinity.")
 		
 	def test_fail_on_nan (self):
-		self.assertRaises (errors.WriteError, write, [util.NAN])
-		self.assertRaises (errors.WriteError, write, [Decimal ('NaN')])
+		self.we ([util.NAN], "Cannot serialize NaN.")
+		self.we ([Decimal ('NaN')], "Cannot serialize NaN.")
 		
 class WriteArrayTests (TestCase):
 	def test_empty_array (self):
@@ -86,16 +87,14 @@ class WriteArrayTests (TestCase):
 		self.w ([True, True], u'[true,true]')
 		
 	def test_empty_indent (self):
-		self.assertEqual (write ([True, True], indent = ''),
-		                  u'[\ntrue,\ntrue\n]')
+		self.w ([True, True], u'[\ntrue,\ntrue\n]', indent = '')
 		
 	def test_single_indent (self):
-		self.assertEqual (write ([True, True], indent = '\t'),
-		                  u'[\n\ttrue,\n\ttrue\n]')
+		self.w ([True, True], u'[\n\ttrue,\n\ttrue\n]', indent = '\t')
 		
 	def test_nested_indent (self):
-		self.assertEqual (write ([True, [True]], indent = '\t'),
-		                  u'[\n\ttrue,\n\t[\n\t\ttrue\n\t]\n]')
+		self.w ([True, [True]], u'[\n\ttrue,\n\t[\n\t\ttrue\n\t]\n]',
+		        indent = '\t')
 		
 	def test_generator (self):
 		self.w ((_ for _ in (True, True)), u'[true,true]')
@@ -104,22 +103,20 @@ class WriteArrayTests (TestCase):
 		self.w (set (('a', 'b')), u'["a","b"]')
 		
 	def test_set_sorted (self):
-		self.assertEqual (write (set (('e', 'm')), sort_keys = True),
-		                  u'["e","m"]')
+		self.w (set (('e', 'm')), u'["e","m"]', sort_keys = True)
 		
 	def test_frozenset (self):
 		self.w (frozenset (('a', 'b')), u'["a","b"]')
 		
 	def test_frozenset_sorted (self):
-		self.assertEqual (write (frozenset (('e', 'm')), sort_keys = True),
-		                  u'["e","m"]')
+		self.w (frozenset (('e', 'm')), u'["e","m"]',
+		        sort_keys = True)
 		
 	def test_array (self):
 		self.w (array.array('i', [1,2,3]), u'[1,2,3]')
 		
 	def test_deque (self):
-		deq = collections.deque ((1, 2, 3))
-		self.w (deq, u'[1,2,3]')
+		self.w (collections.deque ((1, 2, 3)), u'[1,2,3]')
 		
 	def test_userlist (self):
 		self.w (UserList.UserList ((1, 2, 3)), u'[1,2,3]')
@@ -127,8 +124,7 @@ class WriteArrayTests (TestCase):
 	def test_fail_on_self_reference (self):
 		a = []
 		a.append (a)
-		
-		self.assertRaises (errors.WriteError, write, a)
+		self.we (a, "Cannot serialize self-referential values.")
 		
 class WriteObjectTests (TestCase):
 	def test_empty_object (self):
@@ -141,27 +137,24 @@ class WriteObjectTests (TestCase):
 		self.w ({'a': True, 'b': True}, u'{"a":true,"b":true}')
 		
 	def test_sort_keys (self):
-		self.assertEqual (write ({'e': True, 'm': True},
-		                         sort_keys = True),
-		                  u'{"e":true,"m":true}')
+		self.w ({'e': True, 'm': True}, u'{"e":true,"m":true}',
+		        sort_keys = True)
 		
 	def test_empty_indent (self):
-		self.assertEqual (write ({'a': True, 'b': True},
-		                         sort_keys = True, indent = ''),
-		                  u'{\n"a": true,\n"b": true\n}')
+		self.w ({'a': True, 'b': True}, u'{\n"a": true,\n"b": true\n}',
+		        sort_keys = True, indent = '')
 		
 	def test_single_indent (self):
-		self.assertEqual (write ({'a': True, 'b': True},
-		                         sort_keys = True, indent = '\t'),
-		                  u'{\n\t"a": true,\n\t"b": true\n}')
+		self.w ({'a': True, 'b': True}, u'{\n\t"a": true,\n\t"b": true\n}',
+		        sort_keys = True, indent = '\t')
 		
 	def test_nested_indent (self):
-		self.assertEqual (write ({'a': True, 'b': {'c': True}},
-		                         sort_keys = True, indent = '\t'),
-		                  u'{\n\t"a": true,\n\t"b": {\n\t\t"c": true\n\t}\n}')
+		self.w ({'a': True, 'b': {'c': True}},
+		        u'{\n\t"a": true,\n\t"b": {\n\t\t"c": true\n\t}\n}',
+		        sort_keys = True, indent = '\t')
 		
 	def test_fail_on_invalid_key (self):
-		self.assertRaises (errors.WriteError, write, {1: True})
+		self.we ({1: True}, "Only strings may be used as object keys.")
 		
 	def test_coerce_invalid_key (self):
 		self.w ({1: True}, u'{"1":true}', coerce_keys = True)
@@ -180,13 +173,12 @@ class WriteObjectTests (TestCase):
 	def test_fail_on_self_reference (self):
 		a = {}
 		a['a'] = a
+		self.we (a, "Cannot serialize self-referential values.")
 		
-		self.assertRaises (errors.WriteError, write, a)
-		
-		del[a['a']]
+	def test_fail_on_self_reference_deep (self):
+		a = {}
 		a['a'] = [a]
-		
-		self.assertRaises (errors.WriteError, write, a)
+		self.we (a, "Cannot serialize self-referential values.")
 		
 class WriteStringTests (TestCase):
 	def test_empty_string (self):
@@ -245,6 +237,8 @@ class WriteStringTests (TestCase):
 		self.w ([UserString.UserString ('test')], u'["test"]')
 		
 class EncodingTests (TestCase):
+	# Don't use self.w in these, because it sets the encoding to
+	# None.
 	def test_encode_utf8_default (self):
 		value = write ([u'\U0001D11E \u24CA'], ascii_only = False)
 		self.assertEqual (type (value), str)
