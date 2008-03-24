@@ -12,7 +12,7 @@ from jsonlib import write, errors, util
 
 class TestCase (unittest.TestCase):
 	def w (self, value, expected, **kwargs):
-		serialized = write (value, **kwargs)
+		serialized = write (value, encoding = None, **kwargs)
 		self.assertEqual (serialized, expected)
 		self.assertEqual (type (serialized), type (expected))
 		
@@ -249,6 +249,25 @@ class WriteStringTests (TestCase):
 		
 	def test_userstring (self):
 		self.w ([UserString.UserString ('test')], u'["test"]')
+		
+class EncodingTests (TestCase):
+	def test_encode_utf8_default (self):
+		value = write ([u'\U0001D11E \u24CA'], ascii_only = False)
+		self.assertEqual (type (value), str)
+		self.assertEqual (value, '["\xf0\x9d\x84\x9e \xe2\x93\x8a"]')
+		
+	def test_encode_utf16 (self):
+		value = write ([u'\U0001D11E \u24CA'], ascii_only = False,
+		               encoding = 'utf-16-le')
+		self.assertEqual (type (value), str)
+		self.assertEqual (value, '\x5b\x00\x22\x00\x34\xd8\x1e\xdd'
+		                         '\x20\x00\xca\x24\x22\x00\x5d\x00')
+		
+	def test_encode_unicode_none (self):	
+		value = write ([u'\U0001D11E \u24CA'], ascii_only = False,
+		               encoding = None)
+		self.assertEqual (type (value), unicode)
+		self.assertEqual (value, u'["\U0001D11E \u24CA"]')
 		
 class WriteSubclassTests (TestCase):
 	def test_int_subclass (self):

@@ -263,7 +263,7 @@ def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	raise errors.WriteError ("The outermost container must be an array or object.")
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
-           coerce_keys = False):
+           coerce_keys = False, encoding = 'utf-8'):
 	"""Serialize a Python value to a JSON-formatted byte string.
 	
 	value
@@ -288,7 +288,23 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		this is False, an exception will be raised when an
 		invalid key is specified.
 	
+	encoding
+		The output encoding to use. This must be the name of an
+		encoding supported by Python's codec mechanism. If
+		None, a Unicode string will be returned rather than an
+		encoded bytestring.
+		
+		If a non-UTF encoding is specified, the resulting
+		bytestring might not be readable by many JSON libraries,
+		including jsonlib.
+		
+		The default encoding is UTF-8.
+	
 	"""
-	return u''.join (_write (value, sort_keys, indent, ascii_only,
-	                         coerce_keys, (), 0))
+	
+	u_string = u''.join (_write (value, sort_keys, indent, ascii_only,
+	                             coerce_keys, (), 0))
+	if encoding is None:
+		return u_string
+	return u_string.encode (encoding)
 	
