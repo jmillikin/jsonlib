@@ -31,4 +31,5 @@ setup (
 			Extension ('jsonlib._reader', ['jsonlib/_reader.c']),
 		],
 	)},
+	test_suite = 'jsonlib.tests.suite',
 )
