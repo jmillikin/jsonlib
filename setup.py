@@ -1,5 +1,5 @@
 from os.path import dirname, join
-from setuptools import setup, Extension
+from setuptools import setup, Extension, Feature
 
 version = '1.2.7'
 
@@ -24,5 +24,11 @@ setup (
 		"Topic :: Software Development :: Libraries :: Python Modules",
 	],
 	keywords = ["json"],
-	ext_modules  = [Extension ('jsonlib._reader', ['jsonlib/_reader.c'])],
+	features = {'performance': Feature (
+		"Performance-enhancing extension modules",
+		standard = True,
+		ext_modules = [
+			Extension ('jsonlib._reader', ['jsonlib/_reader.c']),
+		],
+	)},
 )
