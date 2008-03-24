@@ -4,18 +4,12 @@
 from decimal import Decimal
 import array
 import collections
-import unittest
 import UserList
 import UserDict
 import UserString
 from jsonlib import write, errors, util
+from jsonlib.tests.common import TestCase
 
-class TestCase (unittest.TestCase):
-	def w (self, value, expected, **kwargs):
-		serialized = write (value, encoding = None, **kwargs)
-		self.assertEqual (serialized, expected)
-		self.assertEqual (type (serialized), type (expected))
-		
 class MiscTests (TestCase):
 	def test_fail_on_unknown (self):
 		self.assertRaises (errors.UnknownSerializerError, write,

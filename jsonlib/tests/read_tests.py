@@ -3,35 +3,9 @@
 
 import codecs
 from decimal import Decimal
-import unittest
 from jsonlib import read, errors
+from jsonlib.tests.common import TestCase
 
-class TestCase (unittest.TestCase):
-	def r (self, string, expected):
-		value = read (string, __speedboost = False)
-		self.assertEqual (value, expected)
-		self.assertEqual (type (value), type (expected))
-		
-		value = read (string, __speedboost = True)
-		self.assertEqual (value, expected)
-		self.assertEqual (type (value), type (expected))
-		
-	def e (self, string, line, column, position, expected_error_message):
-		full_expected = ("JSON parsing error at line %d, column %d"
-		                 " (position %d): %s" % (line, column,
-		                                         position,
-		                                         expected_error_message))
-		try:
-			read (string, __speedboost = True)
-			self.fail ("No exception raised in C implementation.")
-		except errors.ReadError, error:
-			self.assertEqual (unicode (error), full_expected)
-		try:
-			read (string, __speedboost = False)
-			self.fail ("No exception raised in Python implementation.")
-		except errors.ReadError, error:
-			self.assertEqual (unicode (error), full_expected)
-			
 class MiscTests (TestCase):
 	def test_fail_on_empty (self):
 		self.e ('', 1, 1, 0, "No expression found.")
