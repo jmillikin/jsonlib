@@ -66,14 +66,20 @@ class WriteNumberTests (TestCase):
 		
 	def test_fail_on_infinity (self):
 		self.we ([util.INFINITY], "Cannot serialize Infinity.")
-		self.we ([Decimal ('Infinity')], "Cannot serialize Infinity.")
 		
 	def test_fail_on_neg_infinity (self):
 		self.we ([-util.INFINITY], "Cannot serialize -Infinity.")
-		self.we ([Decimal ('-Infinity')], "Cannot serialize -Infinity.")
 		
 	def test_fail_on_nan (self):
 		self.we ([util.NAN], "Cannot serialize NaN.")
+		
+	def test_fail_on_decimal_infinity (self):
+		self.we ([Decimal ('Infinity')], "Cannot serialize Infinity.")
+		
+	def test_fail_on_decimal_neg_infiity (self):
+		self.we ([Decimal ('-Infinity')], "Cannot serialize -Infinity.")
+		
+	def test_fail_on_decimal_nan (self):
 		self.we ([Decimal ('NaN')], "Cannot serialize NaN.")
 		
 class WriteArrayTests (TestCase):
