@@ -840,12 +840,30 @@ write_basic (PyObject *value, int ascii_only)
 		return write_unicode (value, ascii_only);
 	if (PyInt_Check (value) || PyLong_Check (value))
 		return PyObject_Str(value);
+	if (PyComplex_Check (value))
+	{
+		Py_complex complex = PyComplex_AsCComplex (value);
+		if (complex.imag == 0)
+		{
+			PyObject *real, *serialized;
+			if (!(real = PyFloat_FromDouble (complex.real)))
+				return NULL;
+			serialized = PyObject_Str (real);
+			Py_DECREF (real);
+			return serialized;
+		}
+		PyErr_SetString (WriteError,
+		                 "Cannot serialize complex numbers with"
+		                 " imaginary components.");
+		return NULL;
+	}
+	
 	if (PyFloat_Check (value))
 	{
 		double val = PyFloat_AS_DOUBLE (value);
 		if (Py_IS_NAN (val))
 		{
-			PyErr_SetString(WriteError, "Cannot serialize NaN.");
+			PyErr_SetString (WriteError, "Cannot serialize NaN.");
 			return NULL;
 		}
 		
