@@ -316,10 +316,14 @@ unicode_to_ascii (PyObject *unicode)
 		else if (c > 0xFFFF)
 		{
 			/* Separate into upper and lower surrogate pair */
-			Py_UNICODE upper, lower;
+			Py_UNICODE reduced, upper, lower;
 			
-			upper = c;
-			lower = c;
+			reduced = c - 0x10000;
+			lower = (reduced & 0x3FF);
+			upper = (reduced >> 10);
+			
+			upper += 0xD800;
+			lower += 0xDC00;
 			
 			*buffer_pos++ = '\\';
 			*buffer_pos++ = 'u';
