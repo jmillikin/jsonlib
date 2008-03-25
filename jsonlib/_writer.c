@@ -940,6 +940,14 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 	else
 	{
 		pieces = write_basic (object, ascii_only);
+		if (pieces && indent_level == 0)
+		{
+			Py_DECREF (pieces);
+			pieces = NULL;
+			PyErr_SetString (WriteError,
+			                 "The outermost container must be"
+			                 " an array or object.");
+		}
 		if (!pieces && PyErr_ExceptionMatches (UnknownSerializerError))
 		{
 			PyObject *iter;
@@ -969,10 +977,6 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 		}
 	}
 	
-	/*
-	if (retval = write_imported_value (value))
-		return retval;
-	*/
 	if (pieces) retval = PySequence_List (pieces);
 	Py_XDECREF (pieces);
 	return retval;
