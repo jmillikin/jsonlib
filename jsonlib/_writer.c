@@ -974,8 +974,19 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 		}
 	}
 	
-	if (pieces) retval = PySequence_List (pieces);
-	Py_XDECREF (pieces);
+	if (pieces)
+	{
+		if (PyString_Check (pieces) || PyUnicode_Check (pieces))
+		{
+			retval = PyTuple_New (1);
+			PyTuple_SetItem (retval, 0, pieces);
+		}
+		else
+		{
+			retval = PySequence_List (pieces);
+			Py_DECREF (pieces);
+		}
+	}
 	return retval;
 }
 
