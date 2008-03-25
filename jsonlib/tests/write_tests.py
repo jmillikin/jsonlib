@@ -61,6 +61,12 @@ class WriteNumberTests (TestCase):
 		self.w ([5+0j], u'[5.0]')
 		self.w ([5.5+0j], u'[5.5]')
 		
+	def test_long_complex (self):	
+		pi = 3.1415926535897931
+		self.assertNotEqual (str (pi), repr (pi))
+		self.assertNotEqual (unicode (pi), repr (pi))
+		self.w ([pi+0j], u'[3.1415926535897931]')
+		
 	def test_fail_complex (self):
 		self.we ([5+1j], "Cannot serialize complex numbers"
 		                 " with imaginary components.")

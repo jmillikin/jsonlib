@@ -848,7 +848,7 @@ write_basic (PyObject *value, int ascii_only)
 			PyObject *real, *serialized;
 			if (!(real = PyFloat_FromDouble (complex.real)))
 				return NULL;
-			serialized = PyObject_Str (real);
+			serialized = PyObject_Repr (real);
 			Py_DECREF (real);
 			return serialized;
 		}

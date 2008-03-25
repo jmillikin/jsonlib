@@ -184,7 +184,7 @@ def write_decimal (value):
 	
 def write_complex (value):
 	if value.imag == 0.0:
-		return unicode (value.real)
+		return repr (value.real)
 	raise errors.WriteError ("Cannot serialize complex numbers with"
 	                         " imaginary components.")
 	
