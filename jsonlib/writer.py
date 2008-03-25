@@ -4,10 +4,6 @@
 """Implements jsonlib.write"""
 
 from decimal import Decimal
-import array
-import collections
-import UserList
-import UserDict
 import UserString
 from jsonlib.util import memoized, INFINITY
 from jsonlib import errors
@@ -45,7 +41,7 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	
 	v_id = id (value)
 	if v_id in parent_objects:
-		raise errors.WriteError ("Can't write self-referential values.")
+		raise errors.WriteError ("Cannot serialize self-referential values.")
 		
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['[', newline]
@@ -53,10 +49,10 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	for index, item in enumerate (value):
 		if indent:
 			retval.append (indent)
-		retval.extend (_write (item, sort_keys, indent_string,
-		                       ascii_only, coerce_keys,
-		                       parent_objects + (v_id,),
-		                       indent_level + 1))
+		retval.extend (_py_write (item, sort_keys, indent_string,
+		                          ascii_only, coerce_keys,
+		                          parent_objects + (v_id,),
+		                          indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
 				retval.append (',' + newline)
@@ -66,13 +62,8 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	retval.append (']')
 	return retval
 	
-def write_generator (value, *args, **kwargs):
+def write_iterable (value, *args, **kwargs):
 	return write_array (tuple (value), *args, **kwargs)
-	
-def write_unordered_array (value, sort_keys, *args, **kwargs):
-	if sort_keys:
-		value = sorted (value)
-	return write_array (value, sort_keys, *args, **kwargs)
 	
 def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
                   parent_objects, indent_level):
@@ -80,7 +71,7 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	
 	v_id = id (value)
 	if v_id in parent_objects:
-		raise errors.WriteError ("Can't write self-referential values.")
+		raise errors.WriteError ("Cannot serialize self-referential values.")
 		
 	newline, indent, next_indent = get_indent (indent_string, indent_level)
 	retval = ['{', newline]
@@ -117,10 +108,10 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			retval.append (': ')
 		else:
 			retval.append (':')
-		retval.extend (_write (sub_value, sort_keys, indent_string,
-		                       ascii_only, coerce_keys,
-		                       parent_objects + (v_id,),
-		                       indent_level + 1))
+		retval.extend (_py_write (sub_value, sort_keys, indent_string,
+		                          ascii_only, coerce_keys,
+		                          parent_objects + (v_id,),
+		                          indent_level + 1))
 		if (index + 1) < len (value):
 			retval.append (separator)
 	retval.append (newline + next_indent)
@@ -182,12 +173,12 @@ def write_decimal (value):
 		raise errors.WriteError ("Cannot serialize NaN.")
 	s_value = unicode (value)
 	if s_value in ('Infinity', '-Infinity'):
-		raise errors.WriteError ("Cannot serialize %r." % value)
+		raise errors.WriteError ("Cannot serialize %s." % s_value)
 	return s_value
 	
 def write_complex (value):
 	if value.imag == 0.0:
-		return unicode (value.real)
+		return repr (value.real)
 	raise errors.WriteError ("Cannot serialize complex numbers with"
 	                         " imaginary components.")
 	
@@ -197,13 +188,6 @@ CONTAINER_TYPES = {
 	dict: write_object,
 	list: write_array,
 	tuple: write_array,
-	UserList.UserList: write_array,
-	UserDict.UserDict: write_object,
-	collections.deque: write_array,
-	array.array: write_array,
-	set: write_unordered_array,
-	frozenset: write_unordered_array,
-	type ((_ for _ in ())): write_generator,
 }
 
 STR_TYPE_MAPPERS = {
@@ -239,7 +223,7 @@ def write_basic (value, ascii_only):
 			
 	raise errors.UnknownSerializerError (value)
 	
-def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
+def _py_write (value, sort_keys, indent_string, ascii_only, coerce_keys,
             parent_objects, indent_level):
 	"""Serialize a Python value into a list of byte strings.
 	
@@ -254,16 +238,32 @@ def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			if isinstance (value, mapper_type):
 				w_func = mapper
 				
+	# Check for user-defined mapping types
+	if w_func is None:
+		if hasattr (value, 'items'):
+			w_func = write_object
+			
 	if w_func:
 		return w_func (value, sort_keys, indent_string, ascii_only,
 		               coerce_keys, parent_objects, indent_level)
 		
 	if parent_objects:
 		return write_basic (value, ascii_only)
+		
+	# Check for user-defined iterables. Run this check after
+	# write_basic to avoid iterating over strings.
+	try:
+		iter (value)
+	except TypeError:
+		pass
+	else:
+		return write_iterable (value, sort_keys, indent_string, ascii_only,
+		                       coerce_keys, parent_objects, indent_level)
+		
 	raise errors.WriteError ("The outermost container must be an array or object.")
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
-           coerce_keys = False, encoding = 'utf-8'):
+           coerce_keys = False, encoding = 'utf-8', **kwargs):
 	"""Serialize a Python value to a JSON-formatted byte string.
 	
 	value
@@ -302,6 +302,12 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 	
 	"""
 	
+	_write = _py_write
+	if kwargs.get ('__speedboost', True):
+		try:
+			from _writer import _write
+		except ImportError:
+			pass
 	u_string = u''.join (_write (value, sort_keys, indent, ascii_only,
 	                             coerce_keys, (), 0))
 	if encoding is None:

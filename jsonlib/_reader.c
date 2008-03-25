@@ -805,7 +805,7 @@ init_reader (void)
 	
 	if (!(m = Py_InitModule3 ("_reader", reader_methods, module_doc)))
 		return;
-	if (!(errors = PyImport_ImportModule ("errors")))
+	if (!(errors = PyImport_ImportModule ("jsonlib.errors")))
 		return;
 	if (!(ReadError = PyObject_GetAttrString (errors, "ReadError")))
 		return;
