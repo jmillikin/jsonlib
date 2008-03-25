@@ -980,7 +980,7 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 		}
 		else
 		{
-			retval = PySequence_List (pieces);
+			retval = PySequence_Fast (pieces, "Failed to convert to sequence.");
 			Py_DECREF (pieces);
 		}
 	}
