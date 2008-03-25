@@ -801,7 +801,7 @@ static int
 check_valid_number (PyObject *serialized)
 {
 	PyObject *cmp_str;
-	int invalid, error;
+	int invalid;
 	
 	cmp_str = PyString_InternFromString ("Infinity");
 	invalid = PyObject_RichCompareBool (cmp_str, serialized, Py_NE);
@@ -824,7 +824,6 @@ check_valid_number (PyObject *serialized)
 static PyObject *
 write_basic (PyObject *value, int ascii_only)
 {
-	PyObject *retval;
 	int is_decimal, is_userstring;
 	
 	if (value == Py_True)
