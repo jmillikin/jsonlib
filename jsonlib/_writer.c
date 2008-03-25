@@ -942,6 +942,8 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 		pieces = write_basic (object, ascii_only);
 		if (!pieces && PyErr_ExceptionMatches (UnknownSerializerError))
 		{
+			PyObject *iter;
+			
 			if (PySequence_Check (object))
 			{
 				PyErr_Clear ();
@@ -949,12 +951,15 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 				                         ascii_only, coerce_keys,
 				                         indent_level);
 			}
-			else if (PyIter_Check (object))
+			
+			iter = PyObject_GetIter (object);
+			if (iter)
 			{
 				PyErr_Clear ();
-				pieces = write_iterator (object, sort_keys, indent_string,
+				pieces = write_iterator (iter, sort_keys, indent_string,
 				                         ascii_only, coerce_keys,
 				                         indent_level);
+				Py_DECREF (iter);
 			}
 		}
 	}
