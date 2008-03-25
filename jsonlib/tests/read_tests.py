@@ -95,6 +95,16 @@ class ReadNumberTests (TestCase):
 	def test_negative_decimal_exponent (self):
 		self.r ('[10.5e-2]', [Decimal ('0.105')])
 		
+	def test_preserve_negative_decimal_zero (self):
+		# Don't use self.r, because Decimal ('0.0') == Decimal ('-0.0')
+		value = read ('[0.0]')
+		self.assertEqual (type (value[0]), Decimal)
+		self.assertEqual (repr (value[0]), 'Decimal("0.0")')
+		
+		value = read ('[-0.0]')
+		self.assertEqual (type (value[0]), Decimal)
+		self.assertEqual (repr (value[0]), 'Decimal("-0.0")')
+		
 	def test_invalid_number (self):
 		self.re ('-.', 1, 1, 0, "Invalid number.")
 		self.re ('0.', 1, 1, 0, "Invalid number.")
