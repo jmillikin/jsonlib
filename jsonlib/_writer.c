@@ -14,8 +14,6 @@
 #define FALSE 0
 #define TRUE 1
 
-static PyObject *Decimal;
-
 static void
 get_indent (PyObject *indent_string, int indent_level,
             PyObject **newline, PyObject **indent, PyObject **next_indent);
@@ -56,6 +54,8 @@ write_basic (PyObject *value, int ascii_only);
 
 static PyObject *WriteError;
 static PyObject *UnknownSerializerError;
+static PyObject *Decimal;
+static PyObject *UserString;
 
 static const char *hexdigit = "0123456789abcdef";
 
@@ -77,7 +77,7 @@ get_indent (PyObject *indent_string, int indent_level,
 	}
 }
 
-static PyObject*
+static PyObject *
 write_string (PyObject *string, int ascii_only)
 {
 	PyObject *unicode, *retval;
@@ -825,7 +825,7 @@ static PyObject *
 write_basic (PyObject *value, int ascii_only)
 {
 	PyObject *retval;
-	int is_decimal;
+	int is_decimal, is_userstring;
 	
 	if (value == Py_True)
 		return PyString_FromString ("true");
@@ -901,6 +901,19 @@ write_basic (PyObject *value, int ascii_only)
 		return NULL;
 	}
 	
+	if ((is_userstring = PyObject_IsInstance (value, UserString)) == -1)
+		return NULL;
+	
+	if (is_userstring)
+	{
+		PyObject *repr, *retval;
+		if (!(repr = PyObject_Str (value)))
+			return NULL;
+		retval = write_string (repr, ascii_only);
+		Py_DECREF (repr);
+		return retval;
+	}
+	
 	PyErr_SetObject (UnknownSerializerError, value);
 	return NULL;
 }
@@ -917,7 +930,7 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 		                         indent_level);
 	}
 	
-	else if (PyMapping_Check (object))
+	else if (PyObject_HasAttrString (object, "items"))
 	{
 		pieces = write_mapping (object, sort_keys, indent_string,
 		                        ascii_only, coerce_keys,
@@ -995,7 +1008,7 @@ PyDoc_STRVAR (module_doc,
 PyMODINIT_FUNC
 init_writer(void)
 {
-	PyObject *m, *errors, *decimal_module;
+	PyObject *m, *errors, *decimal_module, *userstring_module;
 	
 	if (!(m = Py_InitModule3 ("_writer", writer_methods, module_doc)))
 		return;
@@ -1009,5 +1022,10 @@ init_writer(void)
 	if (!(decimal_module = PyImport_ImportModule ("decimal")))
 		return;
 	if (!(Decimal = PyObject_GetAttrString (decimal_module, "Decimal")))
+		return;
+		
+	if (!(userstring_module = PyImport_ImportModule ("UserString")))
+		return;
+	if (!(UserString = PyObject_GetAttrString (userstring_module, "UserString")))
 		return;
 }
