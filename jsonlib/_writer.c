@@ -28,6 +28,9 @@ static PyObject *
 unicode_to_ascii (PyObject *unicode);
 
 static PyObject *
+write_unicode_full (PyObject *unicode, int ascii_only);
+
+static PyObject *
 write_unicode (PyObject *unicode, int ascii_only);
 
 static PyObject *
@@ -72,12 +75,51 @@ static PyObject*
 write_string (PyObject *string, int ascii_only)
 {
 	PyObject *unicode, *retval;
+	int safe = TRUE;
+	char *buffer;
+	size_t ii;
+	Py_ssize_t str_len;
+	
+	/* Scan the string for non-ASCII values. If none exist, the string
+	 * can be returned directly (with quotes).
+	**/
+	if (PyString_AsStringAndSize (string, &buffer, &str_len) == -1)
+		return NULL;
+	
+	for (ii = 0; ii < str_len; ++ii)
+	{
+		if (buffer[ii] < 0x20 ||
+		    buffer[ii] > 0x7E ||
+		    buffer[ii] == '"' ||
+		    buffer[ii] == '/' ||
+		    buffer[ii] == '\\')
+		{
+			safe = FALSE;
+			break;
+		}
+	}
+	
+	if (safe)
+	{
+		PyObject *quote = PyString_FromString ("\"");
+		retval = PyList_New (3);
+		Py_INCREF (quote);
+		PyList_SetItem (retval, 0, quote);
+		Py_INCREF (string);
+		PyList_SetItem (retval, 1, string);
+		PyList_SetItem (retval, 2, quote);
+		return retval;
+	}
+	
+	/* Convert to Unicode and run through the escaping
+	 * mechanism.
+	**/
 	Py_INCREF (string);
 	unicode = PyUnicode_FromObject (string);
 	Py_DECREF (string);
 	if (!unicode) return NULL;
 	
-	retval = write_unicode (unicode, ascii_only);
+	retval = write_unicode_full (unicode, ascii_only);
 	
 	Py_DECREF (unicode);
 	return retval;
@@ -362,11 +404,52 @@ unicode_to_ascii (PyObject *unicode)
 }
 
 static PyObject *
-write_unicode (PyObject *unicode, int ascii_only)
+write_unicode_full (PyObject *unicode, int ascii_only)
 {
 	if (ascii_only)
 		return unicode_to_ascii (unicode);
 	return unicode_to_unicode (unicode);
+}
+
+static PyObject *
+write_unicode (PyObject *unicode, int ascii_only)
+{
+	PyObject *retval;
+	int safe = TRUE;
+	Py_UNICODE *buffer;
+	size_t ii;
+	Py_ssize_t str_len;
+	
+	/* Check if the string can be returned directly */
+	buffer = PyUnicode_AS_UNICODE (unicode);
+	str_len = PyUnicode_GET_SIZE (unicode);
+	
+	for (ii = 0; ii < str_len; ++ii)
+	{
+		if (buffer[ii] < 0x20 ||
+		    (ascii_only && buffer[ii] > 0x7E) ||
+		    buffer[ii] == '"' ||
+		    buffer[ii] == '/' ||
+		    buffer[ii] == '\\')
+		{
+			safe = FALSE;
+			break;
+		}
+	}
+	
+	if (safe)
+	{
+		PyObject *quote = PyString_FromString ("\"");
+		retval = PyList_New (3);
+		Py_INCREF (quote);
+		PyList_SetItem (retval, 0, quote);
+		Py_INCREF (unicode);
+		PyList_SetItem (retval, 1, unicode);
+		PyList_SetItem (retval, 2, quote);
+		return retval;
+	}
+	
+	return write_unicode_full (unicode, ascii_only);
 }
 
 static int
