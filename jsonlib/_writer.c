@@ -489,6 +489,9 @@ mapping_get_key_and_value (PyObject *item, PyObject **key_ptr,
 {
 	PyObject *key, *value;
 	
+	(*key_ptr) = NULL;
+	(*value_ptr) = NULL;
+	
 	if (!(key = PySequence_GetItem (item, 0)))
 		return FALSE;
 	
