@@ -30,11 +30,14 @@ ESCAPES = {
 for char_ord in range (0, 0x20):
 	ESCAPES.setdefault (chr (char_ord), '\\u%04x' % char_ord)
 	
-def get_indent (indent_string, indent_level):
+def get_separators (start, end, indent_string, indent_level):
 	if indent_string is None:
-		return '', '', ''
-	return '\n', indent_string * (indent_level + 1), indent_string * indent_level
-	
+		return start, end, '', ','
+	else:
+		indent = indent_string * (indent_level + 1)
+		next_indent = indent_string * indent_level
+		return start + '\n', '\n' + next_indent + end, indent, ',\n'
+		
 def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
                  parent_objects, indent_level):
 	"""Serialize an iterable to a list of strings in JSON array format."""
@@ -43,23 +46,20 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	if v_id in parent_objects:
 		raise errors.WriteError ("Cannot serialize self-referential values.")
 		
-	newline, indent, next_indent = get_indent (indent_string, indent_level)
-	retval = ['[', newline]
+	separators = get_separators ('[', ']', indent_string, indent_level)
+	start, end, pre_value, post_value = separators
+	
+	retval = [start]
 	
 	for index, item in enumerate (value):
-		if indent:
-			retval.append (indent)
+		retval.append (pre_value)
 		retval.extend (_py_write (item, sort_keys, indent_string,
 		                          ascii_only, coerce_keys,
 		                          parent_objects + (v_id,),
 		                          indent_level + 1))
 		if (index + 1) < len (value):
-			if newline:
-				retval.append (',' + newline)
-			else:
-				retval.append (',')
-	retval.append (newline + next_indent)
-	retval.append (']')
+			retval.append (post_value)
+	retval.append (end)
 	return retval
 	
 def write_iterable (value, *args, **kwargs):
@@ -73,23 +73,20 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	if v_id in parent_objects:
 		raise errors.WriteError ("Cannot serialize self-referential values.")
 		
-	newline, indent, next_indent = get_indent (indent_string, indent_level)
-	retval = ['{', newline]
+	separators = get_separators ('{', '}', indent_string, indent_level)
+	start, end, pre_value, post_value = separators
+	
+	retval = [start]
 	
 	if sort_keys:
 		items = sorted (value.items ())
 	else:
 		items = value.items ()
 		
-	if newline:
-		separator = ',' + newline
-	else:
-		separator = ','
 	for index, (key, sub_value) in enumerate (items):
 		is_string = isinstance (key, str)
 		is_unicode = isinstance (key, unicode)
-		if indent:
-			retval.append (indent)
+		retval.append (pre_value)
 		if is_string:
 			retval.extend (write_string (key, ascii_only))
 		elif is_unicode:
@@ -104,7 +101,7 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			raise errors.WriteError ("Only strings may "
 			                         "be used as object "
 			                         "keys.")
-		if newline:
+		if indent_string is not None:
 			retval.append (': ')
 		else:
 			retval.append (':')
@@ -113,9 +110,8 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 		                          parent_objects + (v_id,),
 		                          indent_level + 1))
 		if (index + 1) < len (value):
-			retval.append (separator)
-	retval.append (newline + next_indent)
-	retval.append ('}')
+			retval.append (post_value)
+	retval.append (end)
 	return retval
 	
 @memoized
