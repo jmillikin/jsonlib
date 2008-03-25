@@ -14,6 +14,8 @@
 #define FALSE 0
 #define TRUE 1
 
+static PyObject *Decimal;
+
 static void
 get_indent (PyObject *indent_string, int indent_level,
             PyObject **newline, PyObject **indent, PyObject **next_indent);
@@ -39,6 +41,10 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 
 static PyObject *
 write_sequence (PyObject *object, int sort_keys, PyObject *indent_string,
+                int ascii_only, int coerce_keys, int indent_level);
+
+static PyObject *
+write_iterator (PyObject *object, int sort_keys, PyObject *indent_string,
                 int ascii_only, int coerce_keys, int indent_level);
 
 static PyObject *
@@ -566,6 +572,18 @@ write_sequence (PyObject *seq, int sort_keys, PyObject *indent_string,
 	return pieces;
 }
 
+static PyObject*
+write_iterator (PyObject *iter, int sort_keys, PyObject *indent_string,
+                int ascii_only, int coerce_keys, int indent_level)
+{
+	PyObject *sequence, *retval;
+	sequence = PySequence_Tuple (iter);
+	retval = write_sequence (sequence, sort_keys, indent_string,
+	                         ascii_only, coerce_keys, indent_level);
+	Py_DECREF (sequence);
+	return retval;
+}
+
 static int
 mapping_get_key_and_value (PyObject *item, PyObject **key_ptr,
                            PyObject **value_ptr, int coerce_keys, int ascii_only)
@@ -779,23 +797,50 @@ write_mapping (PyObject *mapping, int sort_keys, PyObject *indent_string,
 	return pieces;
 }
 
+static int
+check_valid_number (PyObject *serialized)
+{
+	PyObject *cmp_str;
+	int invalid, error;
+	
+	cmp_str = PyString_InternFromString ("Infinity");
+	invalid = PyObject_RichCompareBool (cmp_str, serialized, Py_NE);
+	Py_DECREF (cmp_str);
+	if (invalid < 1) return invalid;
+	
+	cmp_str = PyString_InternFromString ("-Infinity");
+	invalid = PyObject_RichCompareBool (cmp_str, serialized, Py_NE);
+	Py_DECREF (cmp_str);
+	if (invalid < 1) return invalid;
+	
+	cmp_str = PyString_InternFromString ("NaN");
+	invalid = PyObject_RichCompareBool (cmp_str, serialized, Py_NE);
+	Py_DECREF (cmp_str);
+	if (invalid < 1) return invalid;
+	
+	return TRUE;
+}
+
 static PyObject *
 write_basic (PyObject *value, int ascii_only)
 {
+	PyObject *retval;
+	int is_decimal;
+	
 	if (value == Py_True)
 		return PyString_FromString ("true");
-	else if (value == Py_False)
+	if (value == Py_False)
 		return PyString_FromString ("false");
-	else if (value == Py_None)
+	if (value == Py_None)
 		return PyString_FromString ("null");
 	
-	else if (PyString_Check (value))
+	if (PyString_Check (value))
 		return write_string (value, ascii_only);
-	else if (PyUnicode_Check (value))
+	if (PyUnicode_Check (value))
 		return write_unicode (value, ascii_only);
-	else if (PyInt_Check (value) || PyLong_Check (value))
+	if (PyInt_Check (value) || PyLong_Check (value))
 		return PyObject_Str(value);
-	else if (PyFloat_Check (value))
+	if (PyFloat_Check (value))
 	{
 		double val = PyFloat_AS_DOUBLE (value);
 		if (Py_IS_NAN (val))
@@ -804,7 +849,7 @@ write_basic (PyObject *value, int ascii_only)
 			return NULL;
 		}
 		
-		else if (Py_IS_INFINITY (val))
+		if (Py_IS_INFINITY (val))
 		{
 			if (val > 0)
 				PyErr_SetString (WriteError, "Cannot serialize Infinity.");
@@ -812,15 +857,34 @@ write_basic (PyObject *value, int ascii_only)
 				PyErr_SetString (WriteError, "Cannot serialize -Infinity.");
 			return NULL;
 		}
-		else
-			return PyObject_Repr (value);
+		
+		return PyObject_Repr (value);
 	}
 	
-	else
+	if ((is_decimal = PyObject_IsInstance (value, Decimal)) == -1)
+		return NULL;
+	
+	if (is_decimal)
 	{
-		PyErr_SetObject (UnknownSerializerError, value);
+		PyObject *serialized = PyObject_Str (value);
+		int valid;
+		
+		valid = check_valid_number (serialized);
+		if (valid == TRUE)
+			return serialized;
+		
+		if (valid == FALSE)
+		{
+			PyErr_Format (WriteError, "Cannot serialize %s.",
+			              PyString_AsString (serialized));
+		}
+		/* else valid == -1, error */
+		Py_DECREF (serialized);
 		return NULL;
 	}
+	
+	PyErr_SetObject (UnknownSerializerError, value);
+	return NULL;
 }
 
 static PyObject*
@@ -831,22 +895,43 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 	if (PyList_Check (object) || PyTuple_Check (object))
 	{
 		pieces = write_sequence (object, sort_keys, indent_string,
-		                          ascii_only, coerce_keys,
-		                          indent_level);
-	}
-	
-	else if (PyDict_Check(object))
-	{
-		pieces = write_mapping (object, sort_keys, indent_string,
 		                         ascii_only, coerce_keys,
 		                         indent_level);
+	}
+	
+	else if (PyMapping_Check (object))
+	{
+		pieces = write_mapping (object, sort_keys, indent_string,
+		                        ascii_only, coerce_keys,
+		                        indent_level);
 	}
 	
 	else
 	{
 		pieces = write_basic (object, ascii_only);
+		if (!pieces && PyErr_ExceptionMatches (UnknownSerializerError))
+		{
+			if (PySequence_Check (object))
+			{
+				PyErr_Clear ();
+				pieces = write_sequence (object, sort_keys, indent_string,
+				                         ascii_only, coerce_keys,
+				                         indent_level);
+			}
+			else if (PyIter_Check (object))
+			{
+				PyErr_Clear ();
+				pieces = write_iterator (object, sort_keys, indent_string,
+				                         ascii_only, coerce_keys,
+				                         indent_level);
+			}
+		}
 	}
 	
+	/*
+	if (retval = write_imported_value (value))
+		return retval;
+	*/
 	if (pieces) retval = PySequence_List (pieces);
 	Py_XDECREF (pieces);
 	return retval;
@@ -892,7 +977,7 @@ PyDoc_STRVAR (module_doc,
 PyMODINIT_FUNC
 init_writer(void)
 {
-	PyObject *m, *errors;
+	PyObject *m, *errors, *decimal_module;
 	
 	if (!(m = Py_InitModule3 ("_writer", writer_methods, module_doc)))
 		return;
@@ -901,5 +986,10 @@ init_writer(void)
 	if (!(WriteError = PyObject_GetAttrString (errors, "WriteError")))
 		return;
 	if (!(UnknownSerializerError = PyObject_GetAttrString (errors, "UnknownSerializerError")))
+		return;
+		
+	if (!(decimal_module = PyImport_ImportModule ("decimal")))
+		return;
+	if (!(Decimal = PyObject_GetAttrString (decimal_module, "Decimal")))
 		return;
 }
