@@ -29,6 +29,7 @@ setup (
 		standard = True,
 		ext_modules = [
 			Extension ('jsonlib._reader', ['jsonlib/_reader.c']),
+			Extension ('jsonlib._writer', ['jsonlib/_writer.c']),
 		],
 	)},
 	test_suite = 'jsonlib.tests.suite',

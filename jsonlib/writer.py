@@ -53,10 +53,10 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	for index, item in enumerate (value):
 		if indent:
 			retval.append (indent)
-		retval.extend (_write (item, sort_keys, indent_string,
-		                       ascii_only, coerce_keys,
-		                       parent_objects + (v_id,),
-		                       indent_level + 1))
+		retval.extend (_py_write (item, sort_keys, indent_string,
+		                          ascii_only, coerce_keys,
+		                          parent_objects + (v_id,),
+		                          indent_level + 1))
 		if (index + 1) < len (value):
 			if newline:
 				retval.append (',' + newline)
@@ -117,10 +117,10 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			retval.append (': ')
 		else:
 			retval.append (':')
-		retval.extend (_write (sub_value, sort_keys, indent_string,
-		                       ascii_only, coerce_keys,
-		                       parent_objects + (v_id,),
-		                       indent_level + 1))
+		retval.extend (_py_write (sub_value, sort_keys, indent_string,
+		                          ascii_only, coerce_keys,
+		                          parent_objects + (v_id,),
+		                          indent_level + 1))
 		if (index + 1) < len (value):
 			retval.append (separator)
 	retval.append (newline + next_indent)
@@ -239,7 +239,7 @@ def write_basic (value, ascii_only):
 			
 	raise errors.UnknownSerializerError (value)
 	
-def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
+def _py_write (value, sort_keys, indent_string, ascii_only, coerce_keys,
             parent_objects, indent_level):
 	"""Serialize a Python value into a list of byte strings.
 	
@@ -263,7 +263,7 @@ def _write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	raise errors.WriteError ("The outermost container must be an array or object.")
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
-           coerce_keys = False, encoding = 'utf-8'):
+           coerce_keys = False, encoding = 'utf-8', **kwargs):
 	"""Serialize a Python value to a JSON-formatted byte string.
 	
 	value
@@ -302,6 +302,12 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 	
 	"""
 	
+	_write = _py_write
+	if kwargs.get ('__speedboost', True):
+		try:
+			from _writer import _write
+		except ImportError:
+			pass
 	u_string = u''.join (_write (value, sort_keys, indent, ascii_only,
 	                             coerce_keys, (), 0))
 	if encoding is None:
