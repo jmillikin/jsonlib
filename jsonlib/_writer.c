@@ -944,6 +944,9 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 		{
 			PyObject *iter;
 			
+			/* Used when testing for iterability */
+			PyObject *exc_type, *exc_value, *exc_traceback;
+			
 			if (PySequence_Check (object))
 			{
 				PyErr_Clear ();
@@ -952,7 +955,9 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 				                         indent_level);
 			}
 			
+			PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
 			iter = PyObject_GetIter (object);
+			PyErr_Restore (exc_type, exc_value, exc_traceback);
 			if (iter)
 			{
 				PyErr_Clear ();
