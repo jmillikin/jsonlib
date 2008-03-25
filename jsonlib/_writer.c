@@ -83,8 +83,7 @@ write_string (PyObject *string, int ascii_only)
 	PyObject *unicode, *retval;
 	int safe = TRUE;
 	char *buffer;
-	size_t ii;
-	Py_ssize_t str_len;
+	Py_ssize_t ii, str_len;
 	
 	/* Scan the string for non-ASCII values. If none exist, the string
 	 * can be returned directly (with quotes).
@@ -399,7 +398,7 @@ unicode_to_ascii (PyObject *unicode)
 		}
 		else
 		{
-			*buffer_pos++ = c;
+			*buffer_pos++ = (char) (c);
 		}
 	}
 	*buffer_pos++ = '"';
@@ -423,8 +422,7 @@ write_unicode (PyObject *unicode, int ascii_only)
 	PyObject *retval;
 	int safe = TRUE;
 	Py_UNICODE *buffer;
-	size_t ii;
-	Py_ssize_t str_len;
+	Py_ssize_t ii, str_len;
 	
 	/* Check if the string can be returned directly */
 	buffer = PyUnicode_AS_UNICODE (unicode);
@@ -466,7 +464,7 @@ write_sequence_impl (PyObject *seq, PyObject *pieces,
 {
 	PyObject *start, *end;
 	int status;
-	size_t ii;
+	Py_ssize_t ii;
 	
 	start = PyString_FromString ("[");
 	status = PyList_Append (pieces, start);
