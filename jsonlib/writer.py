@@ -4,11 +4,8 @@
 """Implements jsonlib.write"""
 
 from decimal import Decimal
-import array
-import collections
-import UserList
-import UserDict
 import UserString
+import sets
 from jsonlib.util import memoized, INFINITY
 from jsonlib import errors
 
@@ -66,7 +63,7 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	retval.append (']')
 	return retval
 	
-def write_generator (value, *args, **kwargs):
+def write_iterable (value, *args, **kwargs):
 	return write_array (tuple (value), *args, **kwargs)
 	
 def write_unordered_array (value, sort_keys, *args, **kwargs):
@@ -197,13 +194,9 @@ CONTAINER_TYPES = {
 	dict: write_object,
 	list: write_array,
 	tuple: write_array,
-	UserList.UserList: write_array,
-	UserDict.UserDict: write_object,
-	collections.deque: write_array,
-	array.array: write_array,
 	set: write_unordered_array,
 	frozenset: write_unordered_array,
-	type ((_ for _ in ())): write_generator,
+	sets.BaseSet: write_unordered_array,
 }
 
 STR_TYPE_MAPPERS = {
@@ -254,12 +247,28 @@ def _py_write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 			if isinstance (value, mapper_type):
 				w_func = mapper
 				
+	# Check for user-defined mapping types
+	if w_func is None:
+		if hasattr (value, 'items'):
+			w_func = write_object
+			
 	if w_func:
 		return w_func (value, sort_keys, indent_string, ascii_only,
 		               coerce_keys, parent_objects, indent_level)
 		
 	if parent_objects:
 		return write_basic (value, ascii_only)
+		
+	# Check for user-defined iterables. Run this check after
+	# write_basic to avoid iterating over strings.
+	try:
+		iter (value)
+	except TypeError:
+		pass
+	else:
+		return write_iterable (value, sort_keys, indent_string, ascii_only,
+		                       coerce_keys, parent_objects, indent_level)
+		
 	raise errors.WriteError ("The outermost container must be an array or object.")
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,

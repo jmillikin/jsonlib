@@ -7,6 +7,7 @@ import collections
 import UserList
 import UserDict
 import UserString
+import sets
 from jsonlib import write, errors, util
 from jsonlib.tests.common import TestCase
 
@@ -117,6 +118,18 @@ class WriteArrayTests (TestCase):
 	def test_frozenset_sorted (self):
 		self.w (frozenset (('e', 'm')), u'["e","m"]',
 		        sort_keys = True)
+		
+	def test_python_set (self):
+		self.w (sets.Set (('a', 'b')), u'["a","b"]')
+		
+	def test_python_set_sorted (self):
+		self.w (sets.Set (('e', 'm')), u'["e","m"]', sort_keys = True)
+		
+	def test_python_immutable_set (self):
+		self.w (sets.ImmutableSet (('a', 'b')), u'["a","b"]')
+		
+	def test_python_immutable_set_sorted (self):
+		self.w (sets.ImmutableSet (('e', 'm')), u'["e","m"]', sort_keys = True)
 		
 	def test_array (self):
 		self.w (array.array('i', [1,2,3]), u'[1,2,3]')
