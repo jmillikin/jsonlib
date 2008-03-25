@@ -110,7 +110,17 @@ class WriteArrayTests (TestCase):
 		        indent = '\t')
 		
 	def test_generator (self):
-		self.w ((_ for _ in (True, True)), u'[true,true]')
+		# Don't use self.w because that will exhaust the generator
+		# and cause a false negative on the test.
+		value = (_ for _ in (True, True))
+		serialized = write (value, encoding = None, __speedboost = False)
+		self.assertEqual (serialized, u'[true,true]')
+		self.assertEqual (type (serialized), unicode)
+		
+		value = (_ for _ in (True, True))
+		serialized = write (value, encoding = None, __speedboost = True)
+		self.assertEqual (serialized, u'[true,true]')
+		self.assertEqual (type (serialized), unicode)
 		
 	def test_set (self):
 		self.w (set (('a', 'b')), u'["a","b"]')
