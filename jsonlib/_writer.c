@@ -28,9 +28,6 @@ static PyObject *
 unicode_to_ascii (PyObject *unicode);
 
 static PyObject *
-write_unicode_full (PyObject *unicode, int ascii_only);
-
-static PyObject *
 write_unicode (PyObject *unicode, int ascii_only);
 
 static PyObject *
@@ -38,11 +35,7 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
             int ascii_only, int coerce_keys, int indent_level);
 
 static PyObject *
-write_sequence (PyObject *object, int sort_keys, PyObject *indent_string,
-                int ascii_only, int coerce_keys, int indent_level);
-
-static PyObject *
-write_iterator (PyObject *object, int sort_keys, PyObject *indent_string,
+write_iterable (PyObject *object, int sort_keys, PyObject *indent_string,
                 int ascii_only, int coerce_keys, int indent_level);
 
 static PyObject *
@@ -74,6 +67,38 @@ get_indent (PyObject *indent_string, int indent_level,
 		(*newline) = PyString_FromString ("\n");
 		(*indent) = PySequence_Repeat (indent_string, indent_level + 1);
 		(*next_indent) = PySequence_Repeat (indent_string, indent_level);
+	}
+}
+
+static void
+get_separators (PyObject *indent_string, int indent_level,
+                char start, char end,
+                PyObject **start_ptr, PyObject **end_ptr,
+                PyObject **pre_value_ptr, PyObject **post_value_ptr)
+{
+	if (indent_string == Py_None)
+	{
+		(*start_ptr) = PyString_FromFormat ("%c", start);
+		(*pre_value_ptr) = NULL;
+		(*post_value_ptr) = PyString_FromString (",");
+		(*end_ptr) = PyString_FromFormat ("%c", end);
+	}
+	else
+	{
+		PyObject *format_args, *format_tmpl, *indent, *next_indent;
+		
+		(*start_ptr) = PyString_FromFormat ("[%c", '\n');
+		(*post_value_ptr) = PyString_FromFormat (",%c", '\n');
+		
+		indent = PySequence_Repeat (indent_string, indent_level + 1);
+		(*pre_value_ptr) = indent;
+		
+		next_indent = PySequence_Repeat (indent_string, indent_level);
+		format_args = Py_BuildValue ("(N)", next_indent);
+		format_tmpl = PyString_FromString ("\n%s]");
+		(*end_ptr) = PyString_Format (format_tmpl, format_args);
+		Py_DECREF (format_args);
+		Py_DECREF (format_tmpl);
 	}
 }
 
@@ -124,8 +149,10 @@ write_string (PyObject *string, int ascii_only)
 	Py_DECREF (string);
 	if (!unicode) return NULL;
 	
-	retval = write_unicode_full (unicode, ascii_only);
-	
+	if (ascii_only)
+		retval = unicode_to_ascii (unicode);
+	else
+		retval = unicode_to_unicode (unicode);
 	Py_DECREF (unicode);
 	return retval;
 }
@@ -409,14 +436,6 @@ unicode_to_ascii (PyObject *unicode)
 }
 
 static PyObject *
-write_unicode_full (PyObject *unicode, int ascii_only)
-{
-	if (ascii_only)
-		return unicode_to_ascii (unicode);
-	return unicode_to_unicode (unicode);
-}
-
-static PyObject *
 write_unicode (PyObject *unicode, int ascii_only)
 {
 	PyObject *retval;
@@ -453,42 +472,37 @@ write_unicode (PyObject *unicode, int ascii_only)
 		return retval;
 	}
 	
-	return write_unicode_full (unicode, ascii_only);
+	if (ascii_only)
+		return unicode_to_ascii (unicode);
+	return unicode_to_unicode (unicode);
 }
 
 static int
 write_sequence_impl (PyObject *seq, PyObject *pieces,
-                     PyObject *newline, PyObject *indent, PyObject *next_indent,
+                     PyObject *start, PyObject *end,
+                     PyObject *pre_value, PyObject *post_value,
                      int sort_keys, PyObject *indent_string,
                      int ascii_only, int coerce_keys, int indent_level)
 {
-	PyObject *start, *end;
-	int status;
 	Py_ssize_t ii;
 	
-	start = PyString_FromString ("[");
-	status = PyList_Append (pieces, start);
-	Py_DECREF (start);
-	if (status == -1) return FALSE;
-	if (newline && PyList_Append (pieces, newline) == -1)
+	if (PyList_Append (pieces, start) == -1)
 		return FALSE;
 	
-	/* Use PySequence_Size because the sequence might be mutable */
-	for (ii = 0; ii < PySequence_Size (seq); ++ii)
+	/* Check size every loop because the sequence might be mutable */
+	for (ii = 0; ii < PySequence_Fast_GET_SIZE (seq); ++ii)
 	{
 		PyObject *item, *serialized, *pieces2;
 		
-		if (indent && PyList_Append (pieces, indent) == -1)
+		if (pre_value && PyList_Append (pieces, pre_value) == -1)
 			return FALSE;
 		
-		if (!(item = PySequence_GetItem (seq, ii)))
+		if (!(item = PySequence_Fast_GET_ITEM (seq, ii)))
 			return FALSE;
 		
-		serialized = json_write (item, sort_keys,
-		                         indent_string,
+		serialized = json_write (item, sort_keys, indent_string,
 		                         ascii_only, coerce_keys,
 		                         indent_level + 1);
-		Py_DECREF (item);
 		if (!serialized) return FALSE;
 		
 		pieces2 = PySequence_InPlaceConcat (pieces, serialized);
@@ -496,71 +510,66 @@ write_sequence_impl (PyObject *seq, PyObject *pieces,
 		if (!pieces2) return FALSE;
 		Py_DECREF (pieces2);
 		
-		if (ii + 1 < PySequence_Size (seq))
+		if (ii + 1 < PySequence_Fast_GET_SIZE (seq))
 		{
-			PyObject *separator = PyString_FromString (",");
-			status = PyList_Append (pieces, separator);
-			Py_DECREF (separator);
-			if (status == -1) return FALSE;
-			if (newline && PyList_Append (pieces, newline) == -1)
+			if (PyList_Append (pieces, post_value) == -1)
 				return FALSE;
 		}
 	}
 	
-	if (newline && PyList_Append (pieces, newline) == -1)
+	if (PyList_Append (pieces, end) == -1)
 		return FALSE;
-	if (next_indent && PyList_Append (pieces, next_indent) == -1)
-		return FALSE;
-	end = PyString_FromString ("]");
-	status = PyList_Append (pieces, end);
-	Py_DECREF (end);
-	if (status == -1) return FALSE;
 	
 	return TRUE;
 }
 
 static PyObject*
-write_sequence (PyObject *seq, int sort_keys, PyObject *indent_string,
+write_iterable (PyObject *iter, int sort_keys, PyObject *indent_string,
                 int ascii_only, int coerce_keys, int indent_level)
 {
+	PyObject *sequence, *retval, *pieces;
+	PyObject *start, *end, *pre, *post;
 	int has_parents, succeeded;
-	PyObject *pieces;
-	PyObject *newline, *indent, *next_indent;
 	
-	if (PySequence_Size (seq) == 0)
-		return PyString_FromString ("[]");
+	/* Guard against infinite recursion */
+	has_parents = Py_ReprEnter (iter);
+	if (has_parents > 0)
+		PyErr_SetString (WriteError,
+		                 "Cannot serialize self-referential values.");
+	if (has_parents != 0) return NULL;
 	
-	has_parents = Py_ReprEnter (seq);
-	if (has_parents != 0)
+	sequence = PySequence_Fast (iter, "Error converting iterable to sequence.");
+	
+	/* Shortcut for len (sequence) == 0 */
+	if (PySequence_Fast_GET_SIZE (sequence) == 0)
 	{
-		if (has_parents > 0)
-		{
-			PyErr_SetString (WriteError, "Cannot serialize self-referential values.");
-		}
-		return NULL;
+		Py_DECREF (sequence);
+		Py_ReprLeave (iter);
+		return PyString_FromString ("[]");
 	}
 	
 	if (!(pieces = PyList_New (0)))
 	{
-		Py_ReprLeave (seq);
+		Py_DECREF (sequence);
+		Py_ReprLeave (iter);
 		return NULL;
 	}
 	
-	get_indent (indent_string, indent_level, &newline, &indent,
-	            &next_indent);
+	/* Build separator strings */
+	get_separators (indent_string, indent_level, '[', ']',
+	                &start, &end, &pre, &post);
 	
-	Py_INCREF (seq);
-	
-	succeeded = write_sequence_impl (seq, pieces, newline, indent, next_indent,
+	succeeded = write_sequence_impl (sequence, pieces, start, end, pre, post,
 	                                 sort_keys, indent_string, ascii_only,
 	                                 coerce_keys, indent_level);
 	
-	Py_ReprLeave (seq);
+	Py_DECREF (sequence);
+	Py_ReprLeave (iter);
 	
-	Py_DECREF (seq);
-	Py_XDECREF (newline);
-	Py_XDECREF (indent);
-	Py_XDECREF (next_indent);
+	Py_XDECREF (start);
+	Py_XDECREF (end);
+	Py_XDECREF (pre);
+	Py_XDECREF (post);
 	
 	if (!succeeded)
 	{
@@ -568,18 +577,6 @@ write_sequence (PyObject *seq, int sort_keys, PyObject *indent_string,
 		pieces = NULL;
 	}
 	return pieces;
-}
-
-static PyObject*
-write_iterator (PyObject *iter, int sort_keys, PyObject *indent_string,
-                int ascii_only, int coerce_keys, int indent_level)
-{
-	PyObject *sequence, *retval;
-	sequence = PySequence_Tuple (iter);
-	retval = write_sequence (sequence, sort_keys, indent_string,
-	                         ascii_only, coerce_keys, indent_level);
-	Py_DECREF (sequence);
-	return retval;
 }
 
 static int
@@ -594,7 +591,7 @@ mapping_get_key_and_value (PyObject *item, PyObject **key_ptr,
 	if (!(key = PySequence_GetItem (item, 0)))
 		return FALSE;
 	
-	if (!PyString_Check (key) && !PyUnicode_Check (key))
+	if (!(PyString_Check (key) || PyUnicode_Check (key)))
 	{
 		if (coerce_keys)
 		{
@@ -922,7 +919,7 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 	PyObject *retval = NULL, *pieces;
 	if (PyList_Check (object) || PyTuple_Check (object))
 	{
-		pieces = write_sequence (object, sort_keys, indent_string,
+		pieces = write_iterable (object, sort_keys, indent_string,
 		                         ascii_only, coerce_keys,
 		                         indent_level);
 	}
@@ -955,7 +952,7 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 			if (PySequence_Check (object))
 			{
 				PyErr_Clear ();
-				pieces = write_sequence (object, sort_keys, indent_string,
+				pieces = write_iterable (object, sort_keys, indent_string,
 				                         ascii_only, coerce_keys,
 				                         indent_level);
 			}
@@ -966,7 +963,7 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 			if (iter)
 			{
 				PyErr_Clear ();
-				pieces = write_iterator (iter, sort_keys, indent_string,
+				pieces = write_iterable (iter, sort_keys, indent_string,
 				                         ascii_only, coerce_keys,
 				                         indent_level);
 				Py_DECREF (iter);
