@@ -174,6 +174,9 @@ class ReadStringTests (TestCase):
 		self.re ('["\\uD834testing"]', 1, 9, 8,
 		        "Missing surrogate pair half.")
 		
+		self.re ('["\\uDD1E"]', 1, 9, 8,
+		        "Missing surrogate pair half.")
+		
 	def test_invalid_escape (self):
 		self.re (u'["\\a"]', 1, 3, 2, "Unknown escape code.")
 		

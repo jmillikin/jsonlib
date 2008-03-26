@@ -245,6 +245,12 @@ class WriteStringTests (TestCase):
 		self.w ([u'\u24CA'], u'["\u24ca"]', ascii_only = False)
 		self.w ([u'\U0001D11E'], u'["\U0001D11E"]', ascii_only = False)
 		
+	def test_fail_invalid_unicode (self):
+		self.we ([u'\uD834'], "Cannot serialize incomplete"
+		                      " surrogate pair.")
+		self.we ([u'\uDD1E'], "Cannot serialize incomplete"
+		                      " surrogate pair.")
+		
 	def test_escape_short_unicode (self):
 		# Some Latin-1
 		self.w ([u'\u00B6\u00D7'], u'["\\u00b6\\u00d7"]')
