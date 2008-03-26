@@ -318,10 +318,12 @@ unicode_to_ascii (PyObject *unicode)
 			new_buffer_size += 2;
 		else if (c <= 0x1F)
 			new_buffer_size += 6;
-#ifdef Py_UNICODE_WIDE
-		else if (c > 0xFFFF)
-			new_buffer_size += 12;
-#endif
+			
+#		ifdef Py_UNICODE_WIDE
+			else if (c > 0xFFFF)
+				new_buffer_size += 12;
+#		endif
+		
 		else if (c > 0x7E)
 			new_buffer_size += 6;
 		else

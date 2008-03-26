@@ -16,9 +16,6 @@
 
 #if PY_VERSION_HEX < 0x02050000
 	typedef int Py_ssize_t;
-#	define PY_SSIZE_T_F "%d"
-#else
-#	define PY_SSIZE_T_F "%" PY_FORMAT_SIZE_T "d"
 #endif
 
 #if Py_UNICODE_SIZE < 4
@@ -73,8 +70,8 @@ skip_spaces (ParserState *state)
 		state->index++;
 }
 
-static unsigned long
-next_ucs4_unichar (ParserState *state, Py_UNICODE *index)
+static Py_UCS4
+next_ucs4 (ParserState *state, Py_UNICODE *index)
 {
 	unsigned long value = index[0];
 	if (value >= 0xD800 && value <= 0xDBFF)
@@ -115,7 +112,7 @@ static void
 set_error_unexpected (ParserState *state, Py_UNICODE *position)
 {
 	PyObject *err_str, *err_str_tmpl, *err_format_args;
-	unsigned long c = next_ucs4_unichar (state, position);
+	Py_UCS4 c = next_ucs4 (state, position);
 	unsigned long row, column, char_offset;
 	
 	count_row_column (state->start, position, &char_offset,
@@ -280,7 +277,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 			
 		(*index_ptr) += 4;
 		
-#		if Py_UNICODE_SIZE >= 4
+#		ifdef Py_UNICODE_WIDE
 			upper -= 0xD800;
 			lower -= 0xDC00;
 			
