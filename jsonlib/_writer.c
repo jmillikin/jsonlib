@@ -14,6 +14,10 @@
 #define FALSE 0
 #define TRUE 1
 
+#if PY_VERSION_HEX < 0x02050000
+	typedef int Py_ssize_t;
+#endif
+
 static void
 get_indent (PyObject *indent_string, int indent_level,
             PyObject **newline, PyObject **indent, PyObject **next_indent);
