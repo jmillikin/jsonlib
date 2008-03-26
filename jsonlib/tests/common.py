@@ -28,25 +28,25 @@ class TestCase (unittest.TestCase):
 		                                         expected_error_message))
 		try:
 			read (string, __speedboost = False)
-			self.fail ("No exception raised in C implementation.")
+			self.fail ("No exception raised in Python implementation.")
 		except errors.ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
 		try:
 			read (string, __speedboost = True)
-			self.fail ("No exception raised in Python implementation.")
+			self.fail ("No exception raised in C implementation.")
 		except errors.ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
 			
 	def we (self, value, expected_error_message, **kwargs):
 		try:
 			write (value, __speedboost = False, **kwargs)
-			self.fail ("No exception raised.")
+			self.fail ("No exception raised in Python implementation.")
 		except errors.WriteError, error:
 			self.assertEqual (unicode (error),
 			                  expected_error_message)
 		try:
 			write (value, __speedboost = True, **kwargs)
-			self.fail ("No exception raised.")
+			self.fail ("No exception raised in C implementation.")
 		except errors.WriteError, error:
 			self.assertEqual (unicode (error),
 			                  expected_error_message)
