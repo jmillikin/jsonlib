@@ -5,24 +5,7 @@
  * Implementation of _read in C.
 **/
 
-#include <Python.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <ctype.h>
-#include <math.h>
-
-#define FALSE 0
-#define TRUE 1
-
-#if PY_VERSION_HEX < 0x02050000
-	typedef int Py_ssize_t;
-#endif
-
-#if Py_UNICODE_SIZE < 4
-#	define PY_UNICODE_F "%u"
-#else
-#	define PY_UNICODE_F "%lu"
-#endif
+#include "jsonlib-common.h"
 
 typedef struct _ParserState {
 	Py_UNICODE *start;
@@ -44,15 +27,14 @@ typedef enum
 	OBJECT_GOT_VALUE
 } ParseObjectState;
 
+static PyObject *get_ReadError (void);
+
 static PyObject *read_keyword (ParserState *state);
 static PyObject *read_string (ParserState *state);
 static PyObject *read_number (ParserState *state);
 static PyObject *read_array (ParserState *state);
 static PyObject *read_object (ParserState *state);
 static PyObject *json_read (ParserState *state);
-
-static PyObject *ReadError;
-static PyObject *_Decimal;
 
 static void
 skip_spaces (ParserState *state)
@@ -111,7 +93,7 @@ count_row_column (Py_UNICODE *start, Py_UNICODE *pos, unsigned long *offset,
 static void
 set_error_unexpected (ParserState *state, Py_UNICODE *position)
 {
-	PyObject *err_str, *err_str_tmpl, *err_format_args;
+	PyObject *err_str, *err_str_tmpl, *err_format_args, *ReadError;
 	Py_UCS4 c = next_ucs4 (state, position);
 	unsigned long row, column, char_offset;
 	
@@ -127,7 +109,11 @@ set_error_unexpected (ParserState *state, Py_UNICODE *position)
 	err_str = PyString_Format (err_str_tmpl, err_format_args);
 	Py_DECREF (err_str_tmpl);
 	Py_DECREF (err_format_args);
-	PyErr_SetObject (ReadError, err_str);
+	if ((ReadError = get_ReadError ()))
+	{
+		PyErr_SetObject (ReadError, err_str);
+		Py_DECREF (ReadError);
+	}
 	Py_DECREF (err_str);
 }
 
@@ -137,7 +123,7 @@ set_error (ParserState *state, Py_UNICODE *position, const char *description)
 	const char *tmpl = "JSON parsing error at line %d, column %d"
 	                   " (position %d): %s";
 	unsigned long row, column, char_offset;
-	PyObject *err_str, *err_str_tmpl, *err_format_args;
+	PyObject *err_str, *err_str_tmpl, *err_format_args, *ReadError;
 	
 	count_row_column (state->start, position, &char_offset,
 	                  &row, &column);
@@ -148,7 +134,11 @@ set_error (ParserState *state, Py_UNICODE *position, const char *description)
 	err_str = PyString_Format (err_str_tmpl, err_format_args);
 	Py_DECREF (err_str_tmpl);
 	Py_DECREF (err_format_args);
-	PyErr_SetObject (ReadError, err_str);
+	if ((ReadError = get_ReadError ()))
+	{
+		PyErr_SetObject (ReadError, err_str);
+		Py_DECREF (ReadError);
+	}
 	Py_DECREF (err_str);
 }
 
@@ -156,13 +146,39 @@ set_error (ParserState *state, Py_UNICODE *position, const char *description)
 static PyObject *
 Decimal (PyObject *string)
 {
-	PyObject *args, *new_obj;
+	PyObject *args, *retval = NULL, *module, *py_class = NULL;
 	
-	args = PyTuple_Pack (1, string);
-	new_obj = PyObject_CallObject (_Decimal, args);
+	/* Retrieve the class on every call to avoid screwing up
+	 * multiple interpreters in the same process.
+	**/
+	if ((module = PyImport_ImportModule ("decimal")))
+	{
+		py_class = PyObject_GetAttrString (module, "Decimal");
+		Py_DECREF (module);
+	}
+	if (!py_class)
+		return NULL;
 	
-	Py_DECREF (args);
-	return new_obj;
+	if ((args = PyTuple_Pack (1, string)))
+	{
+		retval = PyObject_CallObject (py_class, args);
+		Py_DECREF (args);
+	}
+	Py_DECREF (py_class);
+	return retval;
+}
+
+/* Helper to retrieve the ReadError class */
+static PyObject *
+get_ReadError (void)
+{
+	PyObject *errors, *ReadError = NULL;
+	if ((errors = PyImport_ImportModule ("jsonlib.errors")))
+	{
+		ReadError = PyObject_GetAttrString (errors, "ReadError");
+		Py_DECREF (errors);
+	}
+	return ReadError;
 }
 
 /* Helper function to perform strncmp between Py_UNICODE and char* */
@@ -798,17 +814,5 @@ PyDoc_STRVAR (module_doc,
 PyMODINIT_FUNC
 init_reader (void)
 {
-	PyObject *m, *errors, *decimal_module;
-	
-	if (!(m = Py_InitModule3 ("_reader", reader_methods, module_doc)))
-		return;
-	if (!(errors = PyImport_ImportModule ("jsonlib.errors")))
-		return;
-	if (!(ReadError = PyObject_GetAttrString (errors, "ReadError")))
-		return;
-	
-	if (!(decimal_module = PyImport_ImportModule ("decimal")))
-		return;
-	if (!(_Decimal = PyObject_GetAttrString (decimal_module, "Decimal")))
-		return;
+	Py_InitModule3 ("_reader", reader_methods, module_doc);
 }

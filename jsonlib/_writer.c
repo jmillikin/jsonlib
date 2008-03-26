@@ -5,18 +5,7 @@
  * Implementation of _write in C.
 **/
 
-#include <Python.h>
-#include <stddef.h>
-#include <stdio.h>
-#include <ctype.h>
-#include <math.h>
-
-#define FALSE 0
-#define TRUE 1
-
-#if PY_VERSION_HEX < 0x02050000
-	typedef int Py_ssize_t;
-#endif
+#include "jsonlib-common.h"
 
 static void
 get_indent (PyObject *indent_string, int indent_level,
