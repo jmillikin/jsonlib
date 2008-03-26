@@ -527,7 +527,7 @@ static PyObject*
 write_iterable (PyObject *iter, int sort_keys, PyObject *indent_string,
                 int ascii_only, int coerce_keys, int indent_level)
 {
-	PyObject *sequence, *retval, *pieces;
+	PyObject *sequence, *pieces;
 	PyObject *start, *end, *pre, *post;
 	int has_parents, succeeded;
 	
