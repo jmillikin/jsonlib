@@ -527,6 +527,17 @@ write_unicode (PyObject *unicode, int ascii_only)
 				}
 				return NULL;
 			}
+			else if (!(0xDC00 <= buffer[ii] && buffer[ii] <= 0xDFFF))
+			{
+				PyObject *err_class;
+				if ((err_class = get_WriteError ()))
+				{
+					PyErr_SetString (err_class,
+					                 "Cannot serialize invalid surrogate pair.");
+					Py_DECREF (err_class);
+				}
+				return NULL;
+			}
 		}
 		else if (0xDC00 <= buffer[ii] && buffer[ii] <= 0xDFFF)
 		{	
