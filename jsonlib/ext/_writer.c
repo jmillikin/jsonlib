@@ -61,6 +61,16 @@ unicode_to_ascii (PyObject *unicode);
 
 static const char *hexdigit = "0123456789abcdef";
 
+static PyObject *
+unicode_from_ascii (const char *value)
+{
+	PyObject *str, *retval;
+	str = PyString_FromString (value);
+	retval = PyUnicode_FromEncodedObject (str, "ascii", "strict");
+	Py_DECREF (str);
+	return retval;
+}
+
 static void
 get_separators (PyObject *indent_string, int indent_level,
                 char start, char end,
@@ -136,7 +146,7 @@ write_string (WriterState *state, PyObject *string)
 	 * mechanism.
 	**/
 	Py_INCREF (string);
-	unicode = PyUnicode_FromObject (string);
+	unicode = PyString_AsDecodedObject (string, "ascii", "strict");
 	Py_DECREF (string);
 	if (!unicode) return NULL;
 	
@@ -1014,13 +1024,13 @@ _write_entry (PyObject *self, PyObject *args)
 	                       &state.WriteError, &state.UnknownSerializerError))
 		return NULL;
 	
-	if ((state.true_str = PyString_FromString ("true")) &&
-	    (state.false_str = PyString_FromString ("false")) &&
-	    (state.null_str = PyString_FromString ("null")) &&
-	    (state.inf_str = PyString_FromString ("Infinity")) &&
-	    (state.neg_inf_str = PyString_FromString ("-Infinity")) &&
-	    (state.nan_str = PyString_FromString ("NaN")) &&
-	    (state.quote = PyString_FromString ("\"")))
+	if ((state.true_str = unicode_from_ascii ("true")) &&
+	    (state.false_str = unicode_from_ascii ("false")) &&
+	    (state.null_str = unicode_from_ascii ("null")) &&
+	    (state.inf_str = unicode_from_ascii ("Infinity")) &&
+	    (state.neg_inf_str = unicode_from_ascii ("-Infinity")) &&
+	    (state.nan_str = unicode_from_ascii ("NaN")) &&
+	    (state.quote = unicode_from_ascii ("\"")))
 	{
 		result = write_object (&state, value, 0);
 	}
