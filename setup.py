@@ -28,8 +28,8 @@ setup (
 		"Performance-enhancing extension modules",
 		standard = True,
 		ext_modules = [
-			Extension ('jsonlib._reader', ['jsonlib/ext/_reader.c']),
-			Extension ('jsonlib._writer', ['jsonlib/ext/_writer.c']),
+			Extension ('jsonlib._reader', ['jsonlib/ext/_reader.c', 'jsonlib/ext/jsonlib-common.c']),
+			Extension ('jsonlib._writer', ['jsonlib/ext/_writer.c', 'jsonlib/ext/jsonlib-common.c']),
 		],
 	)},
 	test_suite = 'jsonlib.tests.suite',

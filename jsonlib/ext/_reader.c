@@ -146,17 +146,9 @@ set_error (ParserState *state, Py_UNICODE *position, const char *description)
 static PyObject *
 Decimal (PyObject *string)
 {
-	PyObject *args, *retval = NULL, *module, *py_class = NULL;
+	PyObject *args, *retval = NULL, *py_class;
 	
-	/* Retrieve the class on every call to avoid screwing up
-	 * multiple interpreters in the same process.
-	**/
-	if ((module = PyImport_ImportModule ("decimal")))
-	{
-		py_class = PyObject_GetAttrString (module, "Decimal");
-		Py_DECREF (module);
-	}
-	if (!py_class)
+	if (!(py_class = jsonlib_get_imported_obj ("decimal", "Decimal")))
 		return NULL;
 	
 	if ((args = PyTuple_Pack (1, string)))
@@ -172,13 +164,7 @@ Decimal (PyObject *string)
 static PyObject *
 get_ReadError (void)
 {
-	PyObject *errors, *ReadError = NULL;
-	if ((errors = PyImport_ImportModule ("jsonlib.errors")))
-	{
-		ReadError = PyObject_GetAttrString (errors, "ReadError");
-		Py_DECREF (errors);
-	}
-	return ReadError;
+	return jsonlib_get_imported_obj ("jsonlib.errors", "ReadError");
 }
 
 /* Helper function to perform strncmp between Py_UNICODE and char* */

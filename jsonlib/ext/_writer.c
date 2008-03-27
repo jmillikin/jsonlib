@@ -43,49 +43,25 @@ static const char *hexdigit = "0123456789abcdef";
 static PyObject *
 get_WriteError (void)
 {
-	PyObject *module, *obj = NULL;
-	if ((module = PyImport_ImportModule ("jsonlib.errors")))
-	{
-		obj = PyObject_GetAttrString (module, "WriteError");
-		Py_DECREF (module);
-	}
-	return obj;
+	return jsonlib_get_imported_obj ("jsonlib.errors", "WriteError");
 }
 
 static PyObject *
 get_UnknownSerializerError (void)
 {
-	PyObject *module, *obj = NULL;
-	if ((module = PyImport_ImportModule ("jsonlib.errors")))
-	{
-		obj = PyObject_GetAttrString (module, "UnknownSerializerError");
-		Py_DECREF (module);
-	}
-	return obj;
+	return jsonlib_get_imported_obj ("jsonlib.errors", "UnknownSerializerError");
 }
 
 static PyObject *
 get_Decimal (void)
 {
-	PyObject *module, *obj = NULL;
-	if ((module = PyImport_ImportModule ("decimal")))
-	{
-		obj = PyObject_GetAttrString (module, "Decimal");
-		Py_DECREF (module);
-	}
-	return obj;
+	return jsonlib_get_imported_obj ("decimal", "Decimal");
 }
 
 static PyObject *
 get_UserString (void)
 {
-	PyObject *module, *obj = NULL;
-	if ((module = PyImport_ImportModule ("UserString")))
-	{
-		obj = PyObject_GetAttrString (module, "UserString");
-		Py_DECREF (module);
-	}
-	return obj;
+	return jsonlib_get_imported_obj ("UserString", "UserString");
 }
 
 static void
