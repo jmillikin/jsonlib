@@ -8,9 +8,18 @@ import UserList
 import UserDict
 import UserString
 import sets
-from jsonlib import write, errors, util
+from jsonlib import write, errors
 from jsonlib.tests.common import TestCase
 
+try:
+	INFINITY = float ('inf')
+except ValueError:
+	INFINITY = 1e300000
+try:
+	NAN = float ('nan')
+except ValueError:
+	NAN = INFINITY/INFINITY
+	
 class MiscTests (TestCase):
 	def test_fail_on_unknown (self):
 		obj = object ()
@@ -73,13 +82,13 @@ class WriteNumberTests (TestCase):
 		                 " with imaginary components.")
 		
 	def test_fail_on_infinity (self):
-		self.we ([util.INFINITY], "Cannot serialize Infinity.")
+		self.we ([INFINITY], "Cannot serialize Infinity.")
 		
 	def test_fail_on_neg_infinity (self):
-		self.we ([-util.INFINITY], "Cannot serialize -Infinity.")
+		self.we ([-INFINITY], "Cannot serialize -Infinity.")
 		
 	def test_fail_on_nan (self):
-		self.we ([util.NAN], "Cannot serialize NaN.")
+		self.we ([NAN], "Cannot serialize NaN.")
 		
 	def test_fail_on_decimal_infinity (self):
 		self.we ([Decimal ('Infinity')], "Cannot serialize Infinity.")
@@ -111,17 +120,7 @@ class WriteArrayTests (TestCase):
 		        indent = '\t')
 		
 	def test_generator (self):
-		# Don't use self.w because that will exhaust the generator
-		# and cause a false negative on the test.
-		value = (_ for _ in (True, True))
-		serialized = write (value, encoding = None, __speedboost = False)
-		self.assertEqual (serialized, u'[true,true]')
-		self.assertEqual (type (serialized), unicode)
-		
-		value = (_ for _ in (True, True))
-		serialized = write (value, encoding = None, __speedboost = True)
-		self.assertEqual (serialized, u'[true,true]')
-		self.assertEqual (type (serialized), unicode)
+		self.w ((_ for _ in (True, True)), u'[true,true]')
 		
 	def test_set (self):
 		self.w (set (('a', 'b')), u'["a","b"]')
