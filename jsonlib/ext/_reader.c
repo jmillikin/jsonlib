@@ -204,13 +204,19 @@ unicode_utf8_strncmp (Py_UNICODE *unicode, const char *utf8, Py_ssize_t count)
 {
 	PyObject *str;
 	char *c_str;
-	int retval;
+	int retval = -1;
 	
 	str = PyUnicode_EncodeUTF8 (unicode, count, "strict");
-	c_str = PyString_AsString (str);
+	if (str)
+	{
+		c_str = PyString_AsString (str);
+		if (c_str)
+		{
+			retval = strncmp (c_str, utf8, count);
+		}
+		Py_DECREF (str);
+	}
 	
-	retval = strncmp (c_str, utf8, count);
-	Py_DECREF (str);
 	return retval;
 }
 
@@ -618,6 +624,8 @@ read_array_impl (PyObject *list, ParserState *state)
 		else
 		{
 			PyObject *value;
+			int result;
+			
 			if (array_state == ARRAY_GOT_VALUE)
 			{
 				set_error_simple (state, state->index,
@@ -625,17 +633,15 @@ read_array_impl (PyObject *list, ParserState *state)
 				return FALSE;
 			}
 			
-			if ((value = json_read (state)))
-			{
-				int result = PyList_Append (list, value);
-				Py_DECREF (value);
-				if (result != -1)
-				{
-					array_state = ARRAY_GOT_VALUE;
-					continue;
-				}
-			}
-			return FALSE;
+			if (!(value = json_read (state)))
+				return FALSE;
+			
+			result  = PyList_Append (list, value);
+			Py_DECREF (value);
+			if (result == -1)
+				return FALSE;
+			
+			array_state = ARRAY_GOT_VALUE;
 		}
 	}
 }
@@ -733,9 +739,7 @@ read_object_impl (PyObject *object, ParserState *state)
 			Py_DECREF (key);
 			Py_DECREF (value);
 			if (result == -1)
-			{
 				return FALSE;
-			}
 			
 			object_state = OBJECT_GOT_VALUE;
 		}
