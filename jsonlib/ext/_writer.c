@@ -7,7 +7,7 @@
 
 #include "jsonlib-common.h"
 
-typedef struct
+typedef struct _WriterState
 {
 	/* Pulled from the current interpreter to avoid errors when used
 	 * with sub-interpreters.
@@ -17,10 +17,20 @@ typedef struct
 	PyObject *WriteError;
 	PyObject *UnknownSerializerError;
 	
+	/* Options passed to _write */
 	int sort_keys;
 	PyObject *indent_string;
 	int ascii_only;
 	int coerce_keys;
+	
+	/* Constants, saved to avoid lookup later */
+	PyObject *true_str;
+	PyObject *false_str;
+	PyObject *null_str;
+	PyObject *inf_str;
+	PyObject *neg_inf_str;
+	PyObject *nan_str;
+	PyObject *quote;
 } WriterState;
 
 /* Serialization functions */
@@ -52,24 +62,6 @@ unicode_to_ascii (PyObject *unicode);
 static const char *hexdigit = "0123456789abcdef";
 
 static void
-get_indent (PyObject *indent_string, int indent_level,
-            PyObject **newline, PyObject **indent, PyObject **next_indent)
-{
-	if (indent_string == Py_None)
-	{
-		(*newline) = NULL;
-		(*indent) = NULL;
-		(*next_indent) = NULL;
-	}
-	else
-	{
-		(*newline) = PyString_FromString ("\n");
-		(*indent) = PySequence_Repeat (indent_string, indent_level + 1);
-		(*next_indent) = PySequence_Repeat (indent_string, indent_level);
-	}
-}
-
-static void
 get_separators (PyObject *indent_string, int indent_level,
                 char start, char end,
                 PyObject **start_ptr, PyObject **end_ptr,
@@ -86,7 +78,7 @@ get_separators (PyObject *indent_string, int indent_level,
 	{
 		PyObject *format_args, *format_tmpl, *indent, *next_indent;
 		
-		(*start_ptr) = PyString_FromFormat ("[%c", '\n');
+		(*start_ptr) = PyString_FromFormat ("%c%c", start, '\n');
 		(*post_value_ptr) = PyString_FromFormat (",%c", '\n');
 		
 		indent = PySequence_Repeat (indent_string, indent_level + 1);
@@ -94,7 +86,7 @@ get_separators (PyObject *indent_string, int indent_level,
 		
 		next_indent = PySequence_Repeat (indent_string, indent_level);
 		format_args = Py_BuildValue ("(N)", next_indent);
-		format_tmpl = PyString_FromString ("\n%s]");
+		format_tmpl = PyString_FromFormat ("\n%%s%c", end);
 		(*end_ptr) = PyString_Format (format_tmpl, format_args);
 		Py_DECREF (format_args);
 		Py_DECREF (format_tmpl);
@@ -130,13 +122,13 @@ write_string (WriterState *state, PyObject *string)
 	
 	if (safe)
 	{
-		PyObject *quote = PyString_FromString ("\"");
 		retval = PyList_New (3);
-		Py_INCREF (quote);
-		PyList_SetItem (retval, 0, quote);
+		Py_INCREF (state->quote);
+		PyList_SetItem (retval, 0, state->quote);
 		Py_INCREF (string);
 		PyList_SetItem (retval, 1, string);
-		PyList_SetItem (retval, 2, quote);
+		Py_INCREF (state->quote);
+		PyList_SetItem (retval, 2, state->quote);
 		return retval;
 	}
 	
@@ -463,13 +455,13 @@ write_unicode (WriterState *state, PyObject *unicode)
 	
 	if (safe)
 	{
-		PyObject *quote = PyString_FromString ("\"");
 		retval = PyList_New (3);
-		Py_INCREF (quote);
-		PyList_SetItem (retval, 0, quote);
+		Py_INCREF (state->quote);
+		PyList_SetItem (retval, 0, state->quote);
 		Py_INCREF (unicode);
 		PyList_SetItem (retval, 1, unicode);
-		PyList_SetItem (retval, 2, quote);
+		Py_INCREF (state->quote);
+		PyList_SetItem (retval, 2, state->quote);
 		return retval;
 	}
 	
@@ -664,18 +656,13 @@ mapping_get_key_and_value (WriterState *state, PyObject *item,
 
 static int
 write_mapping_impl (WriterState *state, PyObject *items, PyObject *pieces,
-                    PyObject *newline, PyObject *indent, PyObject *next_indent,
-                    int indent_level)
+                    PyObject *start, PyObject *end, PyObject *pre_value,
+                    PyObject *post_value, PyObject *colon, int indent_level)
 {
-	PyObject *start, *end;
 	int status;
 	size_t ii, item_count;
 	
-	start = PyString_FromString ("{");
-	status = PyList_Append (pieces, start);
-	Py_DECREF (start);
-	if (status == -1) return FALSE;
-	if (newline && PyList_Append (pieces, newline) == -1)
+	if (PyList_Append (pieces, start) == -1)
 		return FALSE;
 	
 	item_count = PySequence_Size (items);
@@ -683,7 +670,7 @@ write_mapping_impl (WriterState *state, PyObject *items, PyObject *pieces,
 	{
 		PyObject *item, *key, *value, *serialized, *pieces2;
 		
-		if (indent && PyList_Append (pieces, indent) == -1)
+		if (pre_value && PyList_Append (pieces, pre_value) == -1)
 			return FALSE;
 		
 		if (!(item = PySequence_GetItem (items, ii)))
@@ -710,19 +697,10 @@ write_mapping_impl (WriterState *state, PyObject *items, PyObject *pieces,
 		}
 		Py_DECREF (pieces2);
 		
+		if (PyList_Append (pieces, colon) == -1)
 		{
-			PyObject *colon;
-			if (newline)
-				colon = PyString_FromString (": ");
-			else
-				colon = PyString_FromString (":");
-			status = PyList_Append (pieces, colon);
-			Py_DECREF (colon);
-			if (status == -1)
-			{
-				Py_DECREF (value);
-				return FALSE;
-			}
+			Py_DECREF (value);
+			return FALSE;
 		}
 		
 		serialized = write_object (state, value, indent_level + 1);
@@ -739,23 +717,15 @@ write_mapping_impl (WriterState *state, PyObject *items, PyObject *pieces,
 		
 		if (ii + 1 < item_count)
 		{
-			PyObject *separator = PyString_FromString (",");
-			status = PyList_Append (pieces, separator);
-			Py_DECREF (separator);
-			if (status == -1) return FALSE;
-			if (newline && PyList_Append (pieces, newline) == -1)
+			if (PyList_Append (pieces, post_value) == -1)
+			{
 				return FALSE;
+			}
 		}
 	}
 	
-	if (newline && PyList_Append (pieces, newline) == -1)
+	if (PyList_Append (pieces, end) == -1)
 		return FALSE;
-	if (next_indent && PyList_Append (pieces, next_indent) == -1)
-		return FALSE;
-	end = PyString_FromString ("}");
-	status = PyList_Append (pieces, end);
-	Py_DECREF (end);
-	if (status == -1) return FALSE;
 	
 	return TRUE;
 }
@@ -765,7 +735,7 @@ write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 {
 	int has_parents, succeeded;
 	PyObject *pieces, *items;
-	PyObject *newline, *indent, *next_indent;
+	PyObject *start, *end, *pre_value, *post_value, *colon;
 	
 	if (PyMapping_Size (mapping) == 0)
 		return PyString_FromString ("{}");
@@ -797,20 +767,32 @@ write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 	}
 	if (state->sort_keys) PyList_Sort (items);
 	
-	get_indent (state->indent_string, indent_level, &newline, &indent,
-	            &next_indent);
+	if (state->indent_string == Py_None)
+		colon = PyString_FromString (":");
+	else
+		colon = PyString_FromString (": ");
+	if (!colon)
+	{
+		Py_ReprLeave (mapping);
+		Py_DECREF (mapping);
+		return NULL;
+	}
+	
+	get_separators (state->indent_string, indent_level, '{', '}',
+	                &start, &end, &pre_value, &post_value);
 	
 	succeeded = write_mapping_impl (state, items, pieces,
-	                                newline, indent, next_indent,
-	                                indent_level);
+	                                start, end, pre_value, post_value,
+	                                colon, indent_level);
 	
 	Py_ReprLeave (mapping);
 	Py_DECREF (mapping);
 	
 	Py_DECREF (items);
-	Py_XDECREF (newline);
-	Py_XDECREF (indent);
-	Py_XDECREF (next_indent);
+	Py_XDECREF (start);
+	Py_XDECREF (end);
+	Py_XDECREF (pre_value);
+	Py_XDECREF (post_value);
 	
 	if (!succeeded)
 	{
@@ -821,24 +803,17 @@ write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 }
 
 static int
-check_valid_number (PyObject *serialized)
+check_valid_number (WriterState *state, PyObject *serialized)
 {
-	PyObject *cmp_str;
 	int invalid;
 	
-	cmp_str = PyString_InternFromString ("Infinity");
-	invalid = PyObject_RichCompareBool (cmp_str, serialized, Py_NE);
-	Py_DECREF (cmp_str);
+	invalid = PyObject_RichCompareBool (state->inf_str, serialized, Py_NE);
 	if (invalid < 1) return invalid;
 	
-	cmp_str = PyString_InternFromString ("-Infinity");
-	invalid = PyObject_RichCompareBool (cmp_str, serialized, Py_NE);
-	Py_DECREF (cmp_str);
+	invalid = PyObject_RichCompareBool (state->neg_inf_str, serialized, Py_NE);
 	if (invalid < 1) return invalid;
 	
-	cmp_str = PyString_InternFromString ("NaN");
-	invalid = PyObject_RichCompareBool (cmp_str, serialized, Py_NE);
-	Py_DECREF (cmp_str);
+	invalid = PyObject_RichCompareBool (state->nan_str, serialized, Py_NE);
 	if (invalid < 1) return invalid;
 	
 	return TRUE;
@@ -848,11 +823,20 @@ static PyObject *
 write_basic (WriterState *state, PyObject *value)
 {
 	if (value == Py_True)
-		return PyString_FromString ("true");
+	{
+		Py_INCREF (state->true_str);
+		return state->true_str;
+	}
 	if (value == Py_False)
-		return PyString_FromString ("false");
+	{
+		Py_INCREF (state->false_str);
+		return state->false_str;
+	}
 	if (value == Py_None)
-		return PyString_FromString ("null");
+	{
+		Py_INCREF (state->null_str);
+		return state->null_str;
+	}
 	
 	if (PyString_Check (value))
 		return write_string (state, value);
@@ -908,7 +892,7 @@ write_basic (WriterState *state, PyObject *value)
 		PyObject *serialized = PyObject_Str (value);
 		int valid;
 		
-		valid = check_valid_number (serialized);
+		valid = check_valid_number (state, serialized);
 		if (valid == TRUE)
 			return serialized;
 		
@@ -1019,7 +1003,7 @@ write_object (WriterState *state, PyObject *object, int indent_level)
 static PyObject*
 _write_entry (PyObject *self, PyObject *args)
 {
-	PyObject *result, *value, *indent_string, *parent_objects;
+	PyObject *result = NULL, *value, *indent_string, *parent_objects;
 	int sort_keys, ascii_only, coerce_keys, indent_level;
 	WriterState state;
 	
@@ -1030,21 +1014,24 @@ _write_entry (PyObject *self, PyObject *args)
 	                       &state.WriteError, &state.UnknownSerializerError))
 		return NULL;
 	
-	Py_INCREF (state.Decimal);
-	Py_INCREF (state.UserString);
-	Py_INCREF (state.WriteError);
-	Py_INCREF (state.UnknownSerializerError);
-	Py_INCREF (state.indent_string);
+	if ((state.true_str = PyString_FromString ("true")) &&
+	    (state.false_str = PyString_FromString ("false")) &&
+	    (state.null_str = PyString_FromString ("null")) &&
+	    (state.inf_str = PyString_FromString ("Infinity")) &&
+	    (state.neg_inf_str = PyString_FromString ("-Infinity")) &&
+	    (state.nan_str = PyString_FromString ("NaN")) &&
+	    (state.quote = PyString_FromString ("\"")))
+	{
+		result = write_object (&state, value, 0);
+	}
 	
-	Py_INCREF (value);
-	result = write_object (&state, value, 0);
-	Py_DECREF (value);
-	
-	Py_DECREF (state.Decimal);
-	Py_DECREF (state.UserString);
-	Py_DECREF (state.WriteError);
-	Py_DECREF (state.UnknownSerializerError);
-	Py_DECREF (state.indent_string);
+	Py_XDECREF (state.true_str);
+	Py_XDECREF (state.false_str);
+	Py_XDECREF (state.null_str);
+	Py_XDECREF (state.inf_str);
+	Py_XDECREF (state.neg_inf_str);
+	Py_XDECREF (state.nan_str);
+	Py_XDECREF (state.quote);
 	
 	return result;
 }
