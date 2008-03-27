@@ -7,62 +7,49 @@
 
 #include "jsonlib-common.h"
 
-static void
-get_indent (PyObject *indent_string, int indent_level,
-            PyObject **newline, PyObject **indent, PyObject **next_indent);
+typedef struct
+{
+	/* Pulled from the current interpreter to avoid errors when used
+	 * with sub-interpreters.
+	**/
+	PyObject *Decimal;
+	PyObject *UserString;
+	PyObject *WriteError;
+	PyObject *UnknownSerializerError;
+	
+	int sort_keys;
+	PyObject *indent_string;
+	int ascii_only;
+	int coerce_keys;
+} WriterState;
+
+/* Serialization functions */
+static PyObject *
+write_object (WriterState *state, PyObject *object, int indent_level);
 
 static PyObject *
-write_string (PyObject *string, int ascii_only);
+write_iterable (WriterState *state, PyObject *iterable, int indent_level);
 
+static PyObject *
+write_mapping (WriterState *state, PyObject *mapping, int indent_level);
+
+static PyObject *
+write_basic (WriterState *state, PyObject *value);
+
+static PyObject *
+write_string (WriterState *state, PyObject *string);
+
+static PyObject *
+write_unicode (WriterState *state, PyObject *unicode);
+
+/* Variants of the unicode serializer */
 static PyObject *
 unicode_to_unicode (PyObject *unicode);
 
 static PyObject *
 unicode_to_ascii (PyObject *unicode);
 
-static PyObject *
-write_unicode (PyObject *unicode, int ascii_only);
-
-static PyObject *
-json_write (PyObject *object, int sort_keys, PyObject *indent_string,
-            int ascii_only, int coerce_keys, int indent_level);
-
-static PyObject *
-write_iterable (PyObject *object, int sort_keys, PyObject *indent_string,
-                int ascii_only, int coerce_keys, int indent_level);
-
-static PyObject *
-write_mapping (PyObject *object, int sort_keys, PyObject *indent_string,
-               int ascii_only, int coerce_keys, int indent_level);
-
-static PyObject *
-write_basic (PyObject *value, int ascii_only);
-
 static const char *hexdigit = "0123456789abcdef";
-
-static PyObject *
-get_WriteError (void)
-{
-	return jsonlib_get_imported_obj ("jsonlib.errors", "WriteError");
-}
-
-static PyObject *
-get_UnknownSerializerError (void)
-{
-	return jsonlib_get_imported_obj ("jsonlib.errors", "UnknownSerializerError");
-}
-
-static PyObject *
-get_Decimal (void)
-{
-	return jsonlib_get_imported_obj ("decimal", "Decimal");
-}
-
-static PyObject *
-get_UserString (void)
-{
-	return jsonlib_get_imported_obj ("UserString", "UserString");
-}
 
 static void
 get_indent (PyObject *indent_string, int indent_level,
@@ -115,7 +102,7 @@ get_separators (PyObject *indent_string, int indent_level,
 }
 
 static PyObject *
-write_string (PyObject *string, int ascii_only)
+write_string (WriterState *state, PyObject *string)
 {
 	PyObject *unicode, *retval;
 	int safe = TRUE;
@@ -161,7 +148,7 @@ write_string (PyObject *string, int ascii_only)
 	Py_DECREF (string);
 	if (!unicode) return NULL;
 	
-	if (ascii_only)
+	if (state->ascii_only)
 		retval = unicode_to_ascii (unicode);
 	else
 		retval = unicode_to_unicode (unicode);
@@ -450,7 +437,7 @@ unicode_to_ascii (PyObject *unicode)
 }
 
 static PyObject *
-write_unicode (PyObject *unicode, int ascii_only)
+write_unicode (WriterState *state, PyObject *unicode)
 {
 	PyObject *retval;
 	int safe = TRUE;
@@ -464,7 +451,7 @@ write_unicode (PyObject *unicode, int ascii_only)
 	for (ii = 0; ii < str_len; ++ii)
 	{
 		if (buffer[ii] < 0x20 ||
-		    (ascii_only && buffer[ii] > 0x7E) ||
+		    (state->ascii_only && buffer[ii] > 0x7E) ||
 		    buffer[ii] == '"' ||
 		    buffer[ii] == '/' ||
 		    buffer[ii] == '\\')
@@ -493,64 +480,43 @@ write_unicode (PyObject *unicode, int ascii_only)
 		{
 			if (++ii == str_len)
 			{
-				PyObject *err_class;
-				if ((err_class = get_WriteError ()))
-				{
-					PyErr_SetString (err_class,
-					                 "Cannot serialize incomplete"
-							 " surrogate pair.");
-					Py_DECREF (err_class);
-				}
+				PyErr_SetString (state->WriteError,
+				                 "Cannot serialize incomplete"
+						 " surrogate pair.");
 				return NULL;
 			}
 			else if (!(0xDC00 <= buffer[ii] && buffer[ii] <= 0xDFFF))
 			{
-				PyObject *err_class;
-				if ((err_class = get_WriteError ()))
-				{
-					PyErr_SetString (err_class,
-					                 "Cannot serialize invalid surrogate pair.");
-					Py_DECREF (err_class);
-				}
+				PyErr_SetString (state->WriteError,
+				                 "Cannot serialize invalid surrogate pair.");
 				return NULL;
 			}
 		}
 		else if (0xDC00 <= buffer[ii] && buffer[ii] <= 0xDFFF)
-		{	
-			PyObject *err_class, *err_tmpl, *err_tmpl_args, *err_msg = NULL;
+		{
+			PyObject *err_msg;
 			
-			if ((err_tmpl = PyString_FromString ("Cannot serialize reserved code point U+%04X.")))
+			err_msg = jsonlib_str_format ("Cannot serialize reserved code point U+%04X.",
+			                              Py_BuildValue ("(k)", buffer[ii]));
+			if (err_msg)
 			{
-				if ((err_tmpl_args = Py_BuildValue ("(k)", buffer[ii])))
-				{
-					err_msg = PyString_Format (err_tmpl, err_tmpl_args);
-					Py_DECREF (err_tmpl_args);
-				}
-				Py_DECREF (err_tmpl);
+				PyErr_SetObject (state->WriteError, err_msg);
+				Py_DECREF (err_msg);
 			}
-			if (!err_msg) return NULL;
-			
-			if ((err_class = get_WriteError ()))
-			{
-				PyErr_SetObject (err_class,err_msg);
-				Py_DECREF (err_class);
-			}
-			Py_DECREF (err_msg);
 			return NULL;
 		}
 	}
 	
-	if (ascii_only)
+	if (state->ascii_only)
 		return unicode_to_ascii (unicode);
 	return unicode_to_unicode (unicode);
 }
 
 static int
-write_sequence_impl (PyObject *seq, PyObject *pieces,
+write_sequence_impl (WriterState *state, PyObject *seq, PyObject *pieces,
                      PyObject *start, PyObject *end,
                      PyObject *pre_value, PyObject *post_value,
-                     int sort_keys, PyObject *indent_string,
-                     int ascii_only, int coerce_keys, int indent_level)
+                     int indent_level)
 {
 	Py_ssize_t ii;
 	
@@ -568,9 +534,7 @@ write_sequence_impl (PyObject *seq, PyObject *pieces,
 		if (!(item = PySequence_Fast_GET_ITEM (seq, ii)))
 			return FALSE;
 		
-		serialized = json_write (item, sort_keys, indent_string,
-		                         ascii_only, coerce_keys,
-		                         indent_level + 1);
+		serialized = write_object (state, item, indent_level + 1);
 		if (!serialized) return FALSE;
 		
 		pieces2 = PySequence_InPlaceConcat (pieces, serialized);
@@ -592,8 +556,7 @@ write_sequence_impl (PyObject *seq, PyObject *pieces,
 }
 
 static PyObject*
-write_iterable (PyObject *iter, int sort_keys, PyObject *indent_string,
-                int ascii_only, int coerce_keys, int indent_level)
+write_iterable (WriterState *state, PyObject *iter, int indent_level)
 {
 	PyObject *sequence, *pieces;
 	PyObject *start, *end, *pre, *post;
@@ -603,14 +566,9 @@ write_iterable (PyObject *iter, int sort_keys, PyObject *indent_string,
 	has_parents = Py_ReprEnter (iter);
 	if (has_parents > 0)
 	{
-		PyObject *err_class;
-		if ((err_class = get_WriteError ()))
-		{
-			PyErr_SetString (err_class,
-			                 "Cannot serialize self-referential"
-			                 " values.");
-			Py_DECREF (err_class);
-		}
+		PyErr_SetString (state->WriteError,
+		                 "Cannot serialize self-referential"
+		                 " values.");
 	}
 	if (has_parents != 0) return NULL;
 	
@@ -632,12 +590,12 @@ write_iterable (PyObject *iter, int sort_keys, PyObject *indent_string,
 	}
 	
 	/* Build separator strings */
-	get_separators (indent_string, indent_level, '[', ']',
+	get_separators (state->indent_string, indent_level, '[', ']',
 	                &start, &end, &pre, &post);
 	
-	succeeded = write_sequence_impl (sequence, pieces, start, end, pre, post,
-	                                 sort_keys, indent_string, ascii_only,
-	                                 coerce_keys, indent_level);
+	succeeded = write_sequence_impl (state, sequence, pieces,
+	                                 start, end, pre, post,
+	                                 indent_level);
 	
 	Py_DECREF (sequence);
 	Py_ReprLeave (iter);
@@ -656,8 +614,8 @@ write_iterable (PyObject *iter, int sort_keys, PyObject *indent_string,
 }
 
 static int
-mapping_get_key_and_value (PyObject *item, PyObject **key_ptr,
-                           PyObject **value_ptr, int coerce_keys, int ascii_only)
+mapping_get_key_and_value (WriterState *state, PyObject *item,
+                           PyObject **key_ptr, PyObject **value_ptr)
 {
 	PyObject *key, *value;
 	
@@ -669,28 +627,15 @@ mapping_get_key_and_value (PyObject *item, PyObject **key_ptr,
 	
 	if (!(PyString_Check (key) || PyUnicode_Check (key)))
 	{
-		if (coerce_keys)
+		if (state->coerce_keys)
 		{
 			PyObject *new_key = NULL;
-			if (!(new_key = write_basic (key, ascii_only)))
-			{	
-				PyObject *us_error;
-				PyObject *exc_type, *exc_value, *exc_traceback;
-				PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
-				
-				if ((us_error = get_UnknownSerializerError ()))
+			if (!(new_key = write_basic (state, key)))
+			{
+				if (PyErr_ExceptionMatches (state->UnknownSerializerError))
 				{
-					int is_us_error;
-					
-					PyErr_Restore (exc_type, exc_value, exc_traceback);
-					is_us_error = PyErr_ExceptionMatches (us_error);
-					Py_DECREF (us_error);
-					
-					if (is_us_error)
-					{
-						PyErr_Clear ();
-						new_key = PyObject_Unicode (key);
-					}
+					PyErr_Clear ();
+					new_key = PyObject_Unicode (key);
 				}
 			}
 			
@@ -700,16 +645,10 @@ mapping_get_key_and_value (PyObject *item, PyObject **key_ptr,
 		}
 		else
 		{
-			PyObject *err_class;
 			Py_DECREF (key);
-			
-			if ((err_class = get_WriteError ()))
-			{
-				PyErr_SetString (err_class,
-				                 "Only strings may be used"
-				                 " as object keys.");
-				Py_DECREF (err_class);
-			}
+			PyErr_SetString (state->WriteError,
+			                 "Only strings may be used"
+			                 " as object keys.");
 			return FALSE;
 		}
 	}
@@ -724,10 +663,9 @@ mapping_get_key_and_value (PyObject *item, PyObject **key_ptr,
 }
 
 static int
-write_mapping_impl (PyObject *items, PyObject *pieces,
+write_mapping_impl (WriterState *state, PyObject *items, PyObject *pieces,
                     PyObject *newline, PyObject *indent, PyObject *next_indent,
-                    int sort_keys, PyObject *indent_string,
-                    int ascii_only, int coerce_keys, int indent_level)
+                    int indent_level)
 {
 	PyObject *start, *end;
 	int status;
@@ -751,12 +689,11 @@ write_mapping_impl (PyObject *items, PyObject *pieces,
 		if (!(item = PySequence_GetItem (items, ii)))
 			return FALSE;
 		
-		status = mapping_get_key_and_value (item, &key, &value,
-		                                    coerce_keys, ascii_only);
+		status = mapping_get_key_and_value (state, item, &key, &value);
 		Py_DECREF (item);
 		if (!status) return FALSE;
 		
-		serialized = write_basic (key, ascii_only);
+		serialized = write_basic (state, key);
 		Py_DECREF (key);
 		if (!serialized)
 		{
@@ -788,9 +725,7 @@ write_mapping_impl (PyObject *items, PyObject *pieces,
 			}
 		}
 		
-		serialized = json_write (value, sort_keys, indent_string,
-		                         ascii_only, coerce_keys,
-		                         indent_level + 1);
+		serialized = write_object (state, value, indent_level + 1);
 		Py_DECREF (value);
 		if (!serialized)
 		{
@@ -825,9 +760,8 @@ write_mapping_impl (PyObject *items, PyObject *pieces,
 	return TRUE;
 }
 
-static PyObject*
-write_mapping (PyObject *mapping, int sort_keys, PyObject *indent_string,
-               int ascii_only, int coerce_keys, int indent_level)
+static PyObject *
+write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 {
 	int has_parents, succeeded;
 	PyObject *pieces, *items;
@@ -841,14 +775,9 @@ write_mapping (PyObject *mapping, int sort_keys, PyObject *indent_string,
 	{
 		if (has_parents > 0)
 		{
-			PyObject *err_class;
-			if ((err_class = get_WriteError ()))
-			{
-				PyErr_SetString (err_class,
-				                 "Cannot serialize"
-				                 " self-referential values.");
-				Py_DECREF (err_class);
-			}
+			PyErr_SetString (state->WriteError,
+			                 "Cannot serialize self-referential"
+			                 " values.");
 		}
 		return NULL;
 	}
@@ -863,16 +792,17 @@ write_mapping (PyObject *mapping, int sort_keys, PyObject *indent_string,
 	if (!(items = PyMapping_Items (mapping)))
 	{
 		Py_ReprLeave (mapping);
+		Py_DECREF (mapping);
 		return NULL;
 	}
-	if (sort_keys) PyList_Sort (items);
+	if (state->sort_keys) PyList_Sort (items);
 	
-	get_indent (indent_string, indent_level, &newline, &indent,
+	get_indent (state->indent_string, indent_level, &newline, &indent,
 	            &next_indent);
 	
-	succeeded = write_mapping_impl (items, pieces, newline, indent, next_indent,
-	                                sort_keys, indent_string, ascii_only,
-	                                coerce_keys, indent_level);
+	succeeded = write_mapping_impl (state, items, pieces,
+	                                newline, indent, next_indent,
+	                                indent_level);
 	
 	Py_ReprLeave (mapping);
 	Py_DECREF (mapping);
@@ -915,11 +845,8 @@ check_valid_number (PyObject *serialized)
 }
 
 static PyObject *
-write_basic (PyObject *value, int ascii_only)
+write_basic (WriterState *state, PyObject *value)
 {
-	PyObject *Decimal, *UserString;
-	int is_decimal = -1, is_userstring = -1;
-	
 	if (value == Py_True)
 		return PyString_FromString ("true");
 	if (value == Py_False)
@@ -928,14 +855,13 @@ write_basic (PyObject *value, int ascii_only)
 		return PyString_FromString ("null");
 	
 	if (PyString_Check (value))
-		return write_string (value, ascii_only);
+		return write_string (state, value);
 	if (PyUnicode_Check (value))
-		return write_unicode (value, ascii_only);
+		return write_unicode (state, value);
 	if (PyInt_Check (value) || PyLong_Check (value))
-		return PyObject_Str(value);
+		return PyObject_Str (value);
 	if (PyComplex_Check (value))
-	{	
-		PyObject *err_class;
+	{
 		Py_complex complex = PyComplex_AsCComplex (value);
 		if (complex.imag == 0)
 		{
@@ -946,13 +872,9 @@ write_basic (PyObject *value, int ascii_only)
 			Py_DECREF (real);
 			return serialized;
 		}
-		if ((err_class = get_WriteError ()))
-		{
-			PyErr_SetString (err_class, "Cannot serialize complex"
-			                            " numbers with imaginary"
-			                            " components.");
-			Py_DECREF (err_class);
-		}
+		PyErr_SetString (state->WriteError,
+		                 "Cannot serialize complex numbers with"
+		                 " imaginary components.");
 		return NULL;
 	}
 	
@@ -961,44 +883,27 @@ write_basic (PyObject *value, int ascii_only)
 		double val = PyFloat_AS_DOUBLE (value);
 		if (Py_IS_NAN (val))
 		{
-			PyObject *err_class;
-			if ((err_class = get_WriteError ()))
-			{
-				PyErr_SetString (err_class,
-				                 "Cannot serialize NaN.");
-				Py_DECREF (err_class);
-			}
+			PyErr_SetString (state->WriteError,
+			                 "Cannot serialize NaN.");
 			return NULL;
 		}
 		
 		if (Py_IS_INFINITY (val))
 		{
-			PyObject *err_class;
 			const char *msg;
 			if (val > 0)
 				msg = "Cannot serialize Infinity.";
 			else
 				msg = "Cannot serialize -Infinity.";
 			
-			if ((err_class = get_WriteError ()))
-			{
-				PyErr_SetString (err_class, msg);
-				Py_DECREF (err_class);
-			}
+			PyErr_SetString (state->WriteError, msg);
 			return NULL;
 		}
 		
 		return PyObject_Repr (value);
 	}
 	
-	if ((Decimal = get_Decimal ()))
-	{
-		is_decimal = PyObject_IsInstance (value, Decimal);
-		Py_DECREF (Decimal);
-	}
-	if (is_decimal == -1) return NULL;
-	
-	if (is_decimal)
+	if (PyObject_IsInstance (value, state->Decimal))
 	{
 		PyObject *serialized = PyObject_Str (value);
 		int valid;
@@ -1009,120 +914,93 @@ write_basic (PyObject *value, int ascii_only)
 		
 		if (valid == FALSE)
 		{
-			PyObject *err_class;
-			if ((err_class = get_WriteError ()))
-			{
-				PyErr_Format (err_class, "Cannot serialize %s.",
-				              PyString_AsString (serialized));
-				Py_DECREF (err_class);
-			}
+			PyErr_Format (state->WriteError,
+			              "Cannot serialize %s.",
+			              PyString_AsString (serialized));
 		}
 		/* else valid == -1, error */
 		Py_DECREF (serialized);
 		return NULL;
 	}
 	
-	if ((UserString = get_UserString ()))
+	if (PyObject_IsInstance (value, state->UserString))
 	{
-		is_userstring = PyObject_IsInstance (value, UserString);
-		Py_DECREF (UserString);
-	}
-	if (is_userstring == -1) return NULL;
-	
-	if (is_userstring)
-	{
-		PyObject *repr, *retval;
-		if (!(repr = PyObject_Str (value)))
+		PyObject *as_string, *retval;
+		if (!(as_string = PyObject_Str (value)))
 			return NULL;
-		retval = write_string (repr, ascii_only);
-		Py_DECREF (repr);
+		retval = write_string (state, as_string);
+		Py_DECREF (as_string);
 		return retval;
 	}
 	
+	PyErr_SetObject (state->UnknownSerializerError, value);
+	return NULL;
+}
+
+static PyObject *
+write_object_pieces (WriterState *state, PyObject *object, int indent_level)
+{
+	PyObject *pieces, *iter;
+	PyObject *exc_type, *exc_value, *exc_traceback;
+	
+	if (PyList_Check (object) || PyTuple_Check (object))
 	{
-		PyObject *err_class;
-		if ((err_class = get_UnknownSerializerError ()))
+		return write_iterable (state, object, indent_level);
+	}
+	
+	else if (PyDict_Check (object))
+	{
+		return write_mapping (state, object, indent_level);
+	}
+	
+	if ((pieces = write_basic (state, object)))
+	{
+		if (indent_level == 0)
 		{
-			PyErr_SetObject (err_class, value);
-			Py_DECREF (err_class);
+			Py_DECREF (pieces);
+			PyErr_SetString (state->WriteError,
+			                 "The outermost container must be"
+			                 " an array or object.");
+			return NULL;
 		}
-		
+		return pieces;
+	}
+	
+	if (!PyErr_ExceptionMatches (state->UnknownSerializerError))
+		return NULL;
+	
+	PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
+	if (PyObject_HasAttrString (object, "items"))
+	{
+		PyErr_Clear ();
+		return write_mapping (state, object, indent_level);
+	}
+	
+	if (PySequence_Check (object))
+	{
+		PyErr_Clear ();
+		return write_iterable (state, object, indent_level);
+	}
+	
+	iter = PyObject_GetIter (object);
+	PyErr_Restore (exc_type, exc_value, exc_traceback);
+	if (iter)
+	{
+		PyErr_Clear ();
+		pieces = write_iterable (state, iter, indent_level);
+		Py_DECREF (iter);
+		return pieces;
 	}
 	
 	return NULL;
 }
 
-static PyObject*
-json_write (PyObject *object, int sort_keys, PyObject *indent_string,
-            int ascii_only, int coerce_keys, int indent_level)
+static PyObject *
+write_object (WriterState *state, PyObject *object, int indent_level)
 {
-	PyObject *retval = NULL, *pieces;
-	if (PyList_Check (object) || PyTuple_Check (object))
-	{
-		pieces = write_iterable (object, sort_keys, indent_string,
-		                         ascii_only, coerce_keys,
-		                         indent_level);
-	}
+	PyObject *pieces, *retval = NULL;
 	
-	else if (PyObject_HasAttrString (object, "items"))
-	{
-		pieces = write_mapping (object, sort_keys, indent_string,
-		                        ascii_only, coerce_keys,
-		                        indent_level);
-	}
-	
-	else
-	{
-		PyObject *UnknownSerializerError;
-		if (!(UnknownSerializerError = get_UnknownSerializerError ()))
-			return NULL;
-		pieces = write_basic (object, ascii_only);
-		if (pieces && indent_level == 0)
-		{	
-			PyObject *err_class;
-			Py_DECREF (pieces);
-			pieces = NULL;
-			
-			if ((err_class = get_WriteError ()))
-			{
-				PyErr_SetString (err_class,
-				                 "The outermost container"
-				                 " must be an array or"
-				                 " object.");
-				Py_DECREF (err_class);
-			}
-		}
-		if (!pieces && PyErr_ExceptionMatches (UnknownSerializerError))
-		{
-			PyObject *iter;
-			
-			/* Used when testing for iterability */
-			PyObject *exc_type, *exc_value, *exc_traceback;
-			
-			if (PySequence_Check (object))
-			{
-				PyErr_Clear ();
-				pieces = write_iterable (object, sort_keys, indent_string,
-				                         ascii_only, coerce_keys,
-				                         indent_level);
-			}
-			
-			PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
-			iter = PyObject_GetIter (object);
-			PyErr_Restore (exc_type, exc_value, exc_traceback);
-			if (iter)
-			{
-				PyErr_Clear ();
-				pieces = write_iterable (iter, sort_keys, indent_string,
-				                         ascii_only, coerce_keys,
-				                         indent_level);
-				Py_DECREF (iter);
-			}
-		}
-		Py_DECREF (UnknownSerializerError);
-	}
-	
-	if (pieces)
+	if ((pieces = write_object_pieces (state, object, indent_level)))
 	{
 		if (PyString_Check (pieces) || PyUnicode_Check (pieces))
 		{
@@ -1139,33 +1017,40 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 }
 
 static PyObject*
-_write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
+_write_entry (PyObject *self, PyObject *args)
 {
-	static char *kwlist[] = {"value", "sort_keys", "indent_string",
-	                         "ascii_only", "coerce_keys",
-	                         "parent_objects", "indent_level", NULL};
 	PyObject *result, *value, *indent_string, *parent_objects;
 	int sort_keys, ascii_only, coerce_keys, indent_level;
+	WriterState state;
 	
-	if (!PyArg_ParseTupleAndKeywords (args, kwargs, "OiOiiOi:_write", kwlist,
-	                                  &value, &sort_keys, &indent_string,
-	                                  &ascii_only, &coerce_keys,
-	                                  &parent_objects, &indent_level))
+	if (!PyArg_ParseTuple (args, "OiOiiOOOO:_write",
+	                       &value, &state.sort_keys, &state.indent_string,
+	                       &state.ascii_only, &state.coerce_keys,
+	                       &state.Decimal, &state.UserString,
+	                       &state.WriteError, &state.UnknownSerializerError))
 		return NULL;
 	
+	Py_INCREF (state.Decimal);
+	Py_INCREF (state.UserString);
+	Py_INCREF (state.WriteError);
+	Py_INCREF (state.UnknownSerializerError);
+	Py_INCREF (state.indent_string);
+	
 	Py_INCREF (value);
-	Py_INCREF (indent_string);
-	result = json_write (value, sort_keys, indent_string,
-	                     ascii_only, coerce_keys,
-	                     indent_level);
+	result = write_object (&state, value, 0);
 	Py_DECREF (value);
-	Py_DECREF (indent_string);
+	
+	Py_DECREF (state.Decimal);
+	Py_DECREF (state.UserString);
+	Py_DECREF (state.WriteError);
+	Py_DECREF (state.UnknownSerializerError);
+	Py_DECREF (state.indent_string);
 	
 	return result;
 }
 
 static PyMethodDef writer_methods[] = {
-	{"_write", (PyCFunction) (_write_entry), METH_VARARGS|METH_KEYWORDS,
+	{"_write", (PyCFunction) (_write_entry), METH_VARARGS,
 	PyDoc_STR ("Serialize a Python object to JSON.")},
 	
 	{NULL, NULL}

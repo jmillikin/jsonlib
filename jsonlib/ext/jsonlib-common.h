@@ -13,3 +13,6 @@
 
 PyObject *
 jsonlib_get_imported_obj (const char *module_name, const char *obj_name);
+
+PyObject *
+jsonlib_str_format (const char *tmpl, PyObject *args);

@@ -3,6 +3,9 @@
 
 """Implements jsonlib.write"""
 
+from decimal import Decimal
+from UserString import UserString
+from jsonlib.errors import WriteError, UnknownSerializerError
 from jsonlib._writer import _write
 
 __all__ = ['write']
@@ -46,8 +49,10 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		The default encoding is UTF-8.
 	
 	"""
-	u_string = u''.join (_write (value, sort_keys, indent, ascii_only,
-	                             coerce_keys, (), 0))
+	pieces = _write (value, sort_keys, indent, ascii_only, coerce_keys,
+	                 Decimal, UserString, WriteError,
+	                 UnknownSerializerError)
+	u_string = u''.join (pieces)
 	if encoding is None:
 		return u_string
 	return u_string.encode (encoding)
