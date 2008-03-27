@@ -515,7 +515,7 @@ write_unicode (PyObject *unicode, int ascii_only)
 	{
 		if (0xD800 <= buffer[ii] && buffer[ii] <= 0xDBFF)
 		{
-			if (ii == (str_len - 1))
+			if (++ii == str_len)
 			{
 				PyObject *err_class;
 				if ((err_class = get_WriteError ()))
@@ -527,6 +527,29 @@ write_unicode (PyObject *unicode, int ascii_only)
 				}
 				return NULL;
 			}
+		}
+		else if (0xDC00 <= buffer[ii] && buffer[ii] <= 0xDFFF)
+		{	
+			PyObject *err_class, *err_tmpl, *err_tmpl_args, *err_msg = NULL;
+			
+			if ((err_tmpl = PyString_FromString ("Cannot serialize reserved code point U+%04X.")))
+			{
+				if ((err_tmpl_args = Py_BuildValue ("(k)", buffer[ii])))
+				{
+					err_msg = PyString_Format (err_tmpl, err_tmpl_args);
+					Py_DECREF (err_tmpl_args);
+				}
+				Py_DECREF (err_tmpl);
+			}
+			if (!err_msg) return NULL;
+			
+			if ((err_class = get_WriteError ()))
+			{
+				PyErr_SetObject (err_class,err_msg);
+				Py_DECREF (err_class);
+			}
+			Py_DECREF (err_msg);
+			return NULL;
 		}
 	}
 	

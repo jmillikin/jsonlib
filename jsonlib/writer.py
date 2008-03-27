@@ -149,6 +149,8 @@ def write_unicode (value, ascii_only):
 				else:
 					yield char
 					yield next
+			elif 0xDC00 <= ochar <= 0xDFFF:
+				raise errors.WriteError ("Cannot serialize reserved code point U+%04X." % ochar)
 			elif ascii_only:
 				if ochar > 0xFFFF:
 					unicode_value = ord (char)
