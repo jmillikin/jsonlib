@@ -510,6 +510,26 @@ write_unicode (PyObject *unicode, int ascii_only)
 		return retval;
 	}
 	
+	/* Scan through again to check for invalid surrogate pairs */
+	for (ii = 0; ii < str_len; ++ii)
+	{
+		if (0xD800 <= buffer[ii] && buffer[ii] <= 0xDBFF)
+		{
+			if (ii == (str_len - 1))
+			{
+				PyObject *err_class;
+				if ((err_class = get_WriteError ()))
+				{
+					PyErr_SetString (err_class,
+					                 "Cannot serialize incomplete"
+							 " surrogate pair.");
+					Py_DECREF (err_class);
+				}
+				return NULL;
+			}
+		}
+	}
+	
 	if (ascii_only)
 		return unicode_to_ascii (unicode);
 	return unicode_to_unicode (unicode);
