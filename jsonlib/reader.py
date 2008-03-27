@@ -147,7 +147,7 @@ def read_unicode_escape (atom, index, stream):
 		raise ReadError (error)
 		
 	# Check if it's a UTF-16 surrogate pair
-	if unicode_value >= 0xD800 and unicode_value <= 0xDBFF:
+	if 0xD800 <= unicode_value <= 0xDBFF:
 		first_half = unicode_value
 		try:
 			next_escape = get_n (2)
@@ -177,6 +177,10 @@ def read_unicode_escape (atom, index, stream):
 			# Merge into 20-bit character
 			unicode_value = (first_half << 10) + second_half + 0x10000
 			return unichr (unicode_value)
+	elif 0xDC00 <= unicode_value <= 0xDFFF:
+		error = format_error (atom.full_string, index - 1,
+		                      "U+%04X is a reserved code point." % unicode_value)
+		raise ReadError (error)
 	else:
 		return unichr (unicode_value)
 	

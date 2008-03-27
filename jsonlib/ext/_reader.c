@@ -268,7 +268,7 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 	(*index_ptr) += 4;
 	
 	/* Check for surrogate pair */
-	if (value >= 0xD800 && value <= 0xDBFF)
+	if (0xD800 <= value && value <= 0xDBFF)
 	{
 		Py_UNICODE upper = value, lower;
 		
@@ -305,6 +305,31 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 			buffer[(*buffer_idx)++] = upper;
 			buffer[*buffer_idx] = lower;
 #		endif
+	}
+	else if (0xDC00 <= value && value <= 0xDFFF)
+	{
+		const char *tmpl = "JSON parsing error at line %d, column %d"
+		                   " (position %d): U+%04X is a reserved code point.";
+		unsigned long row, column, char_offset;
+		Py_UNICODE *position = state->index + (*index_ptr) - 5;
+		PyObject *err_str, *err_str_tmpl, *err_format_args, *ReadError;
+		
+		count_row_column (state->start, position, &char_offset,
+		                  &row, &column);
+		
+		err_str_tmpl = PyString_FromString (tmpl);
+		err_format_args = Py_BuildValue ("(kkkk)", row, column,
+		                                 char_offset, value);
+		err_str = PyString_Format (err_str_tmpl, err_format_args);
+		Py_DECREF (err_str_tmpl);
+		Py_DECREF (err_format_args);
+		if ((ReadError = get_ReadError ()))
+		{
+			PyErr_SetObject (ReadError, err_str);
+			Py_DECREF (ReadError);
+		}
+		Py_DECREF (err_str);
+		return FALSE;
 	}
 	else
 	{
