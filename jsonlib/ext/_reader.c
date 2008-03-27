@@ -91,55 +91,86 @@ count_row_column (Py_UNICODE *start, Py_UNICODE *pos, unsigned long *offset,
 }
 
 static void
-set_error_unexpected (ParserState *state, Py_UNICODE *position)
-{
-	PyObject *err_str, *err_str_tmpl, *err_format_args, *ReadError;
-	Py_UCS4 c = next_ucs4 (state, position);
-	unsigned long row, column, char_offset;
-	
-	count_row_column (state->start, position, &char_offset,
-	                  &row, &column);
-	
-	if (c > 0xFFFF)
-		err_str_tmpl = PyString_FromString ("JSON parsing error at line %d, column %d (position %d): Unexpected U+%08X.");
-	else
-		err_str_tmpl = PyString_FromString ("JSON parsing error at line %d, column %d (position %d): Unexpected U+%04X.");
-	
-	err_format_args = Py_BuildValue ("(kkkk)", row, column, char_offset, c);
-	err_str = PyString_Format (err_str_tmpl, err_format_args);
-	Py_DECREF (err_str_tmpl);
-	Py_DECREF (err_format_args);
-	if ((ReadError = get_ReadError ()))
-	{
-		PyErr_SetObject (ReadError, err_str);
-		Py_DECREF (ReadError);
-	}
-	Py_DECREF (err_str);
-}
-
-static void
-set_error (ParserState *state, Py_UNICODE *position, const char *description)
+set_error (ParserState *state, Py_UNICODE *position, PyObject *description,
+           PyObject *description_args)
 {
 	const char *tmpl = "JSON parsing error at line %d, column %d"
 	                   " (position %d): %s";
 	unsigned long row, column, char_offset;
 	PyObject *err_str, *err_str_tmpl, *err_format_args, *ReadError;
 	
+	Py_INCREF (description);
+	
+	if (description_args)
+	{
+		PyObject *new_desc;
+		new_desc = PyString_Format (description, description_args);
+		Py_DECREF (description);
+		if (!new_desc) return;
+		description = new_desc;
+	}
+	
 	count_row_column (state->start, position, &char_offset,
 	                  &row, &column);
 	
 	err_str_tmpl = PyString_FromString (tmpl);
-	err_format_args = Py_BuildValue ("(kkks)", row, column,
-	                                 char_offset, description);
-	err_str = PyString_Format (err_str_tmpl, err_format_args);
-	Py_DECREF (err_str_tmpl);
-	Py_DECREF (err_format_args);
-	if ((ReadError = get_ReadError ()))
+	if (err_str_tmpl)
 	{
-		PyErr_SetObject (ReadError, err_str);
-		Py_DECREF (ReadError);
+		err_format_args = Py_BuildValue ("(kkkO)", row, column,
+		                                 char_offset, description);
+		if (err_format_args)
+		{
+			err_str = PyString_Format (err_str_tmpl, err_format_args);
+			if (err_str)
+			{
+				if ((ReadError = get_ReadError ()))
+				{
+					PyErr_SetObject (ReadError, err_str);
+					Py_DECREF (ReadError);
+				}
+				Py_DECREF (err_str);
+			}
+			Py_DECREF (err_format_args);
+		}
+		Py_DECREF (err_str_tmpl);
 	}
-	Py_DECREF (err_str);
+	Py_DECREF (description);
+}
+
+static void
+set_error_simple (ParserState *state, Py_UNICODE *position,
+                  const char *description)
+{
+	PyObject *desc_obj;
+	desc_obj = PyString_FromString (description);
+	if (desc_obj)
+	{
+		set_error (state, position, desc_obj, NULL);
+		Py_DECREF (desc_obj);
+	}
+}
+
+static void
+set_error_unexpected (ParserState *state, Py_UNICODE *position)
+{
+	PyObject *err_str, *err_format_args;
+	Py_UCS4 c = next_ucs4 (state, position);
+	
+	if (c > 0xFFFF)
+		err_str = PyString_FromString ("Unexpected U+%08X.");
+	else
+		err_str = PyString_FromString ("Unexpected U+%04X.");
+	
+	if (err_str)
+	{
+		err_format_args = Py_BuildValue ("(k)", c);
+		if (err_format_args)
+		{
+			set_error (state, position, err_str, err_format_args);
+			Py_DECREF (err_format_args);
+		}
+		Py_DECREF (err_str);
+	}
 }
 
 /* Helper function to create a new decimal.Decimal object */
@@ -243,8 +274,8 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 	
 	if (remaining < 4)
 	{
-		set_error (state, state->index + (*index_ptr) - 1,
-		           "Unterminated unicode escape.");
+		set_error_simple (state, state->index + (*index_ptr) - 1,
+		                  "Unterminated unicode escape.");
 		return FALSE;
 	}
 	
@@ -260,16 +291,16 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 		
 		if (remaining < 10)
 		{
-			set_error (state, state->index + (*index_ptr) + 1,
-			           "Missing surrogate pair half.");
+			set_error_simple (state, state->index + (*index_ptr) + 1,
+			                  "Missing surrogate pair half.");
 			return FALSE;
 		}
 		
 		if (string_start[(*index_ptr)] != '\\' ||
 		    string_start[(*index_ptr) + 1] != 'u')
 		{
-			set_error (state, state->index + (*index_ptr) + 1,
-			           "Missing surrogate pair half.");
+			set_error_simple (state, state->index + (*index_ptr) + 1,
+			                  "Missing surrogate pair half.");
 			return FALSE;
 		}
 		(*index_ptr) += 2;
@@ -294,27 +325,21 @@ read_unicode_escape (ParserState *state, Py_UNICODE *string_start,
 	}
 	else if (0xDC00 <= value && value <= 0xDFFF)
 	{
-		const char *tmpl = "JSON parsing error at line %d, column %d"
-		                   " (position %d): U+%04X is a reserved code point.";
-		unsigned long row, column, char_offset;
+		PyObject *err_str, *err_format_args;
 		Py_UNICODE *position = state->index + (*index_ptr) - 5;
-		PyObject *err_str, *err_str_tmpl, *err_format_args, *ReadError;
-		
-		count_row_column (state->start, position, &char_offset,
-		                  &row, &column);
-		
-		err_str_tmpl = PyString_FromString (tmpl);
-		err_format_args = Py_BuildValue ("(kkkk)", row, column,
-		                                 char_offset, value);
-		err_str = PyString_Format (err_str_tmpl, err_format_args);
-		Py_DECREF (err_str_tmpl);
-		Py_DECREF (err_format_args);
-		if ((ReadError = get_ReadError ()))
+
+		err_str = PyString_FromString ("U+%04X is a reserved code point.");
+
+		if (err_str)
 		{
-			PyErr_SetObject (ReadError, err_str);
-			Py_DECREF (ReadError);
+			err_format_args = Py_BuildValue ("(k)", value);
+			if (err_format_args)
+			{
+				set_error (state, position, err_str, err_format_args);
+				Py_DECREF (err_format_args);
+			}
+			Py_DECREF (err_str);
 		}
-		Py_DECREF (err_str);
 		return FALSE;
 	}
 	else
@@ -343,8 +368,8 @@ read_string (ParserState *state)
 		c = start[ii];
 		if (c == 0)
 		{
-			set_error (state, state->index,
-			           "Unterminated string.");
+			set_error_simple (state, state->index,
+			                  "Unterminated string.");
 			return NULL;
 		}
 		
@@ -419,8 +444,8 @@ read_string (ParserState *state)
 				
 				default:
 				{
-					set_error (state, start + ii - 1,
-					           "Unknown escape code.");
+					set_error_simple (state, start + ii - 1,
+					                  "Unknown escape code.");
 					PyMem_Free (buffer);
 					return NULL;
 				}
@@ -472,8 +497,8 @@ read_number (ParserState *state)
 			}
 			else if (leading_zero && !is_float)
 			{
-				set_error (state, state->index,
-				           "Number with leading zero.");
+				set_error_simple (state, state->index,
+				                  "Number with leading zero.");
 				return NULL;
 			}
 			got_digit = TRUE;
@@ -489,8 +514,8 @@ read_number (ParserState *state)
 		case '9':
 			if (leading_zero && !is_float)
 			{
-				set_error (state, state->index,
-				           "Number with leading zero.");
+				set_error_simple (state, state->index,
+				                  "Number with leading zero.");
 				return NULL;
 			}
 			got_digit = TRUE;
@@ -539,7 +564,7 @@ read_number (ParserState *state)
 	
 	if (object == NULL)
 	{
-		set_error (state, state->index, "Invalid number.");
+		set_error_simple (state, state->index, "Invalid number.");
 		return NULL;
 	}
 	
@@ -561,8 +586,8 @@ read_array_impl (PyObject *list, ParserState *state)
 		c = *state->index;
 		if (c == 0)
 		{
-			set_error (state, state->index,
-			           "Unterminated array.");
+			set_error_simple (state, state->index,
+			                  "Unterminated array.");
 			return FALSE;
 		}
 		
@@ -570,8 +595,8 @@ read_array_impl (PyObject *list, ParserState *state)
 		{
 			if (array_state == ARRAY_NEED_VALUE)
 			{
-				set_error (state, state->index,
-				           "Expecting array item.");
+				set_error_simple (state, state->index,
+				                  "Expecting array item.");
 				return FALSE;
 			}
 			state->index++;
@@ -582,8 +607,8 @@ read_array_impl (PyObject *list, ParserState *state)
 		{
 			if (array_state != ARRAY_GOT_VALUE)
 			{
-				set_error (state, state->index,
-				           "Expecting array item.");
+				set_error_simple (state, state->index,
+				                  "Expecting array item.");
 				return FALSE;
 			}
 			array_state = ARRAY_NEED_VALUE;
@@ -595,8 +620,8 @@ read_array_impl (PyObject *list, ParserState *state)
 			PyObject *value;
 			if (array_state == ARRAY_GOT_VALUE)
 			{
-				set_error (state, state->index,
-				           "Expecting comma.");
+				set_error_simple (state, state->index,
+				                  "Expecting comma.");
 				return FALSE;
 			}
 			
@@ -643,8 +668,8 @@ read_object_impl (PyObject *object, ParserState *state)
 		c = *state->index;
 		if (c == 0)
 		{
-			set_error (state, start,
-			           "Unterminated object.");
+			set_error_simple (state, start,
+			                  "Unterminated object.");
 			return FALSE;
 		}
 		
@@ -652,8 +677,8 @@ read_object_impl (PyObject *object, ParserState *state)
 		{
 			if (object_state == OBJECT_NEED_KEY)
 			{
-				set_error (state, state->index,
-				           "Expecting property name.");
+				set_error_simple (state, state->index,
+				                  "Expecting property name.");
 				return FALSE;
 			}
 			state->index++;
@@ -664,8 +689,8 @@ read_object_impl (PyObject *object, ParserState *state)
 		{
 			if (object_state != OBJECT_GOT_VALUE)
 			{
-				set_error (state, state->index,
-				           "Expecting property name.");
+				set_error_simple (state, state->index,
+				                  "Expecting property name.");
 				return FALSE;
 			}
 			object_state = OBJECT_NEED_KEY;
@@ -679,8 +704,8 @@ read_object_impl (PyObject *object, ParserState *state)
 			
 			if (object_state == OBJECT_GOT_VALUE)
 			{
-				set_error (state, state->index,
-				           "Expecting comma.");
+				set_error_simple (state, state->index,
+				                  "Expecting comma.");
 				return FALSE;
 			}
 			
@@ -690,9 +715,9 @@ read_object_impl (PyObject *object, ParserState *state)
 			skip_spaces (state);
 			if (*state->index != ':')
 			{
-				set_error (state, state->index,
-				           "Expected colon after object"
-				           " property name.");
+				set_error_simple (state, state->index,
+				                  "Expected colon after object"
+				                  " property name.");
 				Py_DECREF (key);
 				return FALSE;
 			}
@@ -717,8 +742,8 @@ read_object_impl (PyObject *object, ParserState *state)
 		
 		else
 		{
-			set_error (state, state->index,
-			           "Expecting property name.");
+			set_error_simple (state, state->index,
+			                  "Expecting property name.");
 			return FALSE;
 		}
 	}
@@ -745,8 +770,8 @@ json_read (ParserState *state)
 	switch (*state->index)
 	{
 		case 0:
-			set_error (state, state->start,
-			           "No expression found.");
+			set_error_simple (state, state->start,
+			                  "No expression found.");
 			return NULL;
 		case '{':
 			return read_object (state);
@@ -798,8 +823,8 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 		skip_spaces (&state);
 		if (state.index < state.end)
 		{
-			set_error (&state, state.index,
-			           "Extra data after JSON expression.");
+			set_error_simple (&state, state.index,
+			                  "Extra data after JSON expression.");
 			Py_DECREF (result);
 			result = NULL;
 		}
