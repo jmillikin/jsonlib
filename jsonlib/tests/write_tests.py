@@ -248,8 +248,9 @@ class WriteStringTests (TestCase):
 	def test_fail_incomplete_surrogate (self):
 		self.we ([u'\uD834'], "Cannot serialize incomplete"
 		                      " surrogate pair.")
-		self.we ([u'\uDD1E'], "Cannot serialize incomplete"
-		                      " surrogate pair.")
+		
+	def test_fail_reserved_codepoint (self):
+		self.we ([u'\uDD1E'], "Cannot serialize reserved code point U+DD1E.")
 		
 	def test_fail_invalid_surrogate (self):
 		self.we ([u'\uD834\u0000'], "Cannot serialize invalid"
