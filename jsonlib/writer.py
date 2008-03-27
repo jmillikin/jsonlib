@@ -114,31 +114,6 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	retval.append (end)
 	return retval
 	
-@memoized
-def write_char (char, ascii_only):
-	"""Serialize a single unicode character to its JSON representation."""
-	if char in ESCAPES:
-		return ESCAPES[char]
-		
-	# Unicode
-	if ord (char) > 0x7E and ascii_only:
-		# Split into surrogate pairs
-		if ord (char) > 0xFFFF:
-			unicode_value = ord (char)
-			reduced = unicode_value - 0x10000
-			second_half = (reduced & 0x3FF) # Lower 10 bits
-			first_half = (reduced >> 10)
-			
-			first_half += 0xD800
-			second_half += 0xDC00
-			
-			return '\\u%04x\\u%04x'% (first_half, second_half)
-		else:
-			return '\\u%04x' % ord (char)
-			
-	return char
-	
-@memoized
 def write_string (value, ascii_only):
 	"""Serialize a string to its JSON representation.
 	
@@ -149,10 +124,50 @@ def write_string (value, ascii_only):
 	"""
 	return write_unicode (unicode (value), ascii_only)
 	
-@memoized
 def write_unicode (value, ascii_only):
 	"""Serialize a unicode string to its JSON representation."""
-	return ['"'] + [write_char (char, ascii_only) for char in value] + ['"']
+	stream = iter (value)
+	yield '"'
+	for char in stream:
+		ochar = ord (char)
+		if char in ESCAPES:
+			yield ESCAPES[char]
+		elif ochar > 0x7E:
+			# Prevent invalid surrogate pairs from being
+			# serialized.
+			if 0xD800 <= ochar <= 0xDBFF:
+				try:
+					next = stream.next ()
+				except StopIteration:
+					raise errors.WriteError ("Cannot serialize incomplete surrogate pair.")
+				onext = ord (next)
+				if not (0xDC00 <= onext <= 0xDFFF):
+					raise errors.WriteError ("Cannot serialize invalid surrogate pair.")
+				if ascii_only:
+					yield '\\u%04x' % ochar
+					yield '\\u%04x' % onext
+				else:
+					yield char
+					yield next
+			elif ascii_only:
+				if ochar > 0xFFFF:
+					unicode_value = ord (char)
+					reduced = unicode_value - 0x10000
+					second_half = (reduced & 0x3FF) # Lower 10 bits
+					first_half = (reduced >> 10)
+				
+					first_half += 0xD800
+					second_half += 0xDC00
+				
+					yield '\\u%04x\\u%04x'% (first_half, second_half)
+				else:
+					yield '\\u%04x' % ochar
+			else:
+				yield char
+		else:
+			yield char
+			
+	yield '"'
 	
 @memoized
 def write_float (value):
