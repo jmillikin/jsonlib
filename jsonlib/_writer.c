@@ -38,12 +38,55 @@ write_mapping (PyObject *object, int sort_keys, PyObject *indent_string,
 static PyObject *
 write_basic (PyObject *value, int ascii_only);
 
-static PyObject *WriteError;
-static PyObject *UnknownSerializerError;
-static PyObject *Decimal;
-static PyObject *UserString;
-
 static const char *hexdigit = "0123456789abcdef";
+
+static PyObject *
+get_WriteError (void)
+{
+	PyObject *module, *obj = NULL;
+	if ((module = PyImport_ImportModule ("jsonlib.errors")))
+	{
+		obj = PyObject_GetAttrString (module, "WriteError");
+		Py_DECREF (module);
+	}
+	return obj;
+}
+
+static PyObject *
+get_UnknownSerializerError (void)
+{
+	PyObject *module, *obj = NULL;
+	if ((module = PyImport_ImportModule ("jsonlib.errors")))
+	{
+		obj = PyObject_GetAttrString (module, "UnknownSerializerError");
+		Py_DECREF (module);
+	}
+	return obj;
+}
+
+static PyObject *
+get_Decimal (void)
+{
+	PyObject *module, *obj = NULL;
+	if ((module = PyImport_ImportModule ("decimal")))
+	{
+		obj = PyObject_GetAttrString (module, "Decimal");
+		Py_DECREF (module);
+	}
+	return obj;
+}
+
+static PyObject *
+get_UserString (void)
+{
+	PyObject *module, *obj = NULL;
+	if ((module = PyImport_ImportModule ("UserString")))
+	{
+		obj = PyObject_GetAttrString (module, "UserString");
+		Py_DECREF (module);
+	}
+	return obj;
+}
 
 static void
 get_indent (PyObject *indent_string, int indent_level,
@@ -410,7 +453,7 @@ unicode_to_ascii (PyObject *unicode)
 		}
 #endif
 		else if (c > 0x7E)
-		{	
+		{
 			*buffer_pos++ = '\\';
 			*buffer_pos++ = 'u';
 			*buffer_pos++ = hexdigit[(c >> 12) & 0x000F];
@@ -529,8 +572,16 @@ write_iterable (PyObject *iter, int sort_keys, PyObject *indent_string,
 	/* Guard against infinite recursion */
 	has_parents = Py_ReprEnter (iter);
 	if (has_parents > 0)
-		PyErr_SetString (WriteError,
-		                 "Cannot serialize self-referential values.");
+	{
+		PyObject *err_class;
+		if ((err_class = get_WriteError ()))
+		{
+			PyErr_SetString (err_class,
+			                 "Cannot serialize self-referential"
+			                 " values.");
+			Py_DECREF (err_class);
+		}
+	}
 	if (has_parents != 0) return NULL;
 	
 	sequence = PySequence_Fast (iter, "Error converting iterable to sequence.");
@@ -590,30 +641,45 @@ mapping_get_key_and_value (PyObject *item, PyObject **key_ptr,
 	{
 		if (coerce_keys)
 		{
-			PyObject *new_key;
+			PyObject *new_key = NULL;
 			if (!(new_key = write_basic (key, ascii_only)))
-			{
-				if (!PyErr_ExceptionMatches(UnknownSerializerError))
-				{
-					Py_DECREF (key);
-					return FALSE;
-				}
+			{	
+				PyObject *us_error;
+				PyObject *exc_type, *exc_value, *exc_traceback;
+				PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
 				
-				PyErr_Clear();
-				if (!(new_key = PyObject_Unicode (key)))
+				if ((us_error = get_UnknownSerializerError ()))
 				{
-					Py_DECREF (key);
-					return FALSE;
+					int is_us_error;
+					
+					PyErr_Restore (exc_type, exc_value, exc_traceback);
+					is_us_error = PyErr_ExceptionMatches (us_error);
+					Py_DECREF (us_error);
+					
+					if (is_us_error)
+					{
+						PyErr_Clear ();
+						new_key = PyObject_Unicode (key);
+					}
 				}
 			}
 			
 			Py_DECREF (key);
+			if (!new_key) return FALSE;
 			key = new_key;
 		}
 		else
 		{
+			PyObject *err_class;
 			Py_DECREF (key);
-			PyErr_SetString (WriteError, "Only strings may be used as object keys.");
+			
+			if ((err_class = get_WriteError ()))
+			{
+				PyErr_SetString (err_class,
+				                 "Only strings may be used"
+				                 " as object keys.");
+				Py_DECREF (err_class);
+			}
 			return FALSE;
 		}
 	}
@@ -745,7 +811,14 @@ write_mapping (PyObject *mapping, int sort_keys, PyObject *indent_string,
 	{
 		if (has_parents > 0)
 		{
-			PyErr_SetString (WriteError, "Cannot serialize self-referential values.");
+			PyObject *err_class;
+			if ((err_class = get_WriteError ()))
+			{
+				PyErr_SetString (err_class,
+				                 "Cannot serialize"
+				                 " self-referential values.");
+				Py_DECREF (err_class);
+			}
 		}
 		return NULL;
 	}
@@ -814,7 +887,8 @@ check_valid_number (PyObject *serialized)
 static PyObject *
 write_basic (PyObject *value, int ascii_only)
 {
-	int is_decimal, is_userstring;
+	PyObject *Decimal, *UserString;
+	int is_decimal = -1, is_userstring = -1;
 	
 	if (value == Py_True)
 		return PyString_FromString ("true");
@@ -830,7 +904,8 @@ write_basic (PyObject *value, int ascii_only)
 	if (PyInt_Check (value) || PyLong_Check (value))
 		return PyObject_Str(value);
 	if (PyComplex_Check (value))
-	{
+	{	
+		PyObject *err_class;
 		Py_complex complex = PyComplex_AsCComplex (value);
 		if (complex.imag == 0)
 		{
@@ -841,9 +916,13 @@ write_basic (PyObject *value, int ascii_only)
 			Py_DECREF (real);
 			return serialized;
 		}
-		PyErr_SetString (WriteError,
-		                 "Cannot serialize complex numbers with"
-		                 " imaginary components.");
+		if ((err_class = get_WriteError ()))
+		{
+			PyErr_SetString (err_class, "Cannot serialize complex"
+			                            " numbers with imaginary"
+			                            " components.");
+			Py_DECREF (err_class);
+		}
 		return NULL;
 	}
 	
@@ -852,24 +931,42 @@ write_basic (PyObject *value, int ascii_only)
 		double val = PyFloat_AS_DOUBLE (value);
 		if (Py_IS_NAN (val))
 		{
-			PyErr_SetString (WriteError, "Cannot serialize NaN.");
+			PyObject *err_class;
+			if ((err_class = get_WriteError ()))
+			{
+				PyErr_SetString (err_class,
+				                 "Cannot serialize NaN.");
+				Py_DECREF (err_class);
+			}
 			return NULL;
 		}
 		
 		if (Py_IS_INFINITY (val))
 		{
+			PyObject *err_class;
+			const char *msg;
 			if (val > 0)
-				PyErr_SetString (WriteError, "Cannot serialize Infinity.");
+				msg = "Cannot serialize Infinity.";
 			else
-				PyErr_SetString (WriteError, "Cannot serialize -Infinity.");
+				msg = "Cannot serialize -Infinity.";
+			
+			if ((err_class = get_WriteError ()))
+			{
+				PyErr_SetString (err_class, msg);
+				Py_DECREF (err_class);
+			}
 			return NULL;
 		}
 		
 		return PyObject_Repr (value);
 	}
 	
-	if ((is_decimal = PyObject_IsInstance (value, Decimal)) == -1)
-		return NULL;
+	if ((Decimal = get_Decimal ()))
+	{
+		is_decimal = PyObject_IsInstance (value, Decimal);
+		Py_DECREF (Decimal);
+	}
+	if (is_decimal == -1) return NULL;
 	
 	if (is_decimal)
 	{
@@ -882,16 +979,25 @@ write_basic (PyObject *value, int ascii_only)
 		
 		if (valid == FALSE)
 		{
-			PyErr_Format (WriteError, "Cannot serialize %s.",
-			              PyString_AsString (serialized));
+			PyObject *err_class;
+			if ((err_class = get_WriteError ()))
+			{
+				PyErr_Format (err_class, "Cannot serialize %s.",
+				              PyString_AsString (serialized));
+				Py_DECREF (err_class);
+			}
 		}
 		/* else valid == -1, error */
 		Py_DECREF (serialized);
 		return NULL;
 	}
 	
-	if ((is_userstring = PyObject_IsInstance (value, UserString)) == -1)
-		return NULL;
+	if ((UserString = get_UserString ()))
+	{
+		is_userstring = PyObject_IsInstance (value, UserString);
+		Py_DECREF (UserString);
+	}
+	if (is_userstring == -1) return NULL;
 	
 	if (is_userstring)
 	{
@@ -903,7 +1009,16 @@ write_basic (PyObject *value, int ascii_only)
 		return retval;
 	}
 	
-	PyErr_SetObject (UnknownSerializerError, value);
+	{
+		PyObject *err_class;
+		if ((err_class = get_UnknownSerializerError ()))
+		{
+			PyErr_SetObject (err_class, value);
+			Py_DECREF (err_class);
+		}
+		
+	}
+	
 	return NULL;
 }
 
@@ -928,14 +1043,24 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 	
 	else
 	{
+		PyObject *UnknownSerializerError;
+		if (!(UnknownSerializerError = get_UnknownSerializerError ()))
+			return NULL;
 		pieces = write_basic (object, ascii_only);
 		if (pieces && indent_level == 0)
-		{
+		{	
+			PyObject *err_class;
 			Py_DECREF (pieces);
 			pieces = NULL;
-			PyErr_SetString (WriteError,
-			                 "The outermost container must be"
-			                 " an array or object.");
+			
+			if ((err_class = get_WriteError ()))
+			{
+				PyErr_SetString (err_class,
+				                 "The outermost container"
+				                 " must be an array or"
+				                 " object.");
+				Py_DECREF (err_class);
+			}
 		}
 		if (!pieces && PyErr_ExceptionMatches (UnknownSerializerError))
 		{
@@ -964,6 +1089,7 @@ json_write (PyObject *object, int sort_keys, PyObject *indent_string,
 				Py_DECREF (iter);
 			}
 		}
+		Py_DECREF (UnknownSerializerError);
 	}
 	
 	if (pieces)
@@ -1022,24 +1148,5 @@ PyDoc_STRVAR (module_doc,
 PyMODINIT_FUNC
 init_writer(void)
 {
-	PyObject *m, *errors, *decimal_module, *userstring_module;
-	
-	if (!(m = Py_InitModule3 ("_writer", writer_methods, module_doc)))
-		return;
-	if (!(errors = PyImport_ImportModule ("jsonlib.errors")))
-		return;
-	if (!(WriteError = PyObject_GetAttrString (errors, "WriteError")))
-		return;
-	if (!(UnknownSerializerError = PyObject_GetAttrString (errors, "UnknownSerializerError")))
-		return;
-		
-	if (!(decimal_module = PyImport_ImportModule ("decimal")))
-		return;
-	if (!(Decimal = PyObject_GetAttrString (decimal_module, "Decimal")))
-		return;
-		
-	if (!(userstring_module = PyImport_ImportModule ("UserString")))
-		return;
-	if (!(UserString = PyObject_GetAttrString (userstring_module, "UserString")))
-		return;
+	Py_InitModule3 ("_writer", writer_methods, module_doc);
 }
