@@ -1013,8 +1013,7 @@ write_object (WriterState *state, PyObject *object, int indent_level)
 static PyObject*
 _write_entry (PyObject *self, PyObject *args)
 {
-	PyObject *result = NULL, *value, *indent_string, *parent_objects;
-	int sort_keys, ascii_only, coerce_keys, indent_level;
+	PyObject *result = NULL, *value;
 	WriterState state;
 	
 	if (!PyArg_ParseTuple (args, "OiOiiOOOO:_write",
