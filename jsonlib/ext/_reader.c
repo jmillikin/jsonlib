@@ -11,6 +11,8 @@ typedef struct _ParserState {
 	Py_UNICODE *start;
 	Py_UNICODE *end;
 	Py_UNICODE *index;
+	PyObject *Decimal;
+	PyObject *ReadError;
 } ParserState;
 
 typedef enum
@@ -26,8 +28,6 @@ typedef enum
 	OBJECT_NEED_KEY,
 	OBJECT_GOT_VALUE
 } ParseObjectState;
-
-static PyObject *get_ReadError (void);
 
 static PyObject *read_keyword (ParserState *state);
 static PyObject *read_string (ParserState *state);
@@ -97,7 +97,7 @@ set_error (ParserState *state, Py_UNICODE *position, PyObject *description,
 	const char *tmpl = "JSON parsing error at line %d, column %d"
 	                   " (position %d): %s";
 	unsigned long row, column, char_offset;
-	PyObject *err_str, *err_str_tmpl, *err_format_args, *ReadError;
+	PyObject *err_str, *err_str_tmpl, *err_format_args;
 	
 	Py_INCREF (description);
 	
@@ -123,11 +123,7 @@ set_error (ParserState *state, Py_UNICODE *position, PyObject *description,
 			err_str = PyString_Format (err_str_tmpl, err_format_args);
 			if (err_str)
 			{
-				if ((ReadError = get_ReadError ()))
-				{
-					PyErr_SetObject (ReadError, err_str);
-					Py_DECREF (ReadError);
-				}
+				PyErr_SetObject (state->ReadError, err_str);
 				Py_DECREF (err_str);
 			}
 			Py_DECREF (err_format_args);
@@ -175,27 +171,16 @@ set_error_unexpected (ParserState *state, Py_UNICODE *position)
 
 /* Helper function to create a new decimal.Decimal object */
 static PyObject *
-Decimal (PyObject *string)
+make_Decimal (ParserState *state, PyObject *string)
 {
-	PyObject *args, *retval = NULL, *py_class;
-	
-	if (!(py_class = jsonlib_get_imported_obj ("decimal", "Decimal")))
-		return NULL;
+	PyObject *args, *retval = NULL;
 	
 	if ((args = PyTuple_Pack (1, string)))
 	{
-		retval = PyObject_CallObject (py_class, args);
+		retval = PyObject_CallObject (state->Decimal, args);
 		Py_DECREF (args);
 	}
-	Py_DECREF (py_class);
 	return retval;
-}
-
-/* Helper to retrieve the ReadError class */
-static PyObject *
-get_ReadError (void)
-{
-	return jsonlib_get_imported_obj ("jsonlib.errors", "ReadError");
 }
 
 /* Helper function to perform strncmp between Py_UNICODE and char* */
@@ -557,7 +542,7 @@ read_number (ParserState *state)
 			str = PyUnicode_AsUTF8String (unicode);
 			Py_DECREF (unicode);
 			if (!str) return NULL;
-			object = Decimal (str);
+			object = make_Decimal (state, str);
 			Py_DECREF (str);
 		}
 		
@@ -806,17 +791,14 @@ json_read (ParserState *state)
 }
 
 static PyObject*
-_read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
+_read_entry (PyObject *self, PyObject *args)
 {
-	static char *kwlist[] = {"string", NULL};
 	PyObject *result, *unicode;
 	ParserState state;
 	
-	if (!PyArg_ParseTupleAndKeywords (args, kwargs, "O:_read", kwlist,
-	                                  &unicode))
+	if (!PyArg_ParseTuple (args, "UOO:_read", &unicode,
+	                       &state.Decimal, &state.ReadError))
 		return NULL;
-	
-	Py_INCREF (unicode);
 	
 	state.start = PyUnicode_AsUnicode (unicode);
 	state.end = state.start + PyUnicode_GetSize (unicode);
@@ -834,13 +816,11 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 		}
 	}
 	
-	Py_DECREF (unicode);
-	
 	return result;
 }
 
 static PyMethodDef reader_methods[] = {
-	{"_read", (PyCFunction) (_read_entry), METH_VARARGS|METH_KEYWORDS,
+	{"_read", (PyCFunction) (_read_entry), METH_VARARGS,
 	PyDoc_STR ("_read (string) -> Deserialize the JSON expression to\n"
 	           "a Python object.")},
 	

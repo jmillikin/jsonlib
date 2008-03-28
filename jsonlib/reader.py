@@ -5,6 +5,7 @@
 
 import struct
 import sys
+from decimal import Decimal
 
 from jsonlib.errors import ReadError
 from jsonlib._reader import _read
@@ -76,7 +77,8 @@ def read (string):
 	before parsing (see unicode_autodetect_encoding).
 	
 	"""
-	value = _read (unicode_autodetect_encoding (string))
+	u_string = unicode_autodetect_encoding (string)
+	value = _read (u_string, Decimal, ReadError)
 	if not isinstance (value, (dict, list)):
 		raise ReadError ("Tried to deserialize a basic value.")
 	return value
