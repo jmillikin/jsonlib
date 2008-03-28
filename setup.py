@@ -1,7 +1,7 @@
 from os.path import dirname, join
-from setuptools import setup, Extension, Feature
+from setuptools import setup, Extension
 
-version = '1.3.0'
+version = '1.3.1'
 
 setup (
 	name = 'jsonlib',
@@ -24,13 +24,9 @@ setup (
 		"Topic :: Software Development :: Libraries :: Python Modules",
 	],
 	keywords = ["json"],
-	features = {'performance': Feature (
-		"Performance-enhancing extension modules",
-		standard = True,
-		ext_modules = [
-			Extension ('jsonlib._reader', ['jsonlib/ext/_reader.c', 'jsonlib/ext/jsonlib-common.c']),
-			Extension ('jsonlib._writer', ['jsonlib/ext/_writer.c', 'jsonlib/ext/jsonlib-common.c']),
-		],
-	)},
+	ext_modules = [
+		Extension ('jsonlib._reader', ['jsonlib/ext/_reader.c', 'jsonlib/ext/jsonlib-common.c']),
+		Extension ('jsonlib._writer', ['jsonlib/ext/_writer.c', 'jsonlib/ext/jsonlib-common.c']),
+	],
 	test_suite = 'jsonlib.tests.suite',
 )
