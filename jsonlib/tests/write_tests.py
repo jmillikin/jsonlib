@@ -269,6 +269,12 @@ class WriteStringTests (TestCase):
 	def test_userstring (self):
 		self.w ([UserString.UserString ('test')], u'["test"]')
 		
+	def test_fail_nonascii_bytestring (self):
+		self.we (['Fail\xa2'],
+		         u"'ascii' codec can't decode byte 0xa2 in position 4:"
+		         u" ordinal not in range(128)",
+		         error_type = UnicodeDecodeError)
+		
 class EncodingTests (TestCase):
 	# Don't use self.w in these, because it sets the encoding to
 	# None.

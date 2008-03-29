@@ -24,10 +24,12 @@ class TestCase (unittest.TestCase):
 		except errors.ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
 			
-	def we (self, value, expected_error_message, **kwargs):
+	def we (self, value, expected_error_message, error_type = None, **kwargs):
+		if error_type is None:
+			error_type = errors.WriteError
 		try:
 			write (value, **kwargs)
-			self.fail ("No exception raised in Python implementation.")
-		except errors.WriteError, error:
+			self.fail ("No exception raised.")
+		except error_type, error:
 			self.assertEqual (unicode (error), expected_error_message)
 			
