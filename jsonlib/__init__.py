@@ -1,6 +1,7 @@
 # Copyright (C) 2008 John Millikin. See LICENSE.txt for details.
 # Author: John Millikin <jmillikin@gmail.com>
 
+import codecs
 from decimal import Decimal
 from UserString import UserString
 import struct
@@ -43,37 +44,34 @@ def unicode_autodetect_encoding (bytes):
 	if isinstance (bytes, unicode):
 		return bytes
 		
-	header = [((ord (b) and 1) or 0) for b in bytes[:4]]
 	def struct_decode (format, offset = 0):
 		"""Helper for decoding UTF-32."""
 		_bytes = bytes[offset:]
 		codes = struct.unpack (format % (len (_bytes) / 4), _bytes)
 		return u''.join (safe_unichr (code) for code in codes)
 		
-	# UTF-32 codecs are not available
-	if header == [0, 0, 0, 1]:
-		return struct_decode ('>%dl')
-	if header == [1, 0, 0, 0]:
-		return struct_decode ('<%dl')
-	if header[:2] == [0, 1]:
-		return bytes.decode ('utf-16-be')
-	if header[:2] == [1, 0]:
-		return bytes.decode ('utf-16-le')
-		
-	# Check for a BOM
-	if bytes[:4] == '\x00\x00\xfe\xff':
-		return struct_decode ('>%dl', 4)
-	if bytes[:4] == '\xff\xfe\x00\x00':
-		return struct_decode ('<%dl', 4)
-	if bytes[:2] == '\xfe\xff':
-		return bytes[2:].decode ('utf-16-be')
-	if bytes[:2] == '\xff\xfe':
-		return bytes[2:].decode ('utf-16-le')
-		
-	# Check for utf-8-sig
-	if bytes[:3] == '\xef\xbb\xbf':
-		return bytes.decode ('utf-8-sig')
-		
+	boms = ((codecs.BOM_UTF32_BE, lambda: struct_decode ('>%dl', 4)),
+	        (codecs.BOM_UTF32_LE, lambda: struct_decode ('<%dl', 4)),
+	        (codecs.BOM_UTF16_BE, lambda: bytes[2:].decode ('utf-16-be')),
+	        (codecs.BOM_UTF16_LE, lambda: bytes[2:].decode ('utf-16-le')),
+	        (codecs.BOM_UTF8, lambda: bytes[3:].decode ('utf-8')))
+	
+	utf_headers = (((0, 0, 0, 1), lambda: struct_decode ('>%dl')),
+	              ((1, 0, 0, 0), lambda: struct_decode ('<%dl')),
+	              ((0, 1, 0, 1), lambda: bytes.decode ('utf-16-be')),
+	              ((1, 0, 1, 0), lambda: bytes.decode ('utf-16-le')))
+	
+	# Check for Byte Order Mark
+	for bom, func in boms:
+		if bytes.startswith (bom):
+			return func ()
+			
+	# First two characters are always ASCII
+	header = tuple (((ord (b) and 1) or 0) for b in bytes[:4])
+	for utf_header, func in utf_headers:
+		if header == utf_header:
+			return func ()
+			
 	# Default to UTF-8
 	return bytes.decode ('utf-8')
 	

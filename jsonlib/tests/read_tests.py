@@ -353,5 +353,5 @@ class UnicodeEncodingDetectionTests (TestCase):
 		self.de ('utf-8')
 		
 	def test_utf8_sig (self):
-		self.de ('utf-8-sig')
+		self.r ('\xef\xbb\xbf["testing"]', [u'testing'])
 		
