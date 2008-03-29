@@ -204,31 +204,40 @@ class WriteObjectTests (TestCase):
 		
 class WriteStringTests (TestCase):
 	def test_empty_string (self):
-		self.w ([''], u'[""]')
+		self.w ([''], u'[""]', ascii_only = True)
+		self.w ([''], u'[""]', ascii_only = False)
 		
 	def test_escape_quote (self):
-		self.w (['"'], u'["\\""]')
+		self.w (['"'], u'["\\""]', ascii_only = True)
+		self.w (['"'], u'["\\""]', ascii_only = False)
 		
 	def test_escape_reverse_solidus (self):
-		self.w (['\\'], u'["\\\\"]')
+		self.w (['\\'], u'["\\\\"]', ascii_only = True)
+		self.w (['\\'], u'["\\\\"]', ascii_only = False)
 		
 	def test_escape_solidus (self):
-		self.w (['/'], u'["\\/"]')
+		self.w (['/'], u'["\\/"]', ascii_only = True)
+		self.w (['/'], u'["\\/"]', ascii_only = False)
 		
 	def test_escape_backspace (self):
-		self.w (['\b'], u'["\\b"]')
+		self.w (['\b'], u'["\\b"]', ascii_only = True)
+		self.w (['\b'], u'["\\b"]', ascii_only = False)
 		
 	def test_escape_form_feed (self):
-		self.w (['\f'], u'["\\f"]')
+		self.w (['\f'], u'["\\f"]', ascii_only = True)
+		self.w (['\f'], u'["\\f"]', ascii_only = False)
 		
 	def test_escape_line_feed (self):
-		self.w (['\n'], u'["\\n"]')
+		self.w (['\n'], u'["\\n"]', ascii_only = True)
+		self.w (['\n'], u'["\\n"]', ascii_only = False)
 		
 	def test_escape_carriage_return (self):
-		self.w (['\r'], u'["\\r"]')
+		self.w (['\r'], u'["\\r"]', ascii_only = True)
+		self.w (['\r'], u'["\\r"]', ascii_only = False)
 		
 	def test_escape_tab (self):
-		self.w (['\t'], u'["\\t"]')
+		self.w (['\t'], u'["\\t"]', ascii_only = True)
+		self.w (['\t'], u'["\\t"]', ascii_only = False)
 		
 	def test_escape_control_characters (self):
 		special_escapes = tuple ('\b\t\n\f\r')
@@ -237,8 +246,13 @@ class WriteStringTests (TestCase):
 			char = unichr (code)
 			if char not in special_escapes:
 				expected = u'["\\u%04x"]' % code
-				self.w ([char], expected)
+				self.w ([char], expected, ascii_only = True)
+				self.w ([char], expected, ascii_only = False)
 				
+	def test_noescape_above_control (self):
+		self.w ([u'\u0020\u001f'], u'[" \\u001f"]', ascii_only = True)
+		self.w ([u'\u0020\u001f'], u'[" \\u001f"]', ascii_only = False)
+		
 	def test_unicode_passthrough (self):
 		self.w ([u'\u00B6\u00D7'], u'["\u00b6\u00d7"]', ascii_only = False)
 		self.w ([u'\u24CA'], u'["\u24ca"]', ascii_only = False)
