@@ -70,6 +70,10 @@ def unicode_autodetect_encoding (bytes):
 	if bytes[:2] == '\xff\xfe':
 		return bytes[2:].decode ('utf-16-le')
 		
+	# Check for utf-8-sig
+	if bytes[:3] == '\xef\xbb\xbf':
+		return bytes.decode ('utf-8-sig')
+		
 	# Default to UTF-8
 	return bytes.decode ('utf-8')
 	

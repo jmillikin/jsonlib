@@ -352,3 +352,6 @@ class UnicodeEncodingDetectionTests (TestCase):
 	def test_utf8 (self):
 		self.de ('utf-8')
 		
+	def test_utf8_sig (self):
+		self.de ('utf-8-sig')
+		
