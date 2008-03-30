@@ -28,6 +28,15 @@ class MiscTests (TestCase):
 	def test_fail_on_unwrapped_atom (self):
 		self.we (1, "The outermost container must be an array or object.")
 		
+	def test_fail_on_non_whitespace_indent (self):
+		self.we ([], "Only whitespace may be used for indentation.",
+		         indent = 'bad', error_type = TypeError)
+		
+	def test_fail_on_other_whitespace_indent (self):
+		# Whitespace that is not valid JSON whitespace
+		self.we ([], "Only whitespace may be used for indentation.",
+		         indent = u'\u000B', error_type = TypeError)
+		
 class WriteKeywordTests (TestCase):
 	def test_null (self):
 		self.w ([None], u'[null]')

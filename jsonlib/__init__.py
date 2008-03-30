@@ -127,6 +127,10 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		The default encoding is UTF-8.
 	
 	"""
+	if not (indent is None or len (indent) == 0):
+		if len (indent.strip (u'\u0020\u0009\u000A\u000D')) > 0:
+			raise TypeError ("Only whitespace may be used for indentation.")
+			
 	pieces = _write (value, sort_keys, indent, ascii_only, coerce_keys,
 	                 Decimal, UserString, WriteError,
 	                 UnknownSerializerError)
