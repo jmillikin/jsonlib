@@ -31,6 +31,10 @@ class MiscTests (TestCase):
 	def test_extra_data (self):
 		self.re ('[][]', 1, 3, 2, "Extra data after JSON expression.")
 		
+	def test_no_extra_data_on_whitespace (self):
+		self.r ('[] ', [])
+		self.r ('{} ', {})
+		
 class ReadKeywordTests (TestCase):
 	def test_null (self):
 		self.r ('[null]', [None])
