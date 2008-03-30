@@ -1,7 +1,7 @@
 from os.path import dirname, join
 from setuptools import setup, Extension
 
-version = '1.3.1'
+version = '1.3.2'
 
 setup (
 	name = 'jsonlib',

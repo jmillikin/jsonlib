@@ -161,6 +161,13 @@ for any reason.
 Change Log
 ==========
 
+1.3.2
+-----
+* Improved the README.
+* Support for reading text encoded with the ``utf-8-sig`` codec.
+* Use ``codecs`` module for detecting BOMs in input data.
+* Forbid non-whitespace strings from being used for indentation.
+
 1.3.1
 -----
 * Removed the Python implementations of the serializer and deserializer.
