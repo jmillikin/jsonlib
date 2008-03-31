@@ -88,8 +88,11 @@ def read (string):
 		raise ReadError ("Tried to deserialize a basic value.")
 	return value
 	
+def default_on_unknown (value):
+	raise UnknownSerializerError (value)
+	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
-           coerce_keys = False, encoding = 'utf-8'):
+           coerce_keys = False, encoding = 'utf-8', on_unknown = None):
 	"""Serialize a Python value to a JSON-formatted byte string.
 	
 	value
@@ -126,14 +129,25 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		
 		The default encoding is UTF-8.
 	
+	on_unknown
+		An object that will be called to convert unknown values
+		into a JSON-representable value. The default simply raises
+		an UnknownSerializerError.
+	
 	"""
 	if not (indent is None or len (indent) == 0):
 		if len (indent.strip (u'\u0020\u0009\u000A\u000D')) > 0:
 			raise TypeError ("Only whitespace may be used for indentation.")
 			
+	if on_unknown is None:
+		on_unknown = default_on_unknown
+		
+	if not hasattr (on_unknown, '__call__'):
+		raise TypeError ("The on_unknown object must be callable.")
+		
 	pieces = _write (value, sort_keys, indent, ascii_only, coerce_keys,
 	                 Decimal, UserString, WriteError,
-	                 UnknownSerializerError)
+	                 UnknownSerializerError, on_unknown)
 	u_string = u''.join (pieces)
 	if encoding is None:
 		return u_string

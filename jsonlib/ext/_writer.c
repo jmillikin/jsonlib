@@ -22,6 +22,7 @@ typedef struct _WriterState
 	PyObject *indent_string;
 	int ascii_only;
 	int coerce_keys;
+	PyObject *on_unknown;
 	
 	/* Constants, saved to avoid lookup later */
 	PyObject *true_str;
@@ -926,15 +927,16 @@ write_basic (WriterState *state, PyObject *value)
 		Py_DECREF (as_string);
 		return retval;
 	}
-	
+
 	PyErr_SetObject (state->UnknownSerializerError, value);
 	return NULL;
 }
 
 static PyObject *
-write_object_pieces (WriterState *state, PyObject *object, int indent_level)
+write_object_pieces (WriterState *state, PyObject *object,
+                     int indent_level, int in_unknown_hook)
 {
-	PyObject *pieces, *iter;
+	PyObject *pieces, *iter, *on_unknown_args;
 	PyObject *exc_type, *exc_value, *exc_traceback;
 	
 	if (PyList_Check (object) || PyTuple_Check (object))
@@ -986,6 +988,17 @@ write_object_pieces (WriterState *state, PyObject *object, int indent_level)
 		return pieces;
 	}
 	
+	if (in_unknown_hook) return NULL;
+	
+	/* Call the on_unknown hook */
+	PyErr_Clear ();
+	if (!(on_unknown_args = PyTuple_Pack (1, object)))
+		return NULL;
+	
+	object = PyObject_CallObject (state->on_unknown, on_unknown_args);
+	Py_DECREF (on_unknown_args);
+	if (object)
+		return write_object_pieces (state, object, indent_level, TRUE);
 	return NULL;
 }
 
@@ -994,7 +1007,8 @@ write_object (WriterState *state, PyObject *object, int indent_level)
 {
 	PyObject *pieces, *retval = NULL;
 	
-	if ((pieces = write_object_pieces (state, object, indent_level)))
+	if ((pieces = write_object_pieces (state, object, indent_level,
+	                                   FALSE)))
 	{
 		if (PyString_Check (pieces) || PyUnicode_Check (pieces))
 		{
@@ -1016,11 +1030,12 @@ _write_entry (PyObject *self, PyObject *args)
 	PyObject *result = NULL, *value;
 	WriterState state;
 	
-	if (!PyArg_ParseTuple (args, "OiOiiOOOO:_write",
+	if (!PyArg_ParseTuple (args, "OiOiiOOOOO:_write",
 	                       &value, &state.sort_keys, &state.indent_string,
 	                       &state.ascii_only, &state.coerce_keys,
 	                       &state.Decimal, &state.UserString,
-	                       &state.WriteError, &state.UnknownSerializerError))
+	                       &state.WriteError, &state.UnknownSerializerError,
+	                       &state.on_unknown))
 		return NULL;
 	
 	if ((state.true_str = unicode_from_ascii ("true")) &&

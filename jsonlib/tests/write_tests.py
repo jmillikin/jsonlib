@@ -37,6 +37,20 @@ class MiscTests (TestCase):
 		self.we ([], "Only whitespace may be used for indentation.",
 		         indent = u'\u000B', error_type = TypeError)
 		
+	def test_on_unknown (self):
+		obj = object ()
+		self.w ([obj], u'["%r"]' % obj, on_unknown = repr)
+		
+	def test_on_unknown_invalid (self):
+		obj = object ()
+		self.we ([obj], "No known serializer for object: %r" % obj,
+		         on_unknown = lambda v: v)
+		
+	def test_on_unknown_not_callable (self):
+		obj = object ()
+		self.we ([obj], "The on_unknown object must be callable.",
+		         error_type = TypeError, on_unknown = obj)
+		
 class WriteKeywordTests (TestCase):
 	def test_null (self):
 		self.w ([None], u'[null]')
