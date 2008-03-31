@@ -46,6 +46,11 @@ class MiscTests (TestCase):
 		self.we ([obj], "No known serializer for object: %r" % obj,
 		         on_unknown = lambda v: v)
 		
+	def test_on_unknown_not_callable (self):
+		obj = object ()
+		self.we ([obj], "The on_unknown object must be callable.",
+		         error_type = TypeError, on_unknown = obj)
+		
 class WriteKeywordTests (TestCase):
 	def test_null (self):
 		self.w ([None], u'[null]')

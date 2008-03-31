@@ -137,6 +137,9 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 	if on_unknown is None:
 		on_unknown = default_on_unknown
 		
+	if not hasattr (on_unknown, '__call__'):
+		raise TypeError ("The on_unknown object must be callable.")
+		
 	pieces = _write (value, sort_keys, indent, ascii_only, coerce_keys,
 	                 Decimal, UserString, WriteError,
 	                 UnknownSerializerError, on_unknown)
