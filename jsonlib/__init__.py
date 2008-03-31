@@ -129,6 +129,11 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		
 		The default encoding is UTF-8.
 	
+	on_unknown
+		An object that will be called to convert unknown values
+		into a JSON-representable value. The default simply raises
+		an UnknownSerializerError.
+	
 	"""
 	if not (indent is None or len (indent) == 0):
 		if len (indent.strip (u'\u0020\u0009\u000A\u000D')) > 0:
