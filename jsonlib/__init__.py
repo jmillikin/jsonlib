@@ -2,13 +2,10 @@
 # Author: John Millikin <jmillikin@gmail.com>
 
 import codecs
-from decimal import Decimal
-from UserString import UserString
 import struct
 import sys
 
-from errors import ReadError, WriteError, UnknownSerializerError
-from _jsonlib import _read, _write
+from _jsonlib import _read, _write, ReadError, WriteError, UnknownSerializerError
 
 __all__ = ('read', 'write', 'ReadError', 'WriteError',
            'UnknownSerializerError')

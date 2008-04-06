@@ -24,7 +24,6 @@ typedef struct _ParserState {
 	Py_UNICODE *end;
 	Py_UNICODE *index;
 	PyObject *Decimal;
-	PyObject *ReadError;
 } ParserState;
 
 typedef enum
@@ -48,9 +47,6 @@ typedef struct _WriterState
 	**/
 	PyObject *Decimal;
 	PyObject *UserString;
-	PyObject *WriteError;
-	PyObject *UnknownSerializerError;
-	
 	
 	/* Options passed to _write */
 	int sort_keys;
@@ -68,6 +64,10 @@ typedef struct _WriterState
 	PyObject *nan_str;
 	PyObject *quote;
 } WriterState;
+
+static PyObject *ReadError;
+static PyObject *WriteError;
+static PyObject *UnknownSerializerError;
 
 static PyObject *read_keyword (ParserState *state);
 static PyObject *read_string (ParserState *state);
@@ -222,7 +222,7 @@ set_error (ParserState *state, Py_UNICODE *position, PyObject *description,
 			err_str = PyString_Format (err_str_tmpl, err_format_args);
 			if (err_str)
 			{
-				PyErr_SetObject (state->ReadError, err_str);
+				PyErr_SetObject (ReadError, err_str);
 				Py_DECREF (err_str);
 			}
 			Py_DECREF (err_format_args);
@@ -902,14 +902,12 @@ _read_entry (PyObject *self, PyObject *args)
 	state.end = state.start + PyUnicode_GetSize (unicode);
 	state.index = state.start;
 	
-	if ((state.Decimal = jsonlib_import ("decimal", "Decimal")) &&
-	    (state.ReadError = jsonlib_import ("jsonlib", "ReadError")))
+	if ((state.Decimal = jsonlib_import ("decimal", "Decimal")))
 	{
 		result = json_read (&state);
 	}
 	
 	Py_XDECREF (state.Decimal);
-	Py_XDECREF (state.ReadError);
 	
 	if (result)
 	{
@@ -926,6 +924,19 @@ _read_entry (PyObject *self, PyObject *args)
 	return result;
 }
 
+static void
+set_unknown_serializer (PyObject *value)
+{
+	PyObject *message;
+	
+	message = jsonlib_str_format ("No known serializer for object: %r",
+	                              Py_BuildValue ("(O)", value));
+	if (message)
+	{
+		PyErr_SetObject (UnknownSerializerError, message);
+		Py_DECREF (message);
+	}
+}
 
 static PyObject *
 unicode_from_ascii (const char *value)
@@ -1348,14 +1359,14 @@ write_unicode (WriterState *state, PyObject *unicode)
 		{
 			if (++ii == str_len)
 			{
-				PyErr_SetString (state->WriteError,
+				PyErr_SetString (WriteError,
 				                 "Cannot serialize incomplete"
 						 " surrogate pair.");
 				return NULL;
 			}
 			else if (!(0xDC00 <= buffer[ii] && buffer[ii] <= 0xDFFF))
 			{
-				PyErr_SetString (state->WriteError,
+				PyErr_SetString (WriteError,
 				                 "Cannot serialize invalid surrogate pair.");
 				return NULL;
 			}
@@ -1368,7 +1379,7 @@ write_unicode (WriterState *state, PyObject *unicode)
 			                              Py_BuildValue ("(k)", buffer[ii]));
 			if (err_msg)
 			{
-				PyErr_SetObject (state->WriteError, err_msg);
+				PyErr_SetObject (WriteError, err_msg);
 				Py_DECREF (err_msg);
 			}
 			return NULL;
@@ -1434,7 +1445,7 @@ write_iterable (WriterState *state, PyObject *iter, int indent_level)
 	has_parents = Py_ReprEnter (iter);
 	if (has_parents > 0)
 	{
-		PyErr_SetString (state->WriteError,
+		PyErr_SetString (WriteError,
 		                 "Cannot serialize self-referential"
 		                 " values.");
 	}
@@ -1500,7 +1511,7 @@ mapping_get_key_and_value (WriterState *state, PyObject *item,
 			PyObject *new_key = NULL;
 			if (!(new_key = write_basic (state, key)))
 			{
-				if (PyErr_ExceptionMatches (state->UnknownSerializerError))
+				if (PyErr_ExceptionMatches (UnknownSerializerError))
 				{
 					PyErr_Clear ();
 					new_key = PyObject_Unicode (key);
@@ -1514,7 +1525,7 @@ mapping_get_key_and_value (WriterState *state, PyObject *item,
 		else
 		{
 			Py_DECREF (key);
-			PyErr_SetString (state->WriteError,
+			PyErr_SetString (WriteError,
 			                 "Only strings may be used"
 			                 " as object keys.");
 			return FALSE;
@@ -1621,7 +1632,7 @@ write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 	{
 		if (has_parents > 0)
 		{
-			PyErr_SetString (state->WriteError,
+			PyErr_SetString (WriteError,
 			                 "Cannot serialize self-referential"
 			                 " values.");
 		}
@@ -1732,7 +1743,7 @@ write_basic (WriterState *state, PyObject *value)
 			Py_DECREF (real);
 			return serialized;
 		}
-		PyErr_SetString (state->WriteError,
+		PyErr_SetString (WriteError,
 		                 "Cannot serialize complex numbers with"
 		                 " imaginary components.");
 		return NULL;
@@ -1743,7 +1754,7 @@ write_basic (WriterState *state, PyObject *value)
 		double val = PyFloat_AS_DOUBLE (value);
 		if (Py_IS_NAN (val))
 		{
-			PyErr_SetString (state->WriteError,
+			PyErr_SetString (WriteError,
 			                 "Cannot serialize NaN.");
 			return NULL;
 		}
@@ -1756,7 +1767,7 @@ write_basic (WriterState *state, PyObject *value)
 			else
 				msg = "Cannot serialize -Infinity.";
 			
-			PyErr_SetString (state->WriteError, msg);
+			PyErr_SetString (WriteError, msg);
 			return NULL;
 		}
 		
@@ -1774,7 +1785,7 @@ write_basic (WriterState *state, PyObject *value)
 		
 		if (valid == FALSE)
 		{
-			PyErr_Format (state->WriteError,
+			PyErr_Format (WriteError,
 			              "Cannot serialize %s.",
 			              PyString_AsString (serialized));
 		}
@@ -1792,8 +1803,8 @@ write_basic (WriterState *state, PyObject *value)
 		Py_DECREF (as_string);
 		return retval;
 	}
-
-	PyErr_SetObject (state->UnknownSerializerError, value);
+	
+	set_unknown_serializer (value);
 	return NULL;
 }
 
@@ -1819,7 +1830,7 @@ write_object_pieces (WriterState *state, PyObject *object,
 		if (indent_level == 0)
 		{
 			Py_DECREF (pieces);
-			PyErr_SetString (state->WriteError,
+			PyErr_SetString (WriteError,
 			                 "The outermost container must be"
 			                 " an array or object.");
 			return NULL;
@@ -1827,7 +1838,7 @@ write_object_pieces (WriterState *state, PyObject *object,
 		return pieces;
 	}
 	
-	if (!PyErr_ExceptionMatches (state->UnknownSerializerError))
+	if (!PyErr_ExceptionMatches (UnknownSerializerError))
 		return NULL;
 	
 	PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
@@ -1858,7 +1869,7 @@ write_object_pieces (WriterState *state, PyObject *object,
 	PyErr_Clear ();
 	if (state->on_unknown == Py_None)
 	{
-		PyErr_SetObject (state->UnknownSerializerError, object);
+		set_unknown_serializer (object);
 	}
 	else
 	{
@@ -1948,8 +1959,6 @@ _write_entry (PyObject *self, PyObject *args)
 	
 	if ((state.Decimal = jsonlib_import ("decimal", "Decimal")) &&
 	    (state.UserString = jsonlib_import ("UserString", "UserString")) &&
-	    (state.WriteError = jsonlib_import ("jsonlib", "WriteError")) &&
-	    (state.UnknownSerializerError = jsonlib_import ("jsonlib", "UnknownSerializerError")) &&
 	    (state.true_str = unicode_from_ascii ("true")) &&
 	    (state.false_str = unicode_from_ascii ("false")) &&
 	    (state.null_str = unicode_from_ascii ("null")) &&
@@ -1963,8 +1972,6 @@ _write_entry (PyObject *self, PyObject *args)
 	
 	Py_XDECREF (state.Decimal);
 	Py_XDECREF (state.UserString);
-	Py_XDECREF (state.WriteError);
-	Py_XDECREF (state.UnknownSerializerError);
 	Py_XDECREF (state.true_str);
 	Py_XDECREF (state.false_str);
 	Py_XDECREF (state.null_str);
@@ -1994,5 +2001,28 @@ PyDoc_STRVAR (module_doc,
 PyMODINIT_FUNC
 init_jsonlib (void)
 {
-	Py_InitModule3 ("_jsonlib", module_methods, module_doc);
+	PyObject *module;
+	if (!(module = Py_InitModule3 ("_jsonlib", module_methods,
+	                               module_doc)))
+		return;
+	
+	if (!(ReadError = PyErr_NewException ("jsonlib.ReadError",
+	                                      PyExc_ValueError, NULL)))
+		return;
+	Py_INCREF (ReadError);
+	PyModule_AddObject(module, "ReadError", ReadError);
+	
+	if (!(WriteError = PyErr_NewException ("jsonlib.WriteError",
+	                                       PyExc_ValueError, NULL)))
+		return;
+	Py_INCREF (WriteError);
+	PyModule_AddObject(module, "WriteError", WriteError);
+	
+	if (!(UnknownSerializerError = PyErr_NewException ("jsonlib.UnknownSerializerError",
+	                                                   WriteError, NULL)))
+		return;
+	Py_INCREF (UnknownSerializerError);
+	PyModule_AddObject(module, "UnknownSerializerError",
+	                   UnknownSerializerError);
+	
 }
