@@ -8,8 +8,7 @@ import struct
 import sys
 
 from errors import ReadError, WriteError, UnknownSerializerError
-from _reader import _read
-from _writer import _write
+from _jsonlib import _read, _write
 
 __all__ = ('read', 'write', 'ReadError', 'WriteError',
            'UnknownSerializerError')

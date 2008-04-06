@@ -25,7 +25,6 @@ setup (
 	],
 	keywords = ["json"],
 	ext_modules = [
-		Extension ('jsonlib._reader', ['jsonlib/ext/_reader.c', 'jsonlib/ext/jsonlib-common.c']),
-		Extension ('jsonlib._writer', ['jsonlib/ext/_writer.c', 'jsonlib/ext/jsonlib-common.c']),
+		Extension ('_jsonlib', ['jsonlib/_jsonlib.c']),
 	],
 )
