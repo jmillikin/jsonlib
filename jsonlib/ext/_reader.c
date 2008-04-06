@@ -793,18 +793,26 @@ json_read (ParserState *state)
 static PyObject*
 _read_entry (PyObject *self, PyObject *args)
 {
-	PyObject *result, *unicode;
-	ParserState state;
+	PyObject *result = NULL, *unicode;
+	ParserState state = {NULL};
 	
-	if (!PyArg_ParseTuple (args, "UOO:_read", &unicode,
-	                       &state.Decimal, &state.ReadError))
+	if (!PyArg_ParseTuple (args, "U:_read", &unicode))
 		return NULL;
 	
 	state.start = PyUnicode_AsUnicode (unicode);
 	state.end = state.start + PyUnicode_GetSize (unicode);
 	state.index = state.start;
 	
-	if ((result = json_read (&state)))
+	if ((state.Decimal = jsonlib_import ("decimal", "Decimal")) &&
+	    (state.ReadError = jsonlib_import ("jsonlib", "ReadError")))
+	{
+		result = json_read (&state);
+	}
+	
+	Py_XDECREF (state.Decimal);
+	Py_XDECREF (state.ReadError);
+	
+	if (result)
 	{
 		skip_spaces (&state);
 		if (state.index < state.end)

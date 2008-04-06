@@ -17,6 +17,7 @@ typedef struct _WriterState
 	PyObject *WriteError;
 	PyObject *UnknownSerializerError;
 	
+	
 	/* Options passed to _write */
 	int sort_keys;
 	PyObject *indent_string;
@@ -990,15 +991,22 @@ write_object_pieces (WriterState *state, PyObject *object,
 	
 	if (in_unknown_hook) return NULL;
 	
-	/* Call the on_unknown hook */
 	PyErr_Clear ();
-	if (!(on_unknown_args = PyTuple_Pack (1, object)))
-		return NULL;
-	
-	object = PyObject_CallObject (state->on_unknown, on_unknown_args);
-	Py_DECREF (on_unknown_args);
-	if (object)
-		return write_object_pieces (state, object, indent_level, TRUE);
+	if (state->on_unknown == Py_None)
+	{
+		PyErr_SetObject (state->UnknownSerializerError, object);
+	}
+	else
+	{
+		/* Call the on_unknown hook */
+		if (!(on_unknown_args = PyTuple_Pack (1, object)))
+			return NULL;
+		
+		object = PyObject_CallObject (state->on_unknown, on_unknown_args);
+		Py_DECREF (on_unknown_args);
+		if (object)
+			return write_object_pieces (state, object, indent_level, TRUE);
+	}
 	return NULL;
 }
 
@@ -1024,21 +1032,57 @@ write_object (WriterState *state, PyObject *object, int indent_level)
 	return retval;
 }
 
+static int
+valid_json_whitespace (PyObject *string)
+{
+	char *c_str;
+	Py_ssize_t ii;
+	
+	if (string == Py_None) return TRUE;
+	c_str = PyString_AsString (string);
+	for (ii = 0; c_str[ii]; ii++)
+	{
+		char c = c_str[ii];
+		if (!(c == '\x09' ||
+		      c == '\x0A' ||
+		      c == '\x0D' ||
+		      c == '\x20'))
+			return FALSE;
+	}
+	return TRUE;
+}
+
 static PyObject*
 _write_entry (PyObject *self, PyObject *args)
 {
 	PyObject *result = NULL, *value;
-	WriterState state;
+	WriterState state = {NULL};
 	
-	if (!PyArg_ParseTuple (args, "OiOiiOOOOO:_write",
+	if (!PyArg_ParseTuple (args, "OiOiiO:_write",
 	                       &value, &state.sort_keys, &state.indent_string,
 	                       &state.ascii_only, &state.coerce_keys,
-	                       &state.Decimal, &state.UserString,
-	                       &state.WriteError, &state.UnknownSerializerError,
 	                       &state.on_unknown))
 		return NULL;
 	
-	if ((state.true_str = unicode_from_ascii ("true")) &&
+	if (!(state.on_unknown == Py_None || PyCallable_Check (state.on_unknown)))
+	{
+		PyErr_SetString (PyExc_TypeError,
+		                 "The on_unknown object must be callable.");
+		return NULL;
+	}
+	
+	if (!valid_json_whitespace (state.indent_string))
+	{
+		PyErr_SetString (PyExc_TypeError,
+		                 "Only whitespace may be used for indentation.");
+		return NULL;
+	}
+	
+	if ((state.Decimal = jsonlib_import ("decimal", "Decimal")) &&
+	    (state.UserString = jsonlib_import ("UserString", "UserString")) &&
+	    (state.WriteError = jsonlib_import ("jsonlib", "WriteError")) &&
+	    (state.UnknownSerializerError = jsonlib_import ("jsonlib", "UnknownSerializerError")) &&
+	    (state.true_str = unicode_from_ascii ("true")) &&
 	    (state.false_str = unicode_from_ascii ("false")) &&
 	    (state.null_str = unicode_from_ascii ("null")) &&
 	    (state.inf_str = unicode_from_ascii ("Infinity")) &&
@@ -1049,6 +1093,10 @@ _write_entry (PyObject *self, PyObject *args)
 		result = write_object (&state, value, 0);
 	}
 	
+	Py_XDECREF (state.Decimal);
+	Py_XDECREF (state.UserString);
+	Py_XDECREF (state.WriteError);
+	Py_XDECREF (state.UnknownSerializerError);
 	Py_XDECREF (state.true_str);
 	Py_XDECREF (state.false_str);
 	Py_XDECREF (state.null_str);

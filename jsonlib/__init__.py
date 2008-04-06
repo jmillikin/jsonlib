@@ -7,9 +7,9 @@ from UserString import UserString
 import struct
 import sys
 
-from jsonlib.errors import ReadError, WriteError, UnknownSerializerError
-from jsonlib._reader import _read
-from jsonlib._writer import _write
+from errors import ReadError, WriteError, UnknownSerializerError
+from _reader import _read
+from _writer import _write
 
 __all__ = ('read', 'write', 'ReadError', 'WriteError',
            'UnknownSerializerError')
@@ -83,13 +83,7 @@ def read (string):
 	
 	"""
 	u_string = unicode_autodetect_encoding (string)
-	value = _read (u_string, Decimal, ReadError)
-	if not isinstance (value, (dict, list)):
-		raise ReadError ("Tried to deserialize a basic value.")
-	return value
-	
-def default_on_unknown (value):
-	raise UnknownSerializerError (value)
+	return _read (u_string)
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False, encoding = 'utf-8', on_unknown = None):
@@ -135,19 +129,8 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		an UnknownSerializerError.
 	
 	"""
-	if not (indent is None or len (indent) == 0):
-		if len (indent.strip (u'\u0020\u0009\u000A\u000D')) > 0:
-			raise TypeError ("Only whitespace may be used for indentation.")
-			
-	if on_unknown is None:
-		on_unknown = default_on_unknown
-		
-	if not hasattr (on_unknown, '__call__'):
-		raise TypeError ("The on_unknown object must be callable.")
-		
 	pieces = _write (value, sort_keys, indent, ascii_only, coerce_keys,
-	                 Decimal, UserString, WriteError,
-	                 UnknownSerializerError, on_unknown)
+	                 on_unknown)
 	u_string = u''.join (pieces)
 	if encoding is None:
 		return u_string
