@@ -1036,11 +1036,12 @@ static int
 valid_json_whitespace (PyObject *string)
 {
 	char *c_str;
-	Py_ssize_t ii;
+	Py_ssize_t c_str_len, ii;
 	
 	if (string == Py_None) return TRUE;
-	c_str = PyString_AsString (string);
-	for (ii = 0; c_str[ii]; ii++)
+	if (PyString_AsStringAndSize (string, &c_str, &c_str_len) == -1)
+		return -1;
+	for (ii = 0; ii < c_str_len; ii++)
 	{
 		char c = c_str[ii];
 		if (!(c == '\x09' ||
@@ -1057,6 +1058,7 @@ _write_entry (PyObject *self, PyObject *args)
 {
 	PyObject *result = NULL, *value;
 	WriterState state = {NULL};
+	int indent_is_valid;
 	
 	if (!PyArg_ParseTuple (args, "OiOiiO:_write",
 	                       &value, &state.sort_keys, &state.indent_string,
@@ -1071,10 +1073,12 @@ _write_entry (PyObject *self, PyObject *args)
 		return NULL;
 	}
 	
-	if (!valid_json_whitespace (state.indent_string))
+	indent_is_valid = valid_json_whitespace (state.indent_string);
+	if (!indent_is_valid)
 	{
-		PyErr_SetString (PyExc_TypeError,
-		                 "Only whitespace may be used for indentation.");
+		if (indent_is_valid > -1)
+			PyErr_SetString (PyExc_TypeError,
+			                 "Only whitespace may be used for indentation.");
 		return NULL;
 	}
 	

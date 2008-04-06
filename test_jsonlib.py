@@ -423,6 +423,9 @@ class WriteMiscTests (TestCase):
 		self.we ([], "Only whitespace may be used for indentation.",
 		         indent = u'\u000B', error_type = TypeError)
 		
+		self.we ([], "Only whitespace may be used for indentation.",
+		         indent = u'\x00\u000B', error_type = TypeError)
+		
 	def test_on_unknown (self):
 		obj = object ()
 		self.w ([obj], u'["%r"]' % obj, on_unknown = repr)
