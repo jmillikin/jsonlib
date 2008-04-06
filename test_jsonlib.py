@@ -59,8 +59,8 @@ class ReadMiscTests (TestCase):
 		self.re (' ', 1, 1, 0, "No expression found.")
 		
 	def test_fail_on_invalid_whitespace (self):
-		self.re (u'[\u000B]', 1, 2, 1, "Unexpected U+000B.")
-		self.re (u'[\u000D]', 1, 2, 1, "Unexpected U+000D.")
+		self.re (u'[\u000C]', 1, 2, 1, "Unexpected U+000C.")
+		self.re (u'[\u000E]', 1, 2, 1, "Unexpected U+000E.")
 		self.re (u'[\u00A0]', 1, 2, 1, "Unexpected U+00A0.")
 		self.re (u'[\u2002]', 1, 2, 1, "Unexpected U+2002.")
 		self.re (u'[\u2028]', 1, 2, 1, "Unexpected U+2028.")
