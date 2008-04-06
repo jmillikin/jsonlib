@@ -11,7 +11,7 @@ import UserList
 import UserDict
 import UserString
 
-from jsonlib import read, write, errors
+from jsonlib import read, write, ReadError, WriteError, UnknownSerializerError
 
 try:
 	INFINITY = float ('inf')
@@ -41,12 +41,12 @@ class TestCase (unittest.TestCase):
 		try:
 			read (string)
 			self.fail ("No exception raised.")
-		except errors.ReadError, error:
+		except ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
 			
 	def we (self, value, expected_error_message, error_type = None, **kwargs):
 		if error_type is None:
-			error_type = errors.WriteError
+			error_type = WriteError
 		try:
 			write (value, **kwargs)
 			self.fail ("No exception raised.")
