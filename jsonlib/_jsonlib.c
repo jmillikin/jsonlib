@@ -1931,14 +1931,15 @@ valid_json_whitespace (PyObject *string)
 static PyObject*
 _write_entry (PyObject *self, PyObject *args)
 {
-	PyObject *result = NULL, *value;
+	PyObject *pieces = NULL, *value;
 	WriterState state = {NULL};
 	int indent_is_valid;
+	char *encoding;
 	
-	if (!PyArg_ParseTuple (args, "OiOiiO:_write",
+	if (!PyArg_ParseTuple (args, "OiOiizO:_write",
 	                       &value, &state.sort_keys, &state.indent_string,
 	                       &state.ascii_only, &state.coerce_keys,
-	                       &state.on_unknown))
+	                       &encoding, &state.on_unknown))
 		return NULL;
 	
 	if (!(state.on_unknown == Py_None || PyCallable_Check (state.on_unknown)))
@@ -1967,7 +1968,7 @@ _write_entry (PyObject *self, PyObject *args)
 	    (state.nan_str = unicode_from_ascii ("NaN")) &&
 	    (state.quote = unicode_from_ascii ("\"")))
 	{
-		result = write_object (&state, value, 0);
+		pieces = write_object (&state, value, 0);
 	}
 	
 	Py_XDECREF (state.Decimal);
@@ -1980,7 +1981,28 @@ _write_entry (PyObject *self, PyObject *args)
 	Py_XDECREF (state.nan_str);
 	Py_XDECREF (state.quote);
 	
-	return result;
+	if (pieces)
+	{
+		PyObject *u_string = NULL, *encoded, *sep;
+		
+		if ((sep = unicode_from_ascii ("")))
+		{
+			u_string = PyUnicode_Join (sep, pieces);
+			Py_DECREF (sep);
+		}
+		Py_DECREF (pieces);
+		if (!u_string) return NULL;
+		
+		if (encoding == NULL)
+			return u_string;
+		
+		encoded = PyUnicode_AsEncodedString (u_string, encoding,
+		                                     "strict");
+		Py_DECREF (u_string);
+		return encoded;
+		if (!encoded) return NULL;
+	}
+	return NULL;
 }
 
 

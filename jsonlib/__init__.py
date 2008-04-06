@@ -125,10 +125,6 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		an UnknownSerializerError.
 	
 	"""
-	pieces = _write (value, sort_keys, indent, ascii_only, coerce_keys,
-	                 on_unknown)
-	u_string = u''.join (pieces)
-	if encoding is None:
-		return u_string
-	return u_string.encode (encoding)
+	return _write (value, sort_keys, indent, ascii_only, coerce_keys,
+	               encoding, on_unknown)
 	
