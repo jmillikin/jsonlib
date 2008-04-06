@@ -1929,17 +1929,32 @@ valid_json_whitespace (PyObject *string)
 }
 
 static PyObject*
-_write_entry (PyObject *self, PyObject *args)
+_write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 {
 	PyObject *pieces = NULL, *value;
 	WriterState state = {NULL};
 	int indent_is_valid;
 	char *encoding;
 	
-	if (!PyArg_ParseTuple (args, "OiOiizO:_write",
-	                       &value, &state.sort_keys, &state.indent_string,
-	                       &state.ascii_only, &state.coerce_keys,
-	                       &encoding, &state.on_unknown))
+	static char *kwlist[] = {"value", "sort_keys", "indent",
+	                         "ascii_only", "coerce_keys", "encoding",
+	                         "on_unknown", NULL};
+	
+	/* Defaults */
+	state.sort_keys = FALSE;
+	state.indent_string = Py_None;
+	state.ascii_only = TRUE;
+	state.coerce_keys = FALSE;
+	state.on_unknown = Py_None;
+	encoding = "utf-8";
+	
+	if (!PyArg_ParseTupleAndKeywords (args, kwargs, "O|iOiizO:write",
+	                                  kwlist,
+	                                  &value, &state.sort_keys,
+	                                  &state.indent_string,
+	                                  &state.ascii_only,
+	                                  &state.coerce_keys,
+	                                  &encoding, &state.on_unknown))
 		return NULL;
 	
 	if (!(state.on_unknown == Py_None || PyCallable_Check (state.on_unknown)))
@@ -2005,13 +2020,64 @@ _write_entry (PyObject *self, PyObject *args)
 	return NULL;
 }
 
-
 static PyMethodDef module_methods[] = {
 	{"_read", (PyCFunction) (_read_entry), METH_VARARGS,
 	PyDoc_STR ("_read (string) -> Deserialize the JSON expression to\n"
 	           "a Python object.")},
-	{"_write", (PyCFunction) (_write_entry), METH_VARARGS,
-	PyDoc_STR ("Serialize a Python object to JSON.")},
+	{"write", (PyCFunction) (_write_entry), METH_VARARGS|METH_KEYWORDS,
+	PyDoc_STR (
+	"write (value[, sort_keys[, indent[, ascii_only[, coerce_keys[, encoding[, on_unknown]]]]]])\n"
+	"\n"
+	"Serialize a Python value to a JSON-formatted byte string.\n"
+	"\n"
+	"value\n"
+	"	The Python object to serialize.\n"
+	"\n"
+	"sort_keys\n"
+	"	Whether object keys should be kept sorted. Useful\n"
+	"	for tests, or other cases that check against a\n"
+	"	constant string value.\n"
+	"	\n"
+	"	Default: False\n"
+	"\n"
+	"indent\n"
+	"	A string to be used for indenting arrays and objects.\n"
+	"	If this is non-None, pretty-printing mode is activated.\n"
+	"	\n"
+	"	Default: None\n"
+	"\n"
+	"ascii_only\n"
+	"	Whether the output should consist of only ASCII\n"
+	"	characters. If this is True, any non-ASCII code points\n"
+	"	are escaped even if their inclusion would be legal.\n"
+	"	\n"
+	"	Default: True\n"
+	"\n"
+	"coerce_keys\n"
+	"	Whether to coerce invalid object keys to strings. If\n"
+	"	this is False, an exception will be raised when an\n"
+	"	invalid key is specified.\n"
+	"	\n"
+	"	Default: False\n"
+	"\n"
+	"encoding\n"
+	"	The output encoding to use. This must be the name of an\n"
+	"	encoding supported by Python's codec mechanism. If\n"
+	"	None, a Unicode string will be returned rather than an\n"
+	"	encoded bytestring.\n"
+	"	\n"
+	"	If a non-UTF encoding is specified, the resulting\n"
+	"	bytestring might not be readable by many JSON libraries,\n"
+	"	including jsonlib.\n"
+	"	\n"
+	"	The default encoding is UTF-8.\n"
+	"\n"
+	"on_unknown\n"
+	"	An object that will be called to convert unknown values\n"
+	"	into a JSON-representable value. The default simply raises\n"
+	"	an UnknownSerializerError.\n"
+	"\n"
+	)},
 	
 	{NULL, NULL}
 };

@@ -5,7 +5,7 @@ import codecs
 import struct
 import sys
 
-from _jsonlib import _read, _write, ReadError, WriteError, UnknownSerializerError
+from _jsonlib import _read, write, ReadError, WriteError, UnknownSerializerError
 
 __all__ = ('read', 'write', 'ReadError', 'WriteError',
            'UnknownSerializerError')
@@ -80,51 +80,4 @@ def read (string):
 	"""
 	u_string = unicode_autodetect_encoding (string)
 	return _read (u_string)
-	
-def write (value, sort_keys = False, indent = None, ascii_only = True,
-           coerce_keys = False, encoding = 'utf-8', on_unknown = None):
-	"""Serialize a Python value to a JSON-formatted byte string.
-	
-	value
-		The Python object to serialize.
-		
-	sort_keys
-		Whether object keys should be kept sorted. Useful
-		for tests, or other cases that check against a
-		constant string value.
-		
-	indent
-		A string to be used for indenting arrays and objects.
-		If this is non-None, pretty-printing mode is activated.
-		
-	ascii_only
-		Whether the output should consist of only ASCII
-		characters. If this is True, any non-ASCII code points
-		are escaped even if their inclusion would be legal.
-	
-	coerce_keys
-		Whether to coerce invalid object keys to strings. If
-		this is False, an exception will be raised when an
-		invalid key is specified.
-	
-	encoding
-		The output encoding to use. This must be the name of an
-		encoding supported by Python's codec mechanism. If
-		None, a Unicode string will be returned rather than an
-		encoded bytestring.
-		
-		If a non-UTF encoding is specified, the resulting
-		bytestring might not be readable by many JSON libraries,
-		including jsonlib.
-		
-		The default encoding is UTF-8.
-	
-	on_unknown
-		An object that will be called to convert unknown values
-		into a JSON-representable value. The default simply raises
-		an UnknownSerializerError.
-	
-	"""
-	return _write (value, sort_keys, indent, ascii_only, coerce_keys,
-	               encoding, on_unknown)
 	
