@@ -13,7 +13,7 @@ setup (
 	license = "MIT",
 	url = "https://launchpad.net/jsonlib",
 	download_url = "http://cheeseshop.python.org/pypi/jsonlib/%s" % version,
-	packages = ['jsonlib', 'jsonlib.tests'],
+	packages = ['jsonlib'],
 	platforms = ["Platform Independent"],
 	classifiers = [
 		"Development Status :: 5 - Production/Stable",
@@ -28,5 +28,4 @@ setup (
 		Extension ('jsonlib._reader', ['jsonlib/ext/_reader.c', 'jsonlib/ext/jsonlib-common.c']),
 		Extension ('jsonlib._writer', ['jsonlib/ext/_writer.c', 'jsonlib/ext/jsonlib-common.c']),
 	],
-	test_suite = 'jsonlib.tests.suite',
 )
