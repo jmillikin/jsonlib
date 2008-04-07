@@ -63,6 +63,7 @@ typedef struct _WriterState
 	PyObject *neg_inf_str;
 	PyObject *nan_str;
 	PyObject *quote;
+	PyObject *colon;
 } WriterState;
 
 static PyObject *ReadError;
@@ -1638,7 +1639,7 @@ write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 {
 	int has_parents, succeeded;
 	PyObject *pieces, *items;
-	PyObject *start, *end, *pre_value, *post_value, *colon;
+	PyObject *start, *end, *pre_value, *post_value;
 	
 	if (PyMapping_Size (mapping) == 0)
 		return unicode_from_ascii ("{}");
@@ -1670,23 +1671,12 @@ write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 	}
 	if (state->sort_keys) PyList_Sort (items);
 	
-	if (state->indent_string == Py_None)
-		colon = unicode_from_ascii (":");
-	else
-		colon = unicode_from_ascii (": ");
-	if (!colon)
-	{
-		Py_ReprLeave (mapping);
-		Py_DECREF (mapping);
-		return NULL;
-	}
-	
 	get_separators (state->indent_string, indent_level, '{', '}',
 	                &start, &end, &pre_value, &post_value);
 	
 	succeeded = write_mapping_impl (state, items, pieces,
 	                                start, end, pre_value, post_value,
-	                                colon, indent_level);
+	                                state->colon, indent_level);
 	
 	Py_ReprLeave (mapping);
 	Py_DECREF (mapping);
@@ -1989,6 +1979,12 @@ _write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 		return NULL;
 	}
 	
+	if (state.indent_string == Py_None)
+		state.colon = unicode_from_ascii (":");
+	else
+		state.colon = unicode_from_ascii (": ");
+	if (!state.colon) return NULL;
+	
 	if ((state.Decimal = jsonlib_import ("decimal", "Decimal")) &&
 	    (state.UserString = jsonlib_import ("UserString", "UserString")) &&
 	    (state.true_str = unicode_from_ascii ("true")) &&
@@ -2011,6 +2007,7 @@ _write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	Py_XDECREF (state.neg_inf_str);
 	Py_XDECREF (state.nan_str);
 	Py_XDECREF (state.quote);
+	Py_XDECREF (state.colon);
 	
 	if (pieces)
 	{
