@@ -4,7 +4,7 @@ try:
 except ImportError:
 	from distutils.core import setup, Extension
 	
-version = '1.3.2'
+version = '1.3.3'
 
 setup (
 	name = 'jsonlib',

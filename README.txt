@@ -107,6 +107,16 @@ String-like objects that do not inherit from ``str``, ``unicode``, or
 not be changed. If iterating them returns an instance of the same type, the
 serializer might crash. This (hopefully) will be changed.
 
+To serialize a type not known to jsonlib, use the ``on_unknown`` parameter
+to ``write``::
+
+	>>> from datetime import date
+	>>> def unknown_handler (value):
+	...     if isinstance (value, date): return str (value)
+	...     raise jsonlib.UnknownSerializerError
+	>>> jsonlib.write ([date (2000, 1, 1)], on_unknown = unknown_handler)
+	'["2000-01-01"]'
+
 Exceptions
 -----------
 
@@ -160,6 +170,14 @@ for any reason.
 
 Change Log
 ==========
+
+1.3.3
+-----
+* Support the ``on_unknown`` parameter to ``write``.
+* Corrected typo in invalid whitespace detection.
+* Added ``__version__`` attribute.
+* Merged all code into ``jsonlib`` and ``_jsonlib`` modules, instead of
+  a package.
 
 1.3.2
 -----
