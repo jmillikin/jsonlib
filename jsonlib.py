@@ -10,6 +10,8 @@ from _jsonlib import _read, write, ReadError, WriteError, UnknownSerializerError
 __all__ = ('read', 'write', 'ReadError', 'WriteError',
            'UnknownSerializerError')
 
+__version__ = (1, 3, 2)
+
 def safe_unichr (codepoint):
 	"""Similar to unichr(), except handles narrow builds.
 	
