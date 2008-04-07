@@ -948,6 +948,22 @@ unicode_from_ascii (const char *value)
 	return retval;
 }
 
+static PyObject *
+unicode_from_format (const char *format, ...)
+{
+	PyObject *retval, *string;
+	va_list args;
+	
+	va_start (args, format);
+	string = PyString_FromFormatV (format, args);
+	va_end (args);
+	
+	if (!string) return NULL;
+	retval = PyUnicode_FromObject (string);
+	Py_DECREF (string);
+	return retval;
+}
+
 static void
 get_separators (PyObject *indent_string, int indent_level,
                 char start, char end,
@@ -956,25 +972,25 @@ get_separators (PyObject *indent_string, int indent_level,
 {
 	if (indent_string == Py_None)
 	{
-		(*start_ptr) = PyString_FromFormat ("%c", start);
+		(*start_ptr) = unicode_from_format ("%c", start);
 		(*pre_value_ptr) = NULL;
-		(*post_value_ptr) = PyString_FromString (",");
-		(*end_ptr) = PyString_FromFormat ("%c", end);
+		(*post_value_ptr) = unicode_from_ascii (",");
+		(*end_ptr) = unicode_from_format ("%c", end);
 	}
 	else
 	{
 		PyObject *format_args, *format_tmpl, *indent, *next_indent;
 		
-		(*start_ptr) = PyString_FromFormat ("%c%c", start, '\n');
-		(*post_value_ptr) = PyString_FromFormat (",%c", '\n');
+		(*start_ptr) = unicode_from_format ("%c%c", start, '\n');
+		(*post_value_ptr) = unicode_from_format (",%c", '\n');
 		
 		indent = PySequence_Repeat (indent_string, indent_level + 1);
 		(*pre_value_ptr) = indent;
 		
 		next_indent = PySequence_Repeat (indent_string, indent_level);
 		format_args = Py_BuildValue ("(N)", next_indent);
-		format_tmpl = PyString_FromFormat ("\n%%s%c", end);
-		(*end_ptr) = PyString_Format (format_tmpl, format_args);
+		format_tmpl = unicode_from_format ("\n%%s%c", end);
+		(*end_ptr) = PyUnicode_Format (format_tmpl, format_args);
 		Py_DECREF (format_args);
 		Py_DECREF (format_tmpl);
 	}
