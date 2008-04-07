@@ -1474,7 +1474,7 @@ write_iterable (WriterState *state, PyObject *iter, int indent_level)
 	{
 		Py_DECREF (sequence);
 		Py_ReprLeave (iter);
-		return PyString_FromString ("[]");
+		return unicode_from_ascii ("[]");
 	}
 	
 	if (!(pieces = PyList_New (0)))
@@ -1641,7 +1641,7 @@ write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 	PyObject *start, *end, *pre_value, *post_value, *colon;
 	
 	if (PyMapping_Size (mapping) == 0)
-		return PyString_FromString ("{}");
+		return unicode_from_ascii ("{}");
 	
 	has_parents = Py_ReprEnter (mapping);
 	if (has_parents != 0)
@@ -1671,9 +1671,9 @@ write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 	if (state->sort_keys) PyList_Sort (items);
 	
 	if (state->indent_string == Py_None)
-		colon = PyString_FromString (":");
+		colon = unicode_from_ascii (":");
 	else
-		colon = PyString_FromString (": ");
+		colon = unicode_from_ascii (": ");
 	if (!colon)
 	{
 		Py_ReprLeave (mapping);
