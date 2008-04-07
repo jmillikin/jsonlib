@@ -1,6 +1,9 @@
 from os.path import dirname, join
-from setuptools import setup, Extension
-
+try:
+	from setuptools import setup, Extension
+except ImportError:
+	from distutils.core import setup, Extension
+	
 version = '1.3.2'
 
 setup (
