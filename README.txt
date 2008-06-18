@@ -15,8 +15,9 @@ JSON that conforms strictly to RFC 4627.
 Usage
 =====
 
-jsonlib has two functions of interest, `read` and `write`. It also has
-an `errors` module containing the exception classes that will be raised
+jsonlib has two functions of interest, ``read`` and ``write``. It also
+defines some exception: ``ReadError``, ``WriteError``, and
+``UnknownSerializerError``.
 
 Deserialization
 ---------------
@@ -120,9 +121,6 @@ to ``write``::
 Exceptions
 -----------
 
-The ``jsonlib.errors`` module contains definitions for the error classes
-raised from ``read`` and ``write``.
-
 ReadError
 ~~~~~~~~~
 
@@ -142,7 +140,7 @@ UnknownSerializerError
 ~~~~~~~~~~~~~~~~~~~~~~
 
 A subclass of ``WriteError`` that is raised when a value cannot be
-serialized. 
+serialized. See the ``on_unknown`` parameter to ``write``.
 
 Other JSON Libraries
 ====================

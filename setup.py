@@ -4,6 +4,7 @@ try:
 except ImportError:
 	from distutils.core import setup, Extension
 	
+# If you change the version here, also change it in jsonlib.c.
 version = '1.3.3'
 
 setup (
@@ -16,7 +17,6 @@ setup (
 	license = "MIT",
 	url = "https://launchpad.net/jsonlib",
 	download_url = "http://cheeseshop.python.org/pypi/jsonlib/%s" % version,
-	py_modules = ['jsonlib'],
 	platforms = ["Platform Independent"],
 	classifiers = [
 		"Development Status :: 5 - Production/Stable",
@@ -28,6 +28,6 @@ setup (
 	],
 	keywords = ["json"],
 	ext_modules = [
-		Extension ('_jsonlib', ['_jsonlib.c']),
+		Extension ('jsonlib', ['jsonlib.c']),
 	],
 )

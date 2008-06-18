@@ -22,6 +22,13 @@ try:
 except ValueError:
 	NAN = INFINITY/INFINITY
 	
+try:
+	codecs.lookup ('utf32')
+except LookupError:
+	HAVE_UTF32 = False
+else:
+	HAVE_UTF32 = True
+
 class TestCase (unittest.TestCase):
 	def r (self, string, expected):
 		value = read (string)
@@ -310,84 +317,85 @@ class UnicodeEncodingDetectionTests (TestCase):
 		read_encoded (u'[1234]', [1234L])
 		read_encoded (u'[12345]', [12345L])
 		
-	def test_utf32_be (self):
-		# u'["testing"]'
-		s = ('\x00\x00\x00['
-		     '\x00\x00\x00"'
-		     '\x00\x00\x00t'
-		     '\x00\x00\x00e'
-		     '\x00\x00\x00s'
-		     '\x00\x00\x00t'
-		     '\x00\x00\x00i'
-		     '\x00\x00\x00n'
-		     '\x00\x00\x00g'
-		     '\x00\x00\x00"'
-		     '\x00\x00\x00]')
-		self.r (s, [u'testing'])
-		
-	def test_utf32_be_bom (self):
-		# u'["testing"]'
-		s = ('\x00\x00\xfe\xff'
-		     '\x00\x00\x00['
-		     '\x00\x00\x00"'
-		     '\x00\x00\x00t'
-		     '\x00\x00\x00e'
-		     '\x00\x00\x00s'
-		     '\x00\x00\x00t'
-		     '\x00\x00\x00i'
-		     '\x00\x00\x00n'
-		     '\x00\x00\x00g'
-		     '\x00\x00\x00"'
-		     '\x00\x00\x00]')
-		self.r (s, [u'testing'])
-		
-	def test_utf32_le (self):
-		# u'["testing"]'
-		s = ('[\x00\x00\x00'
-		     '"\x00\x00\x00'
-		     't\x00\x00\x00'
-		     'e\x00\x00\x00'
-		     's\x00\x00\x00'
-		     't\x00\x00\x00'
-		     'i\x00\x00\x00'
-		     'n\x00\x00\x00'
-		     'g\x00\x00\x00'
-		     '"\x00\x00\x00'
-		     ']\x00\x00\x00')
-		self.r (s, [u'testing'])
-		
-	def test_utf32_le_bom (self):
-		# u'["testing"]'
-		s = ('\xff\xfe\x00\x00'
-		     '[\x00\x00\x00'
-		     '"\x00\x00\x00'
-		     't\x00\x00\x00'
-		     'e\x00\x00\x00'
-		     's\x00\x00\x00'
-		     't\x00\x00\x00'
-		     'i\x00\x00\x00'
-		     'n\x00\x00\x00'
-		     'g\x00\x00\x00'
-		     '"\x00\x00\x00'
-		     ']\x00\x00\x00')
-		self.r (s, [u'testing'])
-		
-	def test_utf32_be_astral (self):
-		s = ('\x00\x00\x00['
-		     '\x00\x00\x00"'
-		     '\x00\x01\xd1\x1e'
-		     '\x00\x00\x00"'
-		     '\x00\x00\x00]')
-		self.r (s, [u'\U0001d11e'])
-		
-	def test_utf32_le_astral (self):
-		s = ('[\x00\x00\x00'
-		     '"\x00\x00\x00'
-		     '\x1e\xd1\x01\x00'
-		     '"\x00\x00\x00'
-		     ']\x00\x00\x00')
-		self.r (s, [u'\U0001d11e'])
-		
+	if HAVE_UTF32:
+		def test_utf32_be (self):
+			# u'["testing"]'
+			s = ('\x00\x00\x00['
+			     '\x00\x00\x00"'
+			     '\x00\x00\x00t'
+			     '\x00\x00\x00e'
+			     '\x00\x00\x00s'
+			     '\x00\x00\x00t'
+			     '\x00\x00\x00i'
+			     '\x00\x00\x00n'
+			     '\x00\x00\x00g'
+			     '\x00\x00\x00"'
+			     '\x00\x00\x00]')
+			self.r (s, [u'testing'])
+			
+		def test_utf32_be_bom (self):
+			# u'["testing"]'
+			s = ('\x00\x00\xfe\xff'
+			     '\x00\x00\x00['
+			     '\x00\x00\x00"'
+			     '\x00\x00\x00t'
+			     '\x00\x00\x00e'
+			     '\x00\x00\x00s'
+			     '\x00\x00\x00t'
+			     '\x00\x00\x00i'
+			     '\x00\x00\x00n'
+			     '\x00\x00\x00g'
+			     '\x00\x00\x00"'
+			     '\x00\x00\x00]')
+			self.r (s, [u'testing'])
+			
+		def test_utf32_le (self):
+			# u'["testing"]'
+			s = ('[\x00\x00\x00'
+			     '"\x00\x00\x00'
+			     't\x00\x00\x00'
+			     'e\x00\x00\x00'
+			     's\x00\x00\x00'
+			     't\x00\x00\x00'
+			     'i\x00\x00\x00'
+			     'n\x00\x00\x00'
+			     'g\x00\x00\x00'
+			     '"\x00\x00\x00'
+			     ']\x00\x00\x00')
+			self.r (s, [u'testing'])
+			
+		def test_utf32_le_bom (self):
+			# u'["testing"]'
+			s = ('\xff\xfe\x00\x00'
+			     '[\x00\x00\x00'
+			     '"\x00\x00\x00'
+			     't\x00\x00\x00'
+			     'e\x00\x00\x00'
+			     's\x00\x00\x00'
+			     't\x00\x00\x00'
+			     'i\x00\x00\x00'
+			     'n\x00\x00\x00'
+			     'g\x00\x00\x00'
+			     '"\x00\x00\x00'
+			     ']\x00\x00\x00')
+			self.r (s, [u'testing'])
+			
+		def test_utf32_be_astral (self):
+			s = ('\x00\x00\x00['
+			     '\x00\x00\x00"'
+			     '\x00\x01\xd1\x1e'
+			     '\x00\x00\x00"'
+			     '\x00\x00\x00]')
+			self.r (s, [u'\U0001d11e'])
+			
+		def test_utf32_le_astral (self):
+			s = ('[\x00\x00\x00'
+			     '"\x00\x00\x00'
+			     '\x1e\xd1\x01\x00'
+			     '"\x00\x00\x00'
+			     ']\x00\x00\x00')
+			self.r (s, [u'\U0001d11e'])
+			
 	def test_utf16_be (self):
 		self.de ('utf-16-be')
 		
