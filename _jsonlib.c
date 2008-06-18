@@ -917,10 +917,10 @@ detect_encoding (const char *const bytes, Py_ssize_t size)
 	if (size < 4) { return UTF_8; }
 	
 	if (memcmp (bytes, BOM_UTF8, 3) == 0) return UTF_8_BOM;
-	if (memcmp (bytes, BOM_UTF16_LE, 2) == 0) return UTF_16_LE_BOM;
-	if (memcmp (bytes, BOM_UTF16_BE, 2) == 0) return UTF_16_BE_BOM;
 	if (memcmp (bytes, BOM_UTF32_LE, 4) == 0) return UTF_32_LE_BOM;
 	if (memcmp (bytes, BOM_UTF32_BE, 4) == 0) return UTF_32_BE_BOM;
+	if (memcmp (bytes, BOM_UTF16_LE, 2) == 0) return UTF_16_LE_BOM;
+	if (memcmp (bytes, BOM_UTF16_BE, 2) == 0) return UTF_16_BE_BOM;
 	
 	/* No BOM found. Examine the byte patterns of the first four
 	 * characters.
@@ -978,13 +978,18 @@ unicode_autodetect (PyObject *bytestring)
 		u = PyUnicode_Decode (bytes + 2, byte_count - 2, "utf-16-be", "strict");
 		break;
 	case UTF_32_LE:
+		u = PyUnicode_Decode (bytes, byte_count, "utf-32-le", "strict");
+		break;
 	case UTF_32_LE_BOM:
+		u = PyUnicode_Decode (bytes + 4, byte_count - 4, "utf-32-le", "strict");
+		break;
 	case UTF_32_BE:
-	case UTF_32_BE_BOM:
 		u = PyUnicode_Decode (bytes, byte_count, "utf-32-be", "strict");
 		break;
+	case UTF_32_BE_BOM:
+		u = PyUnicode_Decode (bytes + 4, byte_count - 4, "utf-32-be", "strict");
+		break;
 	}
-	
 	return u;
 }
 
