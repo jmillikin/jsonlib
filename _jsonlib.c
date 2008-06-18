@@ -997,14 +997,18 @@ unicode_autodetect (PyObject *bytestring)
  * a UTF-* encoded bytestring to unicode if needed.
 **/
 static int
-parse_unicode_arg (PyObject *args, PyObject **unicode)
+parse_unicode_arg (PyObject *args, PyObject *kwargs, PyObject **unicode)
 {
 	int retval;
 	PyObject *bytestring;
 	PyObject *exc_type, *exc_value, *exc_traceback;
 	
+	static char *kwlist[] = {"string", NULL};
+	
 	/* Try for the common case of a direct unicode string. */
-	if ((retval = PyArg_ParseTuple (args, "U:_read", unicode)))
+	retval = PyArg_ParseTupleAndKeywords (args, kwargs, "U:read",
+	                                      kwlist, unicode);
+	if (retval)
 	{
 		Py_INCREF (*unicode);
 		return retval;
@@ -1012,7 +1016,9 @@ parse_unicode_arg (PyObject *args, PyObject **unicode)
 	
 	/* Might have been passed a string. Try to autodecode it. */
 	PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
-	if (!(retval = PyArg_ParseTuple (args, "S:_read", &bytestring)))
+	retval = PyArg_ParseTupleAndKeywords (args, kwargs, "S:read",
+	                                      kwlist, &bytestring);
+	if (!retval)
 	{
 		PyErr_Restore (exc_type, exc_value, exc_traceback);
 		return retval;
@@ -1024,12 +1030,12 @@ parse_unicode_arg (PyObject *args, PyObject **unicode)
 }
 
 static PyObject*
-_read_entry (PyObject *self, PyObject *args)
+_read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 {
 	PyObject *result = NULL, *unicode;
 	ParserState state = {NULL};
 	
-	if (!parse_unicode_arg (args, &unicode))
+	if (!parse_unicode_arg (args, kwargs, &unicode))
 		return NULL;
 	
 	state.start = PyUnicode_AsUnicode (unicode);
@@ -2168,9 +2174,16 @@ _write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 }
 
 static PyMethodDef module_methods[] = {
-	{"_read", (PyCFunction) (_read_entry), METH_VARARGS,
-	PyDoc_STR ("_read (string) -> Deserialize the JSON expression to\n"
-	           "a Python object.")},
+	{"read", (PyCFunction) (_read_entry), METH_VARARGS|METH_KEYWORDS,
+	PyDoc_STR (
+	"read (string)\n"
+	"\n"
+	"Parse a JSON expression into a Python value.\n"
+	"\n"
+	"If ``string`` is a byte string, it will be converted to Unicode\n"
+	"before parsing.\n"
+	)},
+	
 	{"write", (PyCFunction) (_write_entry), METH_VARARGS|METH_KEYWORDS,
 	PyDoc_STR (
 	"write (value[, sort_keys[, indent[, ascii_only[, coerce_keys[, encoding[, on_unknown]]]]]])\n"
