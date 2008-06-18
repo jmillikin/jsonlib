@@ -2247,10 +2247,12 @@ PyDoc_STRVAR (module_doc,
 );
 
 PyMODINIT_FUNC
-init_jsonlib (void)
+initjsonlib (void)
 {
 	PyObject *module;
-	if (!(module = Py_InitModule3 ("_jsonlib", module_methods,
+	PyObject *version;
+	
+	if (!(module = Py_InitModule3 ("jsonlib", module_methods,
 	                               module_doc)))
 		return;
 	
@@ -2273,4 +2275,7 @@ init_jsonlib (void)
 	PyModule_AddObject(module, "UnknownSerializerError",
 	                   UnknownSerializerError);
 	
+	/* If you change the version here, also change it in setup.py. */
+	version = Py_BuildValue ("(iii)", 1, 3, 3);
+	PyModule_AddObject (module, "__version__", version);
 }
