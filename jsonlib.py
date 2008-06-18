@@ -81,5 +81,5 @@ def read (string):
 	
 	"""
 	u_string = unicode_autodetect_encoding (string)
-	return _read (u_string)
+	return _read (string)
 	

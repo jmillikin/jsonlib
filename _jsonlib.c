@@ -19,6 +19,26 @@
 	typedef int Py_ssize_t;
 #endif
 
+enum
+{
+	UTF_8 = 0,
+	UTF_8_BOM,
+	UTF_16_LE,
+	UTF_16_LE_BOM,
+	UTF_16_BE,
+	UTF_16_BE_BOM,
+	UTF_32_LE,
+	UTF_32_LE_BOM,
+	UTF_32_BE,
+	UTF_32_BE_BOM
+};
+
+#define BOM_UTF8     "\xef\xbb\xbf"
+#define BOM_UTF16_LE "\xff\xfe"
+#define BOM_UTF16_BE "\xfe\xff"
+#define BOM_UTF32_LE "\xff\xfe\x00\x00"
+#define BOM_UTF32_BE "\x00\x00\xfe\xff"
+
 typedef struct _ParserState {
 	Py_UNICODE *start;
 	Py_UNICODE *end;
@@ -890,13 +910,121 @@ json_read (ParserState *state)
 	}
 }
 
+static int
+detect_encoding (const char *const bytes, Py_ssize_t size)
+{
+	/* 4 is the minimum size of a JSON expression encoded without UTF-8. */
+	if (size < 4) { return UTF_8; }
+	
+	if (memcmp (bytes, BOM_UTF8, 3) == 0) return UTF_8_BOM;
+	if (memcmp (bytes, BOM_UTF16_LE, 2) == 0) return UTF_16_LE_BOM;
+	if (memcmp (bytes, BOM_UTF16_BE, 2) == 0) return UTF_16_BE_BOM;
+	if (memcmp (bytes, BOM_UTF32_LE, 4) == 0) return UTF_32_LE_BOM;
+	if (memcmp (bytes, BOM_UTF32_BE, 4) == 0) return UTF_32_BE_BOM;
+	
+	/* No BOM found. Examine the byte patterns of the first four
+	 * characters.
+	**/
+	if (bytes[0] && !bytes[1] && bytes[2] && !bytes[3])
+		return UTF_16_LE;
+	
+	if (!bytes[0] && bytes[1] && !bytes[2] && bytes[3])
+		return UTF_16_BE;
+	
+	if (bytes[0] && !bytes[1] && !bytes[2] && !bytes[3])
+		return UTF_32_LE;
+	
+	if (!bytes[0] && !bytes[1] && !bytes[2] && bytes[3])
+		return UTF_32_BE;
+	
+	/* Default to UTF-8. */
+	return UTF_8;
+}
+
+/**
+ * Intelligently convert a byte string to Unicode.
+ * 
+ * Assumes the encoding used is one of the UTF-* variants. If the
+ * input is already in unicode, this is a noop.
+**/
+static PyObject *
+unicode_autodetect (PyObject *bytestring)
+{
+	PyObject *u = NULL;
+	char *bytes;
+	Py_ssize_t byte_count;
+	
+	bytes = PyString_AS_STRING (bytestring);
+	byte_count = PyString_GET_SIZE (bytestring);
+	switch (detect_encoding (bytes, byte_count))
+	{
+	case UTF_8:
+		u = PyUnicode_Decode (bytes, byte_count, "utf-8", "strict");
+		break;
+	case UTF_8_BOM:
+		/* 3 = sizeof UTF-8 BOM */
+		u = PyUnicode_Decode (bytes + 3, byte_count - 3, "utf-8", "strict");
+		break;
+	case UTF_16_LE:
+		u = PyUnicode_Decode (bytes, byte_count, "utf-16-le", "strict");
+		break;
+	case UTF_16_LE_BOM:
+		u = PyUnicode_Decode (bytes + 2, byte_count - 2, "utf-16-le", "strict");
+		break;
+	case UTF_16_BE:
+		u = PyUnicode_Decode (bytes, byte_count, "utf-16-be", "strict");
+		break;
+	case UTF_16_BE_BOM:
+		u = PyUnicode_Decode (bytes + 2, byte_count - 2, "utf-16-be", "strict");
+		break;
+	case UTF_32_LE:
+	case UTF_32_LE_BOM:
+	case UTF_32_BE:
+	case UTF_32_BE_BOM:
+		u = PyUnicode_Decode (bytes, byte_count, "utf-32-be", "strict");
+		break;
+	}
+	
+	return u;
+}
+
+/* Parses the argument list to _read(), automatically converting from
+ * a UTF-* encoded bytestring to unicode if needed.
+**/
+static int
+parse_unicode_arg (PyObject *args, PyObject **unicode)
+{
+	int retval;
+	PyObject *bytestring;
+	PyObject *exc_type, *exc_value, *exc_traceback;
+	
+	/* Try for the common case of a direct unicode string. */
+	if ((retval = PyArg_ParseTuple (args, "U:_read", unicode)))
+	{
+		Py_INCREF (*unicode);
+		return retval;
+	}
+	
+	/* Might have been passed a string. Try to autodecode it. */
+	PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
+	if (!(retval = PyArg_ParseTuple (args, "S:_read", &bytestring)))
+	{
+		PyErr_Restore (exc_type, exc_value, exc_traceback);
+		return retval;
+	}
+	
+	*unicode = unicode_autodetect (bytestring);
+	if (!(*unicode)) return 0;
+	return 1;
+}
+
 static PyObject*
 _read_entry (PyObject *self, PyObject *args)
 {
 	PyObject *result = NULL, *unicode;
 	ParserState state = {NULL};
 	
-	if (!PyArg_ParseTuple (args, "U:_read", &unicode))
+	if (!parse_unicode_arg (args, &unicode))
 		return NULL;
 	
 	state.start = PyUnicode_AsUnicode (unicode);
@@ -908,6 +1036,7 @@ _read_entry (PyObject *self, PyObject *args)
 		result = json_read (&state);
 	}
 	
+	Py_DECREF (unicode);
 	Py_XDECREF (state.Decimal);
 	
 	if (result)
