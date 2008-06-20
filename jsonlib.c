@@ -1047,7 +1047,6 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 		result = json_read (&state);
 	}
 	
-	Py_DECREF (unicode);
 	Py_XDECREF (state.Decimal);
 	
 	if (result)
@@ -1061,6 +1060,7 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 			result = NULL;
 		}
 	}
+	Py_DECREF (unicode);
 	
 	return result;
 }
