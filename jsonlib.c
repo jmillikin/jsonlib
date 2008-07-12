@@ -1804,52 +1804,116 @@ write_iterable (WriterState *state, PyObject *iter, int indent_level)
 }
 
 static int
-mapping_get_key_and_value (WriterState *state, PyObject *item,
-                           PyObject **key_ptr, PyObject **value_ptr)
+mapping_process_key (WriterState *state, PyObject *key, PyObject **key_ptr)
 {
-	PyObject *key, *value;
+	(*key_ptr) = NULL;
+	
+	if (PyString_Check (key) || PyUnicode_Check (key))
+	{
+		*key_ptr = key;
+		return TRUE;
+	}
+	
+	if (state->coerce_keys)
+	{
+		PyObject *new_key = NULL;
+		Py_INCREF (key);
+		if (!(new_key = write_basic (state, key)))
+		{
+			if (PyErr_ExceptionMatches (UnknownSerializerError))
+			{
+				PyErr_Clear ();
+				new_key = PyObject_Unicode (key);
+			}
+		}
+		Py_DECREF (key);
+		
+		if (!new_key) return FALSE;
+		*key_ptr = new_key;
+		return TRUE;
+	}
+	PyErr_SetString (WriteError,
+	                 "Only strings may be used"
+	                 " as object keys.");
+	return FALSE;
+}
+
+static int
+mapping_get_key_and_value_from_item (WriterState *state, PyObject *item,
+                                     PyObject **key_ptr, PyObject **value_ptr)
+{
+	PyObject *key = NULL, *value = NULL;
+	int retval;
 	
 	(*key_ptr) = NULL;
 	(*value_ptr) = NULL;
 	
-	if (!(key = PySequence_GetItem (item, 0)))
+	key = PySequence_GetItem (item, 0);
+	if (key)
+		value = PySequence_GetItem (item, 1);
+	
+	if (!(key && value))
+	{
+		Py_XDECREF (key);
+		Py_XDECREF (value);
+		return FALSE;
+	}
+	
+	if ((retval = mapping_process_key (state, key, key_ptr)))
+	{
+		*value_ptr = value;
+	}
+	return retval;
+}
+
+/* Special case for dictionaries */
+static int
+write_dict (WriterState *state, PyObject *dict, PyObject *start,
+            PyObject *end, PyObject *pre_value, PyObject *post_value,
+            int indent_level)
+{
+	Py_ssize_t ii = 0, item_count;
+	PyObject *raw_key, *value;
+	int status;
+	
+	if (!writer_append_unicode_obj (state, start))
 		return FALSE;
 	
-	if (!(PyString_Check (key) || PyUnicode_Check (key)))
+	item_count = PyDict_Size (dict);
+	while (PyDict_Next (dict, &ii, &raw_key, &value))
 	{
-		if (state->coerce_keys)
-		{
-			PyObject *new_key = NULL;
-			if (!(new_key = write_basic (state, key)))
-			{
-				if (PyErr_ExceptionMatches (UnknownSerializerError))
-				{
-					PyErr_Clear ();
-					new_key = PyObject_Unicode (key);
-				}
-			}
-			
-			Py_DECREF (key);
-			if (!new_key) return FALSE;
-			key = new_key;
-		}
-		else
-		{
-			Py_DECREF (key);
-			PyErr_SetString (WriteError,
-			                 "Only strings may be used"
-			                 " as object keys.");
+		PyObject *serialized, *key;
+		
+		if (pre_value && !writer_append_unicode_obj (state, pre_value))
 			return FALSE;
+		
+		if (!mapping_process_key (state, raw_key, &key))
+			return FALSE;
+		
+		if (!(serialized = write_basic (state, key)))
+			return FALSE;
+		
+		status = writer_append_chunks (state, serialized);
+		Py_DECREF (serialized);
+		if (!status)
+			return FALSE;
+		
+		if (!writer_append_unicode_obj (state, state->colon))
+			return FALSE;
+		
+		if (!write_object (state, value, indent_level + 1))
+			return FALSE;
+		
+		if (ii < item_count)
+		{
+			if (!writer_append_unicode_obj (state, post_value))
+			{
+				return FALSE;
+			}
 		}
 	}
-	if (!(value = PySequence_GetItem (item, 1)))
-	{
-		Py_DECREF (key);
-		return FALSE;
-	}
-	*key_ptr = key;
-	*value_ptr = value;
-	return TRUE;
+	
+	return writer_append_unicode_obj (state, end);
 }
 
 static int
@@ -1874,7 +1938,7 @@ write_mapping_impl (WriterState *state, PyObject *items,
 		if (!(item = PySequence_GetItem (items, ii)))
 			return FALSE;
 		
-		status = mapping_get_key_and_value (state, item, &key, &value);
+		status = mapping_get_key_and_value_from_item (state, item, &key, &value);
 		Py_DECREF (item);
 		if (!status) return FALSE;
 		
@@ -1939,30 +2003,39 @@ write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 		return FALSE;
 	}
 	
-	Py_INCREF (mapping);
-	if (!(items = PyMapping_Items (mapping)))
-	{
-		Py_ReprLeave (mapping);
-		Py_DECREF (mapping);
-		return FALSE;
-	}
-	if (state->sort_keys) PyList_Sort (items);
-	
 	get_separators (state->indent_string, indent_level, '{', '}',
 	                &start, &end, &pre_value, &post_value);
 	
-	succeeded = write_mapping_impl (state, items,
-	                                start, end, pre_value, post_value,
-	                                indent_level);
+	Py_INCREF (mapping);
+	if (PyDict_CheckExact (mapping) && !state->sort_keys)
+		succeeded = write_dict (state, mapping, start, end,
+		                        pre_value, post_value,
+		                        indent_level);
+	
+	else
+	{
+		if (!(items = PyMapping_Items (mapping)))
+		{
+			Py_ReprLeave (mapping);
+			Py_DECREF (mapping);
+			return FALSE;
+		}
+		if (state->sort_keys) PyList_Sort (items);
+		
+		
+		succeeded = write_mapping_impl (state, items, start, end,
+		                                pre_value, post_value,
+		                                indent_level);
+		Py_DECREF (items);
+	}
 	
 	Py_ReprLeave (mapping);
 	Py_DECREF (mapping);
-	
-	Py_DECREF (items);
 	Py_XDECREF (start);
 	Py_XDECREF (end);
 	Py_XDECREF (pre_value);
 	Py_XDECREF (post_value);
+	
 	return succeeded;
 }
 
@@ -2053,8 +2126,12 @@ write_basic (WriterState *state, PyObject *value)
 	
 	if (PyObject_IsInstance (value, state->Decimal))
 	{
-		PyObject *serialized = PyObject_Str (value);
+		PyObject *serialized;
 		int valid;
+		
+		Py_INCREF (value);
+		serialized = PyObject_Str (value);
+		Py_DECREF (value);
 		
 		valid = check_valid_number (state, serialized);
 		if (valid == TRUE)
@@ -2074,7 +2151,10 @@ write_basic (WriterState *state, PyObject *value)
 	if (PyObject_IsInstance (value, state->UserString))
 	{
 		PyObject *as_string, *retval;
-		if (!(as_string = PyObject_Str (value)))
+		Py_INCREF (value);
+		as_string = PyObject_Str (value);
+		Py_DECREF (value);
+		if (!as_string)
 			return NULL;
 		retval = write_string (state, as_string);
 		Py_DECREF (as_string);
