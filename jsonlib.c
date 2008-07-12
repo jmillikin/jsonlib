@@ -1211,12 +1211,19 @@ writer_append_unicode_obj (WriterState *state, PyObject *text)
 static int
 writer_append_chunks (WriterState *state, PyObject *list)
 {
-	Py_ssize_t ii;
+	Py_ssize_t ii, len;
 	
 	if (PyUnicode_CheckExact (list) || PyString_CheckExact (list))
 		return writer_append_unicode_obj (state, list);
 	
-	for (ii = 0; ii < PySequence_Fast_GET_SIZE (list); ++ii)
+	if (!PySequence_Check)
+	{
+		PyErr_SetString (PyExc_AssertionError, "is_sequence (seq)");
+		return FALSE;
+	}
+	
+	len = PySequence_Fast_GET_SIZE (list);
+	for (ii = 0; ii < len; ++ii)
 	{
 		PyObject *item;
 		if (!(item = PySequence_Fast_GET_ITEM (list, ii)))
