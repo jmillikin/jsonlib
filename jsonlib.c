@@ -1295,7 +1295,8 @@ get_separators (PyObject *indent_string, int indent_level,
 	else
 	{
 		PyObject *format_args, *format_tmpl, *indent, *next_indent;
-		const char start_str[] = {start, '\n'};
+		char start_str[] = {0, '\n'};
+		start_str[0] = start;
 		
 		(*start_ptr) = PyString_FromStringAndSize (start_str, 2);
 		(*post_value_ptr) = PyString_FromStringAndSize (",\n", 2);
