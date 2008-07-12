@@ -1216,11 +1216,13 @@ writer_append_chunks (WriterState *state, PyObject *list)
 	if (PyUnicode_CheckExact (list) || PyString_CheckExact (list))
 		return writer_append_unicode_obj (state, list);
 	
-	if (!PySequence_Check)
+#ifdef DEBUG
+	if (!PySequence_Check (list))
 	{
 		PyErr_SetString (PyExc_AssertionError, "is_sequence (seq)");
 		return FALSE;
 	}
+#endif
 	
 	len = PySequence_Fast_GET_SIZE (list);
 	for (ii = 0; ii < len; ++ii)
