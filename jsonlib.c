@@ -1846,7 +1846,7 @@ mapping_get_key_and_value (WriterState *state, PyObject *item,
 static int
 write_mapping_impl (WriterState *state, PyObject *items,
                     PyObject *start, PyObject *end, PyObject *pre_value,
-                    PyObject *post_value, PyObject *colon, int indent_level)
+                    PyObject *post_value, int indent_level)
 {
 	int status;
 	size_t ii, item_count;
@@ -1885,7 +1885,7 @@ write_mapping_impl (WriterState *state, PyObject *items,
 			return FALSE;
 		}
 		
-		if (!writer_append_unicode_obj (state, colon))
+		if (!writer_append_unicode_obj (state, state->colon))
 		{
 			Py_DECREF (value);
 			return FALSE;
@@ -1944,7 +1944,7 @@ write_mapping (WriterState *state, PyObject *mapping, int indent_level)
 	
 	succeeded = write_mapping_impl (state, items,
 	                                start, end, pre_value, post_value,
-	                                state->colon, indent_level);
+	                                indent_level);
 	
 	Py_ReprLeave (mapping);
 	Py_DECREF (mapping);
@@ -2230,9 +2230,9 @@ _write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	}
 	
 	if (state.indent_string == Py_None)
-		state.colon = unicode_from_ascii (":");
+		state.colon = PyString_FromString (":");
 	else
-		state.colon = unicode_from_ascii (": ");
+		state.colon = PyString_FromString (": ");
 	if (!state.colon) return NULL;
 	
 	if ((state.Decimal = jsonlib_import ("decimal", "Decimal")) &&
