@@ -5,7 +5,7 @@
  * Implementation of jsonlib.
 **/
 
-
+/* includes {{{ */
 #include <Python.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -16,9 +16,19 @@
 #define TRUE 1
 
 #if PY_VERSION_HEX < 0x02050000
-	typedef int Py_ssize_t;
+typedef int Py_ssize_t;
 #endif
+/* }}} */
 
+/* util declarations {{{ */
+static PyObject *
+jsonlib_import (const char *module_name, const char *obj_name);
+
+static PyObject *
+jsonlib_str_format (const char *tmpl, PyObject *args);
+/* }}} */
+
+/* parser declarations {{{ */
 enum
 {
 	UTF_8 = 0,
@@ -60,6 +70,17 @@ typedef enum
 	OBJECT_GOT_VALUE
 } ParseObjectState;
 
+static PyObject *ReadError;
+
+static PyObject *read_keyword (ParserState *state);
+static PyObject *read_string (ParserState *state);
+static PyObject *read_number (ParserState *state);
+static PyObject *read_array (ParserState *state);
+static PyObject *read_object (ParserState *state);
+static PyObject *json_read (ParserState *state);
+/* }}} */
+
+/* serializer declarations {{{ */
 typedef struct _WriterState
 {
 	/* Pulled from the current interpreter to avoid errors when used
@@ -86,24 +107,11 @@ typedef struct _WriterState
 	PyObject *colon;
 } WriterState;
 
-static PyObject *ReadError;
+static const char *hexdigit = "0123456789abcdef";
+
 static PyObject *WriteError;
 static PyObject *UnknownSerializerError;
 
-static PyObject *read_keyword (ParserState *state);
-static PyObject *read_string (ParserState *state);
-static PyObject *read_number (ParserState *state);
-static PyObject *read_array (ParserState *state);
-static PyObject *read_object (ParserState *state);
-static PyObject *json_read (ParserState *state);
-
-static PyObject *
-jsonlib_import (const char *module_name, const char *obj_name);
-
-static PyObject *
-jsonlib_str_format (const char *tmpl, PyObject *args);
-
-/* Serialization functions */
 static PyObject *
 write_object (WriterState *state, PyObject *object, int indent_level);
 
@@ -122,15 +130,14 @@ write_string (WriterState *state, PyObject *string);
 static PyObject *
 write_unicode (WriterState *state, PyObject *unicode);
 
-/* Variants of the unicode serializer */
 static PyObject *
 unicode_to_unicode (PyObject *unicode);
 
 static PyObject *
 unicode_to_ascii (PyObject *unicode);
+/* }}} */
 
-static const char *hexdigit = "0123456789abcdef";
-
+/* util function definitions {{{ */
 static PyObject *
 jsonlib_import (const char *module_name, const char *obj_name)
 {
@@ -155,7 +162,9 @@ jsonlib_str_format (const char *c_tmpl, PyObject *args)
 	Py_DECREF (args);
 	return retval;
 }
+/* }}} */
 
+/* parser {{{ */
 static void
 skip_spaces (ParserState *state)
 {
@@ -1065,7 +1074,9 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	
 	return result;
 }
+/* }}} */
 
+/* serializer {{{ */
 static void
 set_unknown_serializer (PyObject *value)
 {
@@ -2173,7 +2184,9 @@ _write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	}
 	return NULL;
 }
+/* }}} */
 
+/* python hooks {{{ */
 static PyMethodDef module_methods[] = {
 	{"read", (PyCFunction) (_read_entry), METH_VARARGS|METH_KEYWORDS,
 	PyDoc_STR (
@@ -2280,3 +2293,4 @@ initjsonlib (void)
 	version = Py_BuildValue ("(iii)", 1, 3, 3);
 	PyModule_AddObject (module, "__version__", version);
 }
+/* }}} */
