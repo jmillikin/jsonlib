@@ -203,6 +203,7 @@ count_row_column (Py_UNICODE *start, Py_UNICODE *pos, unsigned long *offset,
 	{
 		if (*ptr == '\n') (*row)++;
 	}
+	ptr--;
 	
 	/* Loop backwards to find the column */
 	while (ptr > start && *ptr != '\n') ptr--;

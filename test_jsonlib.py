@@ -305,6 +305,9 @@ class ReadObjectTests (TestCase):
 	def test_failure_missing_comma (self):
 		self.re ('{"a": 1 "b": 2}', 1, 9, 8, "Expecting comma.")
 		
+	def test_failure_trailing_newline (self):
+		self.re ('{"a": "b",\n}\n', 2, 1, 11, "Expecting property name.")
+		
 class UnicodeEncodingDetectionTests (TestCase):
 	def de (self, encoding, bom = ''):
 		def read_encoded (string, expected):
