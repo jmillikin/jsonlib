@@ -1278,17 +1278,18 @@ get_separators (PyObject *indent_string, int indent_level,
 {
 	if (indent_string == Py_None)
 	{
-		(*start_ptr) = unicode_from_format ("%c", start);
+		(*start_ptr) = PyString_FromStringAndSize (&start, 1);
 		(*pre_value_ptr) = NULL;
-		(*post_value_ptr) = unicode_from_ascii (",");
-		(*end_ptr) = unicode_from_format ("%c", end);
+		(*post_value_ptr) = PyString_FromStringAndSize (",", 1);
+		(*end_ptr) = PyString_FromStringAndSize (&end, 1);
 	}
 	else
 	{
 		PyObject *format_args, *format_tmpl, *indent, *next_indent;
+		const char start_str[] = {start, '\n'};
 		
-		(*start_ptr) = unicode_from_format ("%c%c", start, '\n');
-		(*post_value_ptr) = unicode_from_format (",%c", '\n');
+		(*start_ptr) = PyString_FromStringAndSize (start_str, 2);
+		(*post_value_ptr) = PyString_FromStringAndSize (",\n", 2);
 		
 		indent = PySequence_Repeat (indent_string, indent_level + 1);
 		(*pre_value_ptr) = indent;
