@@ -2463,7 +2463,7 @@ initjsonlib (void)
 	                   UnknownSerializerError);
 	
 	/* If you change the version here, also change it in setup.py. */
-	version = Py_BuildValue ("(iii)", 1, 3, 3);
+	version = Py_BuildValue ("(iii)", 1, 3, 4);
 	PyModule_AddObject (module, "__version__", version);
 }
 /* }}} */

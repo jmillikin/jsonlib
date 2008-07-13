@@ -169,6 +169,12 @@ for any reason.
 Change Log
 ==========
 
+1.3.4
+-----
+* Fixes an issue with reporting the column of a syntax error when the
+  error is followed by a newline.
+* Removed remaining Python wrapper for ``read``.
+
 1.3.3
 -----
 * Support the ``on_unknown`` parameter to ``write``.
