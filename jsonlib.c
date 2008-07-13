@@ -57,6 +57,9 @@ typedef struct _ParserState {
 	Py_UNICODE *end;
 	Py_UNICODE *index;
 	PyObject *Decimal;
+	
+	Py_UNICODE *stringparse_buffer;
+	Py_ssize_t stringparse_buffer_size;
 } ParserState;
 
 typedef enum
@@ -75,7 +78,6 @@ typedef enum
 
 static PyObject *ReadError;
 
-static PyObject *read_keyword (ParserState *state);
 static PyObject *read_string (ParserState *state);
 static PyObject *read_number (ParserState *state);
 static PyObject *read_array (ParserState *state);
@@ -353,58 +355,24 @@ make_Decimal (ParserState *state, PyObject *string)
 	return retval;
 }
 
-/* Helper function to perform strncmp between Py_UNICODE and char* */
-static int
-unicode_utf8_strncmp (Py_UNICODE *unicode, const char *utf8, Py_ssize_t count)
-{
-	PyObject *str;
-	char *c_str;
-	int retval = -1;
-	
-	str = PyUnicode_EncodeUTF8 (unicode, count, "strict");
-	if (str)
-	{
-		c_str = PyString_AsString (str);
-		if (c_str)
-		{
-			retval = strncmp (c_str, utf8, count);
-		}
-		Py_DECREF (str);
-	}
-	
-	return retval;
-}
-
 static PyObject *
-keyword_compare (ParserState *state, const char *expected, PyObject *retval)
+keyword_compare (ParserState *state, const char *expected, Py_ssize_t len,
+                 PyObject *retval)
 {
-	size_t left, len = strlen (expected);
+	Py_ssize_t ii, left;
 	
 	left = state->end - state->index;
-	
-	if (left >= len &&
-	    unicode_utf8_strncmp (state->index, expected, len) == 0)
+	if (left >= len)
 	{
+		for (ii = 0; ii < len; ii++)
+		{
+			if (state->index[ii] != (unsigned char)(expected[ii]))
+				return NULL;
+		}
 		state->index += len;
 		Py_INCREF (retval);
 		return retval;
 	}
-	return NULL;
-}
-
-static PyObject *
-read_keyword (ParserState *state)
-{
-	PyObject *retval;
-	
-	if ((retval = keyword_compare (state, "null", Py_None)))
-		return retval;
-	if ((retval = keyword_compare (state, "true", Py_True)))
-		return retval;
-	if ((retval = keyword_compare (state, "false", Py_False)))
-		return retval;
-	
-	set_error_unexpected (state, state->index);
 	return NULL;
 }
 
@@ -557,7 +525,16 @@ read_string (ParserState *state)
 	
 	/* Allocate enough to hold the worst case */
 	max_char_count = ii;
-	buffer = PyMem_New (Py_UNICODE, max_char_count);
+	buffer = state->stringparse_buffer;
+	if (max_char_count > state->stringparse_buffer_size)
+	{
+		Py_ssize_t new_size, existing_size;
+		existing_size = state->stringparse_buffer_size;
+		new_size = next_power_2 (1, max_char_count);
+		state->stringparse_buffer = PyMem_Resize (buffer, Py_UNICODE, new_size);
+		buffer = state->stringparse_buffer;
+		state->stringparse_buffer_size = new_size;
+	}
 	
 	/* Scan through the string, adding values to the buffer as
 	 * appropriate.
@@ -597,7 +574,6 @@ read_string (ParserState *state)
 					
 					else
 					{
-						PyMem_Free (buffer);
 						return NULL;
 					}
 					break;
@@ -607,7 +583,6 @@ read_string (ParserState *state)
 				{
 					set_error_simple (state, start + ii - 1,
 					                  "Unknown escape code.");
-					PyMem_Free (buffer);
 					return NULL;
 				}
 			}
@@ -628,7 +603,6 @@ read_string (ParserState *state)
 	}
 	
 	unicode = PyUnicode_FromUnicode (buffer, buffer_idx);
-	PyMem_Free (buffer);
 	
 	if (unicode)
 	{
@@ -938,10 +912,21 @@ json_read (ParserState *state)
 			return read_array (state);
 		case '"':
 			return read_string (state);
+		{
+			PyObject *kw = NULL;
 		case 't':
+			if ((kw = keyword_compare (state, "true", 4, Py_True)))
+				return kw;
+			break;
 		case 'f':
+			if ((kw = keyword_compare (state, "false", 5, Py_False)))
+				return kw;
+			break;
 		case 'n':
-			return read_keyword (state);
+			if ((kw = keyword_compare (state, "null", 4, Py_None)))
+				return kw;
+			break;
+		}
 		case '-':
 		case '0':
 		case '1':
@@ -955,9 +940,10 @@ json_read (ParserState *state)
 		case '9':
 			return read_number (state);
 		default:
-			set_error_unexpected (state, state->index);
-			return NULL;
+			break;
 	}
+	set_error_unexpected (state, state->index);
+	return NULL;
 }
 
 static int
@@ -1111,6 +1097,9 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 		}
 	}
 	Py_DECREF (unicode);
+	
+	if (state.stringparse_buffer)
+		PyMem_Free (state.stringparse_buffer);
 	
 	return result;
 }
