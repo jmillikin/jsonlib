@@ -57,6 +57,9 @@ typedef struct _ParserState {
 	Py_UNICODE *end;
 	Py_UNICODE *index;
 	PyObject *Decimal;
+	
+	Py_UNICODE *stringparse_buffer;
+	Py_ssize_t stringparse_buffer_size;
 } ParserState;
 
 typedef enum
@@ -557,7 +560,16 @@ read_string (ParserState *state)
 	
 	/* Allocate enough to hold the worst case */
 	max_char_count = ii;
-	buffer = PyMem_New (Py_UNICODE, max_char_count);
+	buffer = state->stringparse_buffer;
+	if (max_char_count > state->stringparse_buffer_size)
+	{
+		Py_ssize_t new_size, existing_size;
+		existing_size = state->stringparse_buffer_size;
+		new_size = next_power_2 (1, max_char_count);
+		state->stringparse_buffer = PyMem_Resize (buffer, Py_UNICODE, new_size);
+		buffer = state->stringparse_buffer;
+		state->stringparse_buffer_size = new_size;
+	}
 	
 	/* Scan through the string, adding values to the buffer as
 	 * appropriate.
@@ -597,7 +609,6 @@ read_string (ParserState *state)
 					
 					else
 					{
-						PyMem_Free (buffer);
 						return NULL;
 					}
 					break;
@@ -607,7 +618,6 @@ read_string (ParserState *state)
 				{
 					set_error_simple (state, start + ii - 1,
 					                  "Unknown escape code.");
-					PyMem_Free (buffer);
 					return NULL;
 				}
 			}
@@ -628,7 +638,6 @@ read_string (ParserState *state)
 	}
 	
 	unicode = PyUnicode_FromUnicode (buffer, buffer_idx);
-	PyMem_Free (buffer);
 	
 	if (unicode)
 	{
@@ -1111,6 +1120,9 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 		}
 	}
 	Py_DECREF (unicode);
+	
+	if (state.stringparse_buffer)
+		PyMem_Free (state.stringparse_buffer);
 	
 	return result;
 }
