@@ -630,6 +630,10 @@ class WriteObjectTests (TestCase):
 		a['a'] = [a]
 		self.we (a, "Cannot serialize self-referential values.")
 		
+	def test_not_writing_comma_error (self):
+		self.w ({'a': 1, 'b': 2, 'c': 3},
+		        u'{"a":1,"c":3,"b":2}')
+		
 class WriteStringTests (TestCase):
 	def test_empty_string (self):
 		self.w ([''], u'[""]', ascii_only = True)

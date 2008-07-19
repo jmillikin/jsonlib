@@ -1862,7 +1862,7 @@ write_dict (WriterState *state, PyObject *dict, PyObject *start,
             PyObject *end, PyObject *pre_value, PyObject *post_value,
             int indent_level)
 {
-	Py_ssize_t ii = 0, item_count;
+	Py_ssize_t ii = 0, dict_pos = 0, item_count;
 	PyObject *raw_key, *value;
 	int status;
 	
@@ -1870,7 +1870,7 @@ write_dict (WriterState *state, PyObject *dict, PyObject *start,
 		return FALSE;
 	
 	item_count = PyDict_Size (dict);
-	while (PyDict_Next (dict, &ii, &raw_key, &value))
+	while (PyDict_Next (dict, &dict_pos, &raw_key, &value))
 	{
 		PyObject *serialized, *key;
 		
@@ -1894,13 +1894,14 @@ write_dict (WriterState *state, PyObject *dict, PyObject *start,
 		if (!write_object (state, value, indent_level + 1))
 			return FALSE;
 		
-		if (ii < item_count)
+		if (ii + 1 < item_count)
 		{
 			if (!writer_append_unicode_obj (state, post_value))
 			{
 				return FALSE;
 			}
 		}
+		ii++;
 	}
 	
 	return writer_append_unicode_obj (state, end);
