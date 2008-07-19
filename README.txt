@@ -169,6 +169,11 @@ for any reason.
 Change Log
 ==========
 
+1.3.5
+-----
+* Bugfix release, corrects serialization of ``dict`` when ``PyDict_Next()``
+  skips indexes.
+
 1.3.4
 -----
 * Fixes an issue with reporting the column of a syntax error when the
