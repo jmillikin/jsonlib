@@ -102,10 +102,10 @@ TOKEN_SPLITTER = re.compile (
 	'([\\[\\]{}:,])|'
 	
 	# String atom
-	'("(?:[^"\\\\]|\\\\.)*")|'
+	'((?:"(?:[^"\\\\]|\\\\.)*")|'
 	
 	# Non-string atom
-	u'([^\u0009\u0020\u000a\u000d\\[\\]{}:,]+)|'
+	u'(?:[^\u0009\u0020\u000a\u000d\\[\\]{}:,]+))|'
 	
 	# Whitespace
 	u'([\u0009\u0020\u000a\u000d])|'
@@ -113,6 +113,15 @@ TOKEN_SPLITTER = re.compile (
 	# Anything else, will trigger an exception
 	'(.+?)',
 re.UNICODE)
+
+BASIC_TOKENS = {
+	'[': 'ARRAY_START',
+	']': 'ARRAY_END',
+	'{': 'OBJECT_START',
+	'}': 'OBJECT_END',
+	':': 'COLON',
+	',': 'COMMA',
+}
 
 READ_ESCAPES = {
 	'\\': '\\',
@@ -253,16 +262,6 @@ class StateMachine (object):
 		self._stack.pop ()
 		
 class Token (object):
-	"""A JSON token."""
-	__slots__ = ['name']
-	def __init__ (self, name):
-		self.name = name
-	def __repr__ (self):
-		return 'Token<%r>' % self.name
-	def __call__ (self, full_string, offset, value):
-		return TokenInstance (self, full_string, offset, value)
-		
-class TokenInstance (object):
 	"""Instance of a JSON token"""
 	__slots__ = ['type', 'value', 'offset', 'full_string']
 	def __init__ (self, token_type, full_string, offset, value):
@@ -273,16 +272,6 @@ class TokenInstance (object):
 	def __repr__ (self):
 		return '%s<%r>' % (self.type.name, self.value)
 		
-
-# Inputs
-ARRAY_START = Token ('ARRAY_START')
-ARRAY_END = Token ('ARRAY_END')
-OBJECT_START = Token ('OBJECT_START')
-OBJECT_END = Token ('OBJECT_END')
-COLON = Token ('COLON')
-COMMA = Token ('COMMA')
-ATOM = Token ('ATOM')
-EOF = Token ('EOF')
 
 def format_error (*args):
 	if len (args) == 2:
@@ -308,26 +297,21 @@ def tokenize (string):
 		The string to tokenize. Should be in unicode.
 	
 	"""
-	basic_types = {'[': ARRAY_START, ']': ARRAY_END,
-	               '{': OBJECT_START, '}': OBJECT_END,
-	               ':': COLON, ',': COMMA}
-	
 	position = 0
 	for match in TOKEN_SPLITTER.findall (string):
-		basic_string, string_atom, other_atom, whitespace, unknown_token = match
-		if basic_string:
-			yield basic_types[basic_string] (string, position, basic_string)
-		elif string_atom:
-			yield ATOM (string, position, string_atom)
-		elif other_atom:
-			yield ATOM (string, position, other_atom)
+		basic, atom, whitespace, unknown = match
+		if basic:
+			token_type = BASIC_TOKENS[basic]
+			yield Token (token_type, string, position, basic)
+		elif atom:
+			yield Token ('ATOM', string, position, atom)
 		elif whitespace:
 			pass
 		else:
 			raise ReadError ("Unknown token: %r" % unknown_token)
 		position += sum (map (len, match))
 		
-	yield EOF (string, position, 'EOF')
+	yield Token ('EOF', string, position, '')
 	
 def read_unicode_escape (atom, index, stream):
 	"""Read a JSON-style Unicode escape.
@@ -452,7 +436,7 @@ def next_char_ord (string):
 	
 def parse_atom (atom):
 	"""Parse a JSON atom into a Python value."""
-	assert atom.type == ATOM
+	assert atom.type == 'ATOM'
 	
 	for keyword, value in KEYWORDS:
 		if atom.value == keyword:
@@ -557,50 +541,50 @@ def read (string):
 	# Register state transitions
 	machine.connect_many (
 		('root', 'need-value',
-			(ATOM, 'complete', on_expected_root_value),
-			(ARRAY_START, 'empty', on_array_start),
-			(OBJECT_START, 'empty', on_object_start),
-			(EOF, 'error', on_empty_expression)),
+			('ATOM', 'complete', on_expected_root_value),
+			('ARRAY_START', 'empty', on_array_start),
+			('OBJECT_START', 'empty', on_object_start),
+			('EOF', 'error', on_empty_expression)),
 		('root', 'got-value',
-			(EOF, 'complete'),
-			(ARRAY_START, 'error', on_extra_data)),
-		('root', 'complete', (EOF, 'complete')),
+			('EOF', 'complete'),
+			('ARRAY_START', 'error', on_extra_data)),
+		('root', 'complete', ('EOF', 'complete')),
 		
 		('array', 'empty',
-			(ARRAY_START, 'empty', on_array_start),
-			(ARRAY_END, 'got-value', on_array_end),
-			(OBJECT_START, 'empty', on_object_start),
-			(ATOM, 'got-value', on_atom)),
+			('ARRAY_START', 'empty', on_array_start),
+			('ARRAY_END', 'got-value', on_array_end),
+			('OBJECT_START', 'empty', on_object_start),
+			('ATOM', 'got-value', on_atom)),
 		('array', 'need-value',
-			(ARRAY_START, 'empty', on_array_start),
-			(OBJECT_START, 'empty', on_object_start),
-			(ATOM, 'got-value', on_atom)),
+			('ARRAY_START', 'empty', on_array_start),
+			('OBJECT_START', 'empty', on_object_start),
+			('ATOM', 'got-value', on_atom)),
 		('array', 'got-value',
-			(ARRAY_END, 'got-value', on_array_end),
-			(COMMA, 'need-value'),
-			(ATOM, 'error', on_expecting_comma)),
+			('ARRAY_END', 'got-value', on_array_end),
+			('COMMA', 'need-value'),
+			('ATOM', 'error', on_expecting_comma)),
 		
 		('object', 'empty',
-			(ARRAY_START, 'empty', on_array_start),
-			(OBJECT_START, 'empty', on_object_start),
-			(OBJECT_END, 'got-value', on_object_end),
-			(ATOM, 'with-key', on_object_key),
-			(COMMA, 'error', on_missing_object_key)),
+			('ARRAY_START', 'empty', on_array_start),
+			('OBJECT_START', 'empty', on_object_start),
+			('OBJECT_END', 'got-value', on_object_end),
+			('ATOM', 'with-key', on_object_key),
+			('COMMA', 'error', on_missing_object_key)),
 		('object', 'with-key',
-			(COLON, 'need-value'),
-			(OBJECT_END, 'error', on_expected_colon)),
+			('COLON', 'need-value'),
+			('OBJECT_END', 'error', on_expected_colon)),
 		('object', 'need-value',
-			(ARRAY_START, 'empty', on_array_start),
-			(OBJECT_START, 'empty', on_object_start),
-			(ATOM, 'got-value', on_atom)),
+			('ARRAY_START', 'empty', on_array_start),
+			('OBJECT_START', 'empty', on_object_start),
+			('ATOM', 'got-value', on_atom)),
 		('object', 'got-value',
-			(OBJECT_END, 'got-value', on_object_end),
-			(COMMA, 'need-key'),
-			(EOF, 'error', on_unterminated_object),
-			(ATOM, 'error', on_expecting_comma)),
+			('OBJECT_END', 'got-value', on_object_end),
+			('COMMA', 'need-key'),
+			('EOF', 'error', on_unterminated_object),
+			('ATOM', 'error', on_expecting_comma)),
 		('object', 'need-key',
-			(ATOM, 'with-key', on_object_key),
-			(OBJECT_END, 'error', on_missing_object_key)),
+			('ATOM', 'with-key', on_object_key),
+			('OBJECT_END', 'error', on_missing_object_key)),
 	)
 	
 	for token in tokenize (string):
