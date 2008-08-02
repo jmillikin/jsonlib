@@ -14,6 +14,7 @@ import re
 import sys
 from UserString import UserString
 
+# Exception classes {{{
 class ReadError (ValueError):
 	"""Exception raised if there is an error parsing a JSON expression."""
 	pass
@@ -36,6 +37,9 @@ class UnknownSerializerError (WriteError):
 		else:
 			WriteError.__init__ (self, err)
 			
+# }}}
+
+# Constants {{{
 KEYWORDS = (('null', None), ('true', True), ('false', False))
 try:
 	INFINITY = float ('inf')
@@ -59,6 +63,64 @@ UTF_HEADERS = [
 	((0, 1, 0, 1), 'utf-16-be'),
 	((1, 0, 1, 0), 'utf-16-le'),
 ]
+
+NUMBER_SPLITTER = re.compile (
+	'^(?P<minus>-)?(?P<int>[0-9]+)' # Basic integer portion
+	'(?:\\.(?P<frac>[0-9]+))?'      # Fractional portion
+	'(?P<exp>[eE][-+]?[0-9]+)?$',   # Exponent
+re.UNICODE)
+
+TOKEN_SPLITTER = re.compile (
+	# Basic tokens
+	'([\\[\\]{}:,])|'
+	
+	# String atom
+	'("(?:[^"\\\\]|\\\\.)*")|'
+	
+	# Non-string atom
+	u'([^\u0009\u0020\u000a\u000d\\[\\]{}:,]+)|'
+	
+	# Whitespace
+	u'([\u0009\u0020\u000a\u000d])|'
+	
+	# Anything else, will trigger an exception
+	'(.+?)',
+re.UNICODE)
+
+READ_ESCAPES = {
+	'\\': '\\',
+	'"': '"',
+	'/': '/',
+	'b': '\b',
+	'f': '\f',
+	'n': '\n',
+	'r': '\r',
+	't': '\t',
+}
+
+WRITE_ESCAPES = {
+	# Escaping the solidus is a security measure intended for
+	# protecting users from broken browser parsing, if the consumer
+	# is stupid enough to parse JSON by including it directly into
+	# a <script> tag.
+	# 
+	# See: http://t3.dotgnu.info/blog/insecurity/quotes-dont-help.html
+	'/': '\\/',
+	'"': '\\"',
+	'\t': '\\t',
+	'\b': '\\b',
+	'\n': '\\n',
+	'\r': '\\r',
+	'\f': '\\f',
+	'\\': '\\\\'
+}
+
+for char_ord in range (0, 0x20):
+	WRITE_ESCAPES.setdefault (chr (char_ord), '\\u%04x' % char_ord)
+	
+# }}}
+
+# Parser {{{
 def chunk (iterable, chunk_size):
 	"""Retrieve an iterable in chunks.
 	
@@ -173,60 +235,6 @@ class StateMachine (object):
 			self._state = 'error'
 			raise
 			
-NUMBER_SPLITTER = re.compile (
-	'^(?P<minus>-)?(?P<int>[0-9]+)' # Basic integer portion
-	'(?:\\.(?P<frac>[0-9]+))?'      # Fractional portion
-	'(?P<exp>[eE][-+]?[0-9]+)?$',   # Exponent
-re.UNICODE)
-
-TOKEN_SPLITTER = re.compile (
-	# Basic tokens
-	'([\\[\\]{}:,])|'
-	
-	# String atom
-	'("(?:[^"\\\\]|\\\\.)*")|'
-	
-	# Non-string atom
-	u'([^\u0009\u0020\u000a\u000d\\[\\]{}:,]+)|'
-	
-	# Whitespace
-	u'([\u0009\u0020\u000a\u000d])|'
-	
-	# Anything else, will trigger an exception
-	'(.+?)',
-re.UNICODE)
-
-READ_ESCAPES = {
-	'\\': '\\',
-	'"': '"',
-	'/': '/',
-	'b': '\b',
-	'f': '\f',
-	'n': '\n',
-	'r': '\r',
-	't': '\t',
-}
-
-WRITE_ESCAPES = {
-	# Escaping the solidus is a security measure intended for
-	# protecting users from broken browser parsing, if the consumer
-	# is stupid enough to parse JSON by including it directly into
-	# a <script> tag.
-	# 
-	# See: http://t3.dotgnu.info/blog/insecurity/quotes-dont-help.html
-	'/': '\\/',
-	'"': '\\"',
-	'\t': '\\t',
-	'\b': '\\b',
-	'\n': '\\n',
-	'\r': '\\r',
-	'\f': '\\f',
-	'\\': '\\\\'
-}
-
-for char_ord in range (0, 0x20):
-	WRITE_ESCAPES.setdefault (chr (char_ord), '\\u%04x' % char_ord)
-	
 class Token (object):
 	"""A JSON token."""
 	__slots__ = ['name']
@@ -599,6 +607,22 @@ def unicode_autodetect_encoding (bytestring):
 	# Default to UTF-8
 	return bytestring.decode ('utf-8')
 	
+def read (string):
+	"""Parse a JSON expression into a Python value.
+	
+	If string is a byte string, it will be converted to Unicode
+	before parsing (see unicode_autodetect_encoding).
+	
+	"""
+	u_string = unicode_autodetect_encoding (string)
+	value = _py_read (u_string)
+	if not isinstance (value, (dict, list)):
+		raise ReadError ("Tried to deserialize a basic value.")
+	return value
+	
+# }}}
+
+# Serializer {{{
 def get_separators (start, end, indent_string, indent_level):
 	if indent_string is None:
 		return start, end, '', ','
@@ -875,20 +899,6 @@ def _py_write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 		return write_iterable (value, sort_keys, indent_string, ascii_only,
 		                       coerce_keys, parent_objects, indent_level)
 		
-	
-def read (string):
-	"""Parse a JSON expression into a Python value.
-	
-	If string is a byte string, it will be converted to Unicode
-	before parsing (see unicode_autodetect_encoding).
-	
-	"""
-	u_string = unicode_autodetect_encoding (string)
-	value = _py_read (u_string)
-	if not isinstance (value, (dict, list)):
-		raise ReadError ("Tried to deserialize a basic value.")
-	return value
-	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False, encoding = 'utf-8', on_unknown = None):
 	"""Serialize a Python value to a JSON-formatted byte string.
@@ -952,3 +962,5 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		return u_string
 	return u_string.encode (encoding)
 	
+# }}}
+
