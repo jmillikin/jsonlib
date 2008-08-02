@@ -742,6 +742,30 @@ class WriteEncodingTests (TestCase):
 		self.assertEqual (type (value), unicode)
 		self.assertEqual (value, u'["\U0001D11E \u24CA"]')
 		
+TEST_CASES = [
+	ReadMiscTests,
+	ReadKeywordTests,
+	ReadNumberTests,
+	ReadStringTests,
+	ReadArrayTests,
+	ReadObjectTests,
+	UnicodeEncodingDetectionTests,
+	WriteMiscTests,
+	WriteKeywordTests,
+	WriteNumberTests,
+	WriteArrayTests,
+	WriteObjectTests,
+	WriteStringTests,
+	WriteEncodingTests,
+]
+def suite ():
+	loader = unittest.TestLoader ()
+	suite = unittest.TestSuite ()
+	from_local = loader.loadTestsFromTestCase
+	for test_case in TEST_CASES:
+		suite.addTests (from_local (test_case))
+	return suite
+	
 if __name__ == '__main__':
-	unittest.main ()
+	unittest.main (defaultTest = 'suite')
 	
