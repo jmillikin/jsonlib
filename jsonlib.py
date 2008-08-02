@@ -165,16 +165,12 @@ def chunk (iterable, chunk_size):
 class StateMachine (object):
 	"""A simple push-down automaton."""
 	
-	PUSH = 0
-	POP = 1
-	
 	def __init__ (self, initial_state, initial_stack = ('')):
 		self._state = initial_state
 		self._stack = list (initial_stack)[:]
 		self._transitions = {}
 		
-	def connect (self, state, stack, value, end_state, callback = None,
-	             *stack_action):
+	def connect (self, state, stack, value, end_state, callback = None):
 		"""Connect a transition to a callback.
 		
 		.. describe:: state
@@ -198,11 +194,6 @@ class StateMachine (object):
 			If not None, this function will be called with
 			any extra data passed to transition.
 			
-		.. describe:: stack_action
-			
-			The operation to perform on the stack, such
-			as PUSH, 'var'.
-		
 		"""
 		key = (stack, state, value)
 		
@@ -211,7 +202,9 @@ class StateMachine (object):
 			                  "has already been connected: %r" %
 			                  [key])
 			
-		self._transitions[key] = (end_state, stack_action, callback)
+		if callback is None:
+			callback = lambda *a, **kw: None
+		self._transitions[key] = (end_state, callback)
 		
 	def connect_many (self, *transitions):
 		"""Connect many transitions at once. 
@@ -240,28 +233,25 @@ class StateMachine (object):
 		
 		"""
 		key = (self._stack[-1], self._state, value)
-		if key not in self._transitions:
+		try:
+			end_state, callback = self._transitions[key]
+		except KeyError:
 			raise ValueError ("No such transition: %r" % (key,))
 			
-		end_state, stack_action, callback = self._transitions[key]
 		try:
-			if callback:
-				retval = callback (*args, **kwargs)
-			else:
-				retval = None
-				
-			if stack_action:
-				if stack_action[0] == self.PUSH:
-					self._stack.append (stack_action[1])
-				elif stack_action[0] == self.POP:
-					self._stack.pop ()
+			retval = callback (*args, **kwargs)
 			self._state = end_state
 			return retval
-			
 		except:
 			self._state = 'error'
 			raise
 			
+	def push (self, value):
+		self._stack.append (value)
+		
+	def pop (self):
+		self._stack.pop ()
+		
 class Token (object):
 	"""A JSON token."""
 	__slots__ = ['name']
@@ -488,23 +478,34 @@ def parse_atom (atom):
 		error = format_error (atom, "Unexpected U+%04X." % char_ord)
 	raise ReadError (error)
 	
-def _py_read (string):
-	"""Parse a unicode string in JSON format into a Python value."""
+def read (string):
+	"""Parse a JSON expression into a Python value.
+	
+	If string is a byte string, it will be converted to Unicode
+	before parsing (see unicode_autodetect_encoding).
+	
+	"""
+	string = unicode_autodetect_encoding (string)
 	read_item_stack = [([], 0)]
 	
 	# Callbacks
-	def on_atom (atom):
-		"""Called when an atom token is retrieved."""
-		read_item_stack[-1][0].append (parse_atom (atom))
+	def on_expected_root_value (token):
+		parse_atom (token)
+		error = format_error (token, "Expecting an array or object.")
+		raise ReadError (error)
 		
-	def on_container_start (token):
-		"""Called when an array or object begins."""
+	def on_array_start (token):
+		machine.push ('array')
 		read_item_stack.append (([], token.offset))
 		
-	def on_array_end (_):
-		"""Called when an array has ended."""
+	def on_array_end (token):
+		machine.pop ()
 		array, _ = read_item_stack.pop ()
 		read_item_stack[-1][0].append (array)
+		
+	def on_object_start (token):
+		machine.push ('object')
+		read_item_stack.append (([], token.offset))
 		
 	def on_object_key (token):
 		"""Called when an object key is retrieved."""
@@ -517,8 +518,13 @@ def _py_read (string):
 			
 	def on_object_end (_):
 		"""Called when an object has ended."""
+		machine.pop ()
 		pairs, _ = read_item_stack.pop ()
 		read_item_stack[-1][0].append (dict (chunk (pairs, 2)))
+		
+	def on_atom (atom):
+		"""Called when an atom token is retrieved."""
+		read_item_stack[-1][0].append (parse_atom (atom))
 		
 	def on_unterminated_object (token):
 		_, start = read_item_stack[-1]
@@ -548,15 +554,12 @@ def _py_read (string):
 		
 	machine = StateMachine ('need-value', ['root'])
 	
-	PUSH = StateMachine.PUSH
-	POP = StateMachine.POP
-	
 	# Register state transitions
 	machine.connect_many (
 		('root', 'need-value',
-			(ATOM, 'complete', on_atom),
-			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
+			(ATOM, 'complete', on_expected_root_value),
+			(ARRAY_START, 'empty', on_array_start),
+			(OBJECT_START, 'empty', on_object_start),
 			(EOF, 'error', on_empty_expression)),
 		('root', 'got-value',
 			(EOF, 'complete'),
@@ -564,34 +567,34 @@ def _py_read (string):
 		('root', 'complete', (EOF, 'complete')),
 		
 		('array', 'empty',
-			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(ARRAY_END, 'got-value', on_array_end, POP),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
+			(ARRAY_START, 'empty', on_array_start),
+			(ARRAY_END, 'got-value', on_array_end),
+			(OBJECT_START, 'empty', on_object_start),
 			(ATOM, 'got-value', on_atom)),
 		('array', 'need-value',
-			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
+			(ARRAY_START, 'empty', on_array_start),
+			(OBJECT_START, 'empty', on_object_start),
 			(ATOM, 'got-value', on_atom)),
 		('array', 'got-value',
-			(ARRAY_END, 'got-value', on_array_end, POP),
+			(ARRAY_END, 'got-value', on_array_end),
 			(COMMA, 'need-value'),
 			(ATOM, 'error', on_expecting_comma)),
 		
 		('object', 'empty',
-			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
-			(OBJECT_END, 'got-value', on_object_end, POP),
+			(ARRAY_START, 'empty', on_array_start),
+			(OBJECT_START, 'empty', on_object_start),
+			(OBJECT_END, 'got-value', on_object_end),
 			(ATOM, 'with-key', on_object_key),
 			(COMMA, 'error', on_missing_object_key)),
 		('object', 'with-key',
 			(COLON, 'need-value'),
 			(OBJECT_END, 'error', on_expected_colon)),
 		('object', 'need-value',
-			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
+			(ARRAY_START, 'empty', on_array_start),
+			(OBJECT_START, 'empty', on_object_start),
 			(ATOM, 'got-value', on_atom)),
 		('object', 'got-value',
-			(OBJECT_END, 'got-value', on_object_end, POP),
+			(OBJECT_END, 'got-value', on_object_end),
 			(COMMA, 'need-key'),
 			(EOF, 'error', on_unterminated_object),
 			(ATOM, 'error', on_expecting_comma)),
@@ -633,19 +636,6 @@ def unicode_autodetect_encoding (bytestring):
 			
 	# Default to UTF-8
 	return bytestring.decode ('utf-8')
-	
-def read (string):
-	"""Parse a JSON expression into a Python value.
-	
-	If string is a byte string, it will be converted to Unicode
-	before parsing (see unicode_autodetect_encoding).
-	
-	"""
-	u_string = unicode_autodetect_encoding (string)
-	value = _py_read (u_string)
-	if not isinstance (value, (dict, list)):
-		raise ReadError ("Tried to deserialize a basic value.")
-	return value
 	
 # }}}
 
