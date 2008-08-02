@@ -46,6 +46,19 @@ try:
 except ValueError:
 	NAN = INFINITY/INFINITY
 	
+UNICODE_BOMS = [
+	(codecs.BOM_UTF32_BE, 'utf-32-be'),
+	(codecs.BOM_UTF32_LE, 'utf-32-le'),
+	(codecs.BOM_UTF16_BE, 'utf-16-be'),
+	(codecs.BOM_UTF16_LE, 'utf-16-le'),
+	(codecs.BOM_UTF8, 'utf-8'),
+]
+UTF_HEADERS = [
+	((0, 0, 0, 1), 'utf-32-be'),
+	((1, 0, 0, 0), 'utf-32-le'),
+	((0, 1, 0, 1), 'utf-16-be'),
+	((1, 0, 1, 0), 'utf-16-le'),
+]
 def chunk (iterable, chunk_size):
 	"""Retrieve an iterable in chunks.
 	
@@ -562,64 +575,29 @@ def _py_read (string):
 			
 	return read_item_stack[0][0][0]
 	
-def safe_unichr (codepoint):
-	"""Similar to unichr(), except handles narrow builds.
-	
-	If a codepoint above 0x10000 is passed to this function, and the
-	system cannot handle wide characters, the return value will be a
-	string of length 2 containing the surrogate pair."""
-	if codepoint >= 0x10000 > sys.maxunicode:
-		# No wide character support
-		upper = (codepoint & 0xFFC00 - 0x10000) >> 10
-		lower = codepoint & 0x3FF
-		
-		upper += 0xD800
-		lower += 0xDC00
-		
-		return unichr (upper) + unichr (lower)
-	else:
-		return unichr (codepoint)
-		
-def unicode_autodetect_encoding (bytes):
+def unicode_autodetect_encoding (bytestring):
 	"""Intelligently convert a byte string to Unicode.
 	
 	Assumes the encoding used is one of the UTF-* variants. If the
 	input is already in unicode, this is a noop.
 	
 	"""
-	if isinstance (bytes, unicode):
-		return bytes
+	if isinstance (bytestring, unicode):
+		return bytestring
 		
-	def struct_decode (format, offset = 0):
-		"""Helper for decoding UTF-32."""
-		_bytes = bytes[offset:]
-		codes = struct.unpack (format % (len (_bytes) / 4), _bytes)
-		return u''.join (safe_unichr (code) for code in codes)
-		
-	boms = ((codecs.BOM_UTF32_BE, lambda: struct_decode ('>%dl', 4)),
-	        (codecs.BOM_UTF32_LE, lambda: struct_decode ('<%dl', 4)),
-	        (codecs.BOM_UTF16_BE, lambda: bytes[2:].decode ('utf-16-be')),
-	        (codecs.BOM_UTF16_LE, lambda: bytes[2:].decode ('utf-16-le')),
-	        (codecs.BOM_UTF8, lambda: bytes[3:].decode ('utf-8')))
-	
-	utf_headers = (((0, 0, 0, 1), lambda: struct_decode ('>%dl')),
-	              ((1, 0, 0, 0), lambda: struct_decode ('<%dl')),
-	              ((0, 1, 0, 1), lambda: bytes.decode ('utf-16-be')),
-	              ((1, 0, 1, 0), lambda: bytes.decode ('utf-16-le')))
-	
-	# Check for Byte Order Mark
-	for bom, func in boms:
-		if bytes.startswith (bom):
-			return func ()
+	# Check for UTF byte order marks in the bytestring
+	for bom, encoding in UNICODE_BOMS:
+		if bytestring.startswith (bom):
+			return bytestring[len(bom):].decode (encoding)
 			
-	# First two characters are always ASCII
-	header = tuple (((ord (b) and 1) or 0) for b in bytes[:4])
-	for utf_header, func in utf_headers:
+	# Autodetect UTF-* encodings using the algorithm in the RFC
+	header = tuple (1 if ord (b) else 0 for b in bytestring[:4])
+	for utf_header, encoding in UTF_HEADERS:
 		if header == utf_header:
-			return func ()
+			return bytestring.decode (encoding)
 			
 	# Default to UTF-8
-	return bytes.decode ('utf-8')
+	return bytestring.decode ('utf-8')
 	
 def get_separators (start, end, indent_string, indent_level):
 	if indent_string is None:
