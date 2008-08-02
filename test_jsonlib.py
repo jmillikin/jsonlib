@@ -92,6 +92,9 @@ class ReadMiscTests (TestCase):
 	def test_no_unwrapped_values (self):
 		self.re (u'1', 1, 1, 0, "Expecting an array or object.")
 		
+	def test_parse_atom_before_unwrapped_check (self):
+		self.re (u'n', 1, 1, 0, "Unexpected U+006E.")
+		
 class ReadKeywordTests (TestCase):
 	def test_null (self):
 		self.r ('[null]', [None])
