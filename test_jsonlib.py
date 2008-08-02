@@ -89,6 +89,9 @@ class ReadMiscTests (TestCase):
 		self.r ('[] ', [])
 		self.r ('{} ', {})
 		
+	def test_no_unwrapped_values (self):
+		self.re (u'1', 1, 1, 0, "Expecting an array or object.")
+		
 class ReadKeywordTests (TestCase):
 	def test_null (self):
 		self.r ('[null]', [None])
@@ -100,9 +103,9 @@ class ReadKeywordTests (TestCase):
 		self.r ('[false]', [False])
 		
 	def test_invalid_keyword (self):
-		self.re ('n', 1, 1, 0, "Unexpected U+006E.")
-		self.re ('t', 1, 1, 0, "Unexpected U+0074.")
-		self.re ('f', 1, 1, 0, "Unexpected U+0066.")
+		self.re ('[n]', 1, 2, 1, "Unexpected U+006E.")
+		self.re ('[t]', 1, 2, 1, "Unexpected U+0074.")
+		self.re ('[f]', 1, 2, 1, "Unexpected U+0066.")
 		
 class ReadNumberTests (TestCase):
 	def test_zero (self):
@@ -164,11 +167,13 @@ class ReadNumberTests (TestCase):
 		self.assertEqual (repr (value[0]), 'Decimal("-0.0")')
 		
 	def test_invalid_number (self):
-		self.re ('-.', 1, 1, 0, "Invalid number.")
-		self.re ('0.', 1, 1, 0, "Invalid number.")
+		self.re ('[-.]', 1, 2, 1, "Invalid number.")
+	
+	def test_invalid_number_2 (self):
+		self.re ('[0.]', 1, 2, 1, "Invalid number.")
 		
 	def test_no_plus_sign (self):
-		self.re ('+1', 1, 1, 0, "Unexpected U+002B.")
+		self.re ('[+1]', 1, 2, 1, "Unexpected U+002B.")
 		
 	def test_non_ascii_number (self):
 		self.re (u'[\u0661]', 1, 2, 1, "Unexpected U+0661.")
