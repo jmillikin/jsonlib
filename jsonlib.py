@@ -494,6 +494,11 @@ def read (string):
 		array, _ = read_item_stack.pop ()
 		read_item_stack[-1][0].append (array)
 		
+	def on_unterminated_array (_):
+		_, start = read_item_stack[-1]
+		error = format_error (token.full_string, start, "Unterminated array.")
+		raise ReadError (error)
+		
 	def on_object_start (token):
 		machine.push ('object')
 		read_item_stack.append (([], token.offset))
@@ -543,55 +548,105 @@ def read (string):
 		error = format_error (token, "Extra data after JSON expression.")
 		raise ReadError (error)
 		
+	def on_unexpected (token):
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected U+%04X." % char_ord)
+		raise ReadError (error)
+		
 	machine = StateMachine ('need-value', ['root'])
 	
 	# Register state transitions
 	machine.connect_many (
 		('root', 'need-value',
-			('ATOM', 'complete', on_expected_root_value),
+			('ATOM', 'error', on_expected_root_value),
 			('ARRAY_START', 'empty', on_array_start),
+			('ARRAY_END', 'error', on_unexpected),
 			('OBJECT_START', 'empty', on_object_start),
+			('OBJECT_END', 'error', on_unexpected),
+			('COMMA', 'error', on_unexpected),
+			('COLON', 'error', on_unexpected),
 			('EOF', 'error', on_empty_expression)),
 		('root', 'got-value',
-			('EOF', 'complete'),
-			('ARRAY_START', 'error', on_extra_data)),
-		('root', 'complete', ('EOF', 'complete')),
-		
+			('ATOM', 'error', on_extra_data),
+			('ARRAY_START', 'error', on_extra_data),
+			('ARRAY_END', 'error', on_extra_data),
+			('OBJECT_START', 'error', on_extra_data),
+			('OBJECT_END', 'error', on_extra_data),
+			('COMMA', 'error', on_extra_data),
+			('COLON', 'error', on_extra_data),
+			('EOF', 'complete')),
 		('array', 'empty',
+			('ATOM', 'got-value', on_atom),
 			('ARRAY_START', 'empty', on_array_start),
 			('ARRAY_END', 'got-value', on_array_end),
 			('OBJECT_START', 'empty', on_object_start),
-			('ATOM', 'got-value', on_atom)),
+			('OBJECT_END', 'error', on_unexpected),
+			('COMMA', 'error', on_unexpected),
+			('COLON', 'error', on_unexpected),
+			('EOF', 'error', on_unterminated_array)),
 		('array', 'need-value',
+			('ATOM', 'got-value', on_atom),
 			('ARRAY_START', 'empty', on_array_start),
+			('ARRAY_END', 'error', on_unexpected),
 			('OBJECT_START', 'empty', on_object_start),
-			('ATOM', 'got-value', on_atom)),
+			('OBJECT_END', 'error', on_unexpected),
+			('COMMA', 'error', on_unexpected),
+			('COLON', 'error', on_unexpected),
+			('EOF', 'error', on_unterminated_array)),
 		('array', 'got-value',
+			('ATOM', 'error', on_expecting_comma),
+			('ARRAY_START', 'error', on_unexpected),
 			('ARRAY_END', 'got-value', on_array_end),
+			('OBJECT_START', 'error', on_unexpected),
+			('OBJECT_END', 'error', on_unexpected),
 			('COMMA', 'need-value'),
-			('ATOM', 'error', on_expecting_comma)),
-		
+			('COLON', 'error', on_unexpected),
+			('EOF', 'error', on_unterminated_array)),
 		('object', 'empty',
-			('ARRAY_START', 'empty', on_array_start),
-			('OBJECT_START', 'empty', on_object_start),
-			('OBJECT_END', 'got-value', on_object_end),
 			('ATOM', 'with-key', on_object_key),
-			('COMMA', 'error', on_missing_object_key)),
+			('ARRAY_START', 'error', on_unexpected),
+			('ARRAY_END', 'error', on_unexpected),
+			('OBJECT_START', 'error', on_unexpected),
+			('OBJECT_END', 'got-value', on_object_end),
+			('COMMA', 'error', on_missing_object_key),
+			('COLON', 'error', on_unexpected),
+			('EOF', 'error', on_unterminated_object)),
 		('object', 'with-key',
+			('ATOM', 'error', on_unexpected),
+			('ARRAY_START', 'error', on_unexpected),
+			('ARRAY_END', 'error', on_unexpected),
+			('OBJECT_START', 'error', on_unexpected),
+			('OBJECT_END', 'error', on_expected_colon),
+			('COMMA', 'error', on_unexpected),
 			('COLON', 'need-value'),
-			('OBJECT_END', 'error', on_expected_colon)),
+			('EOF', 'error', on_unterminated_object)),
 		('object', 'need-value',
+			('ATOM', 'got-value', on_atom),
 			('ARRAY_START', 'empty', on_array_start),
+			('ARRAY_END', 'error', on_unexpected),
 			('OBJECT_START', 'empty', on_object_start),
-			('ATOM', 'got-value', on_atom)),
+			('OBJECT_END', 'error', on_unexpected),
+			('COMMA', 'error', on_unexpected),
+			('COLON', 'error', on_unexpected),
+			('EOF', 'error', on_unterminated_object)),
 		('object', 'got-value',
+			('ATOM', 'error', on_expecting_comma),
+			('ARRAY_START', 'error', on_unexpected),
+			('ARRAY_END', 'error', on_unexpected),
+			('OBJECT_START', 'error', on_unexpected),
 			('OBJECT_END', 'got-value', on_object_end),
 			('COMMA', 'need-key'),
-			('EOF', 'error', on_unterminated_object),
-			('ATOM', 'error', on_expecting_comma)),
+			('COLON', 'error', on_unexpected),
+			('EOF', 'error', on_unterminated_object)),
 		('object', 'need-key',
 			('ATOM', 'with-key', on_object_key),
-			('OBJECT_END', 'error', on_missing_object_key)),
+			('ARRAY_START', 'error', on_unexpected),
+			('ARRAY_END', 'error', on_unexpected),
+			('OBJECT_START', 'error', on_unexpected),
+			('OBJECT_END', 'error', on_missing_object_key),
+			('COMMA', 'error', on_unexpected),
+			('COLON', 'error', on_unexpected),
+			('EOF', 'error', on_unterminated_object)),
 	)
 	
 	for token in tokenize (string):

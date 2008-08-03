@@ -332,6 +332,29 @@ class ReadArrayTests (TestCase):
 	def test_error_unterminated_array_expecting_value (self):
 		self.re ('[1,', 1, 1, 0, "Unterminated array.")
 		
+	def test_unexpected_array_start (self):
+		self.re ('[1[',  1, 3, 2, "Unexpected U+005B.")
+		
+	def test_unexpected_array_end (self):
+		self.re ('[1,]', 1, 4, 3, "Unexpected U+005D.")
+		
+	def test_unexpected_object_start (self):
+		self.re ('[1{',  1, 3, 2, "Unexpected U+007B.")
+		
+	def test_unexpected_object_end (self):
+		self.re ('[}',   1, 2, 1, "Unexpected U+007D.")
+		self.re ('[1}',  1, 3, 2, "Unexpected U+007D.")
+		self.re ('[1,}', 1, 4, 3, "Unexpected U+007D.")
+		
+	def test_unexpected_comma (self):
+		self.re ('[,',   1, 2, 1, "Unexpected U+002C.")
+		self.re ('[1,,', 1, 4, 3, "Unexpected U+002C.")
+		
+	def test_unexpected_colon (self):
+		self.re ('[:',   1, 2, 1, "Unexpected U+003A.")
+		self.re ('[1:',  1, 3, 2, "Unexpected U+003A.")
+		self.re ('[1,:', 1, 4, 3, "Unexpected U+003A.")
+		
 class ReadObjectTests (TestCase):
 	def test_empty_object (self):
 		self.r ('{}', {})
@@ -350,9 +373,6 @@ class ReadObjectTests (TestCase):
 		self.r ('{"a": 1, "b": {"c": "2"}}',
 		        {"a": 1L, "b": {"c": "2"}})
 		
-	def test_failure_unterminated (self):
-		self.re ('[[], {"a": 1', 1, 6, 5, "Unterminated object.")
-		
 	def test_failure_no_colon (self):
 		self.re ('{"a"}', 1, 5, 4,
 		        "Expected colon after object property name.")
@@ -368,12 +388,56 @@ class ReadObjectTests (TestCase):
 	def test_failure_trailing_newline (self):
 		self.re ('{"a": "b",\n}\n', 2, 1, 11, "Expecting property name.")
 		
+	def test_unterminated (self):
+		self.re ('{',       1, 1, 0, "Unterminated object.")
+		self.re ('{"a"',    1, 1, 0, "Unterminated object.")
+		self.re ('{"a":',   1, 1, 0, "Unterminated object.")
+		self.re ('{"a":1',  1, 1, 0, "Unterminated object.")
+		self.re ('{"a":1,', 1, 1, 0, "Unterminated object.")
+		
+	def test_unexpected_atom (self):
+		self.re ('{"a"1', 1, 5, 4, "Unexpected U+0031.")
+		
+	def test_unexpected_array_start (self):
+		self.re ('{[',       1, 2, 1, "Unexpected U+005B.")
+		self.re ('{"a"[',    1, 5, 4, "Unexpected U+005B.")
+		self.re ('{"a":1[',  1, 7, 6, "Unexpected U+005B.")
+		self.re ('{"a":1,[', 1, 8, 7, "Unexpected U+005B.")
+		
+	def test_unexpected_array_end (self):
+		self.re ('{]',       1, 2, 1, "Unexpected U+005D.")
+		self.re ('{"a"]',    1, 5, 4, "Unexpected U+005D.")
+		self.re ('{"a":]',   1, 6, 5, "Unexpected U+005D.")
+		self.re ('{"a":1]',  1, 7, 6, "Unexpected U+005D.")
+		self.re ('{"a":1,]', 1, 8, 7, "Unexpected U+005D.")
+		
+	def test_unexpected_object_start (self):
+		self.re ('{{',       1, 2, 1, "Unexpected U+007B.")
+		self.re ('{"a"{',    1, 5, 4, "Unexpected U+007B.")
+		self.re ('{"a":1{',  1, 7, 6, "Unexpected U+007B.")
+		self.re ('{"a":1,{', 1, 8, 7, "Unexpected U+007B.")
+		
+	def test_unexpected_object_end (self):
+		self.re ('{"a":}', 1, 6, 5, "Unexpected U+007D.")
+		
+	def test_unexpected_comma (self):
+		self.re ('{"a",}',    1, 5, 4, "Unexpected U+002C.")
+		self.re ('{"a":,}',   1, 6, 5, "Unexpected U+002C.")
+		self.re ('{"a":1,,}', 1, 8, 7, "Unexpected U+002C.")
+		
+	def test_unexpected_colon (self):
+		self.re ('{:',        1, 2, 1, "Unexpected U+003A.")
+		self.re ('{"a"::}',   1, 6, 5, "Unexpected U+003A.")
+		self.re ('{"a":1:}',  1, 7, 6, "Unexpected U+003A.")
+		self.re ('{"a":1,:}', 1, 8, 7, "Unexpected U+003A.")
+		
 class UnicodeEncodingDetectionTests (TestCase):
 	def de (self, encoding, bom = ''):
 		def read_encoded (string, expected):
 			self.r (bom + string.encode (encoding), expected)
 			
 		# Test various string lengths
+		read_encoded (u'[]', [])
 		read_encoded (u'[1]', [1L])
 		read_encoded (u'[12]', [12L])
 		read_encoded (u'[123]', [123L])
