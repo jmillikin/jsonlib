@@ -272,7 +272,6 @@ class Token (object):
 	def __repr__ (self):
 		return '%s<%r>' % (self.type.name, self.value)
 		
-
 def format_error (*args):
 	if len (args) == 2:
 		token, description = args
@@ -313,7 +312,7 @@ def tokenize (string):
 		
 	yield Token ('EOF', string, position, '')
 	
-def read_unicode_escape (atom, index, stream):
+def read_unicode_escape (atom, index):
 	"""Read a JSON-style Unicode escape.
 	
 	Unicode escapes may take one of two forms:
@@ -326,80 +325,88 @@ def read_unicode_escape (atom, index, stream):
 	  returned as a surrogate pair.
 	
 	"""
-	get_n = lambda n: u''.join ([stream.next () for ii in range (n)])
-	
-	try:
-		unicode_value = int (get_n (4), 16)
-	except StopIteration:
-		error = format_error (atom.full_string, index - 1,
+	s = atom.value
+	first_hex_str = s[index+1:index+5]
+	if len (first_hex_str) < 4:
+		error = format_error (atom.full_string, atom.offset + index - 1,
 		                      "Unterminated unicode escape.")
+		raise ReadError (error)
+	first_hex = int (first_hex_str, 16)
+	
+	# Some code points are reserved for indicating surrogate pairs
+	if 0xDC00 <= first_hex <= 0xDFFF:
+		error = format_error (
+			atom.full_string, atom.offset + index - 1,
+			"U+%04X is a reserved code point." % first_hex
+		)
 		raise ReadError (error)
 		
 	# Check if it's a UTF-16 surrogate pair
-	if 0xD800 <= unicode_value <= 0xDBFF:
-		first_half = unicode_value
-		try:
-			next_escape = get_n (2)
-		except StopIteration:
-			error = format_error (atom.full_string, index + 5,
-			                      "Missing surrogate pair half.")
-			raise ReadError (error)
-		if next_escape != '\\u':
-			error = format_error (atom.full_string, index + 5,
-			                      "Missing surrogate pair half.")
-			raise ReadError (error)
-		try:
-			second_half = int (get_n (4), 16)
-		except StopIteration:
-			error = format_error (atom.full_string, index + 5,
-			                      "Missing surrogate pair half.")
-			raise ReadError (error)
-			
-		if sys.maxunicode <= 65535:
-			# No wide character support
-			return unichr (first_half) + unichr (second_half)
-		else:
-			# Convert to 10-bit halves of the 20-bit character
-			first_half -= 0xD800
-			second_half -= 0xDC00
-			
-			# Merge into 20-bit character
-			unicode_value = (first_half << 10) + second_half + 0x10000
-			return unichr (unicode_value)
-	elif 0xDC00 <= unicode_value <= 0xDFFF:
-		error = format_error (atom.full_string, index - 1,
-		                      "U+%04X is a reserved code point." % unicode_value)
+	if not (0xD800 <= first_hex <= 0xDBFF):
+		return unichr (first_hex), index + 4
+		
+	second_hex_str = s[index+5:index+11]
+	if not (len (second_hex_str) >= 6 and second_hex_str.startswith ('\\u')):
+		error = format_error (atom.full_string, atom.offset + index + 5,
+		                      "Missing surrogate pair half.")
 		raise ReadError (error)
+		
+	second_hex = int (second_hex_str[2:], 16)
+	if sys.maxunicode <= 65535:
+		retval = unichr (first_hex) + unichr (second_hex)
 	else:
-		return unichr (unicode_value)
+		# Convert to 10-bit halves of the 20-bit character
+		first_hex -= 0xD800
+		second_hex -= 0xDC00
+		
+		# Merge into 20-bit character
+		retval = unichr ((first_half << 10) + second_half + 0x10000)
+	return retval, index + 10
 	
 def read_unichars (atom):
 	"""Read unicode characters from an escaped string."""
-	escaped = False
-	stream = iter (atom.value[1:-1])
+	string = atom.value
+	assert string[0] == '"'
+	assert string[-1] == '"'
+	
 	illegal = set (map (unichr, range (0x20)))
-	for index, char in enumerate (stream):
-		full_idx = atom.offset + index + 1
-		if char in illegal:
-			error = format_error (atom.full_string, full_idx,
-			                      "Unexpected U+%04X." % ord (char))
-			raise ReadError (error)
-		if escaped:
+	
+	index = 1
+	escaped = False
+	while True:
+		while not escaped:
+			char = string[index]
+			if char == '\\':
+				escaped = True
+			elif char == '"':
+				return
+			elif char in illegal:
+				error = format_error (
+					atom.full_string, atom.offset + index,
+					"Unexpected U+%04X." % ord (char),
+				)
+				raise ReadError (error)
+			else:
+				yield char
+			index += 1
+			
+		while escaped:
+			char = string[index]
 			if char in READ_ESCAPES:
 				yield READ_ESCAPES[char]
-				escaped = False
 			elif char == 'u':
-				yield read_unicode_escape (atom, full_idx, stream)
-				escaped = False
+				unescaped, index = read_unicode_escape (atom, index)
+				yield unescaped
 			else:
-				error = format_error (atom.full_string, full_idx - 1,
-				                      "Unknown escape code.")
+				error = format_error (
+					atom.full_string,
+					# -1 to report the start of the escape code
+					atom.offset + index - 1,
+					"Unknown escape code.",
+				)
 				raise ReadError (error)
-				
-		elif char == '\\':
-			escaped = True
-		else:
-			yield char
+			index += 1
+			escaped = False
 			
 def parse_long (atom, string, base = 10):
 	"""Convert a string to a long, forbidding leading zeros."""
