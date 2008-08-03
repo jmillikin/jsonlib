@@ -2463,7 +2463,9 @@ initjsonlib (void)
 	PyModule_AddObject(module, "UnknownSerializerError",
 	                   UnknownSerializerError);
 	
-	/* If you change the version here, also change it in setup.py. */
+	/* If you change the version here, also change it in setup.py and
+	 * jsonlib.py.
+	**/
 	version = Py_BuildValue ("(iii)", 1, 3, 5);
 	PyModule_AddObject (module, "__version__", version);
 }
