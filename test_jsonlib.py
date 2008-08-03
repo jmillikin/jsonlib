@@ -82,18 +82,58 @@ class ReadMiscTests (TestCase):
 	def test_unexpected_character_astral (self):
 		self.re (u'[\U0001d11e]', 1, 2, 1, "Unexpected U+0001D11E.")
 		
-	def test_extra_data (self):
-		self.re ('[][]', 1, 3, 2, "Extra data after JSON expression.")
-		
-	def test_no_extra_data_on_whitespace (self):
-		self.r ('[] ', [])
-		self.r ('{} ', {})
-		
 	def test_no_unwrapped_values (self):
 		self.re (u'1', 1, 1, 0, "Expecting an array or object.")
 		
 	def test_parse_atom_before_unwrapped_check (self):
 		self.re (u'n', 1, 1, 0, "Unexpected U+006E.")
+		
+class ReadExtraDataTests (TestCase):
+	def test_array_start (self):
+		self.re ('[][', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_array_end (self):
+		self.re ('[]]', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_object_start (self):
+		self.re ('[]{', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_object_end (self):
+		self.re ('[]}', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_atom (self):
+		self.re ('[]1', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_comma (self):
+		self.re ('[],', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_colon (self):
+		self.re ('[]:', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_other (self):
+		self.re ('[]+', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_array_whitespace (self):
+		self.r ('[] ', [])
+		
+	def test_object_whitespace (self):
+		self.r ('{} ', {})
+		
+class ReadUnexpectedTests (TestCase):
+	def test_array_end (self):
+		self.re (']', 1, 1, 0, "Unexpected U+005D.")
+		
+	def test_object_end (self):
+		self.re ('}', 1, 1, 0, "Unexpected U+007D.")
+		
+	def test_comma (self):
+		self.re (',', 1, 1, 0, "Unexpected U+002C.")
+		
+	def test_colon (self):
+		self.re (':', 1, 1, 0, "Unexpected U+003A.")
+		
+	def test_other (self):
+		self.re ('+', 1, 1, 0, "Unexpected U+002B.")
 		
 class ReadKeywordTests (TestCase):
 	def test_null (self):
@@ -282,6 +322,15 @@ class ReadArrayTests (TestCase):
 		
 	def test_failure_missing_comma (self):
 		self.re ('[1 2]', 1, 4, 3, "Expecting comma.")
+		
+	def test_error_unterminated_array (self):
+		self.re ('[1, 2, 3, [', 1, 11, 10, "Unterminated array.")
+		
+	def test_error_unterminated_array_with_value (self):
+		self.re ('[1', 1, 1, 0, "Unterminated array.")
+		
+	def test_error_unterminated_array_expecting_value (self):
+		self.re ('[1,', 1, 1, 0, "Unterminated array.")
 		
 class ReadObjectTests (TestCase):
 	def test_empty_object (self):
@@ -755,6 +804,8 @@ class WriteEncodingTests (TestCase):
 		
 TEST_CASES = [
 	ReadMiscTests,
+	ReadExtraDataTests,
+	ReadUnexpectedTests,
 	ReadKeywordTests,
 	ReadNumberTests,
 	ReadStringTests,
