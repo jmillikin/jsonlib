@@ -261,6 +261,9 @@ class ReadStringTests (TestCase):
 		self.re (u'["\u0002"]', 1, 3, 2, "Unexpected U+0002.")
 		self.re (u'["\u001F"]', 1, 3, 2, "Unexpected U+001F.")
 		
+	def test_error_reporting_after_unicode_escape (self):
+		self.re (u'["\\u0020\\v"]', 1, 9, 8, "Unknown escape code.")
+		
 class ReadArrayTests (TestCase):
 	def test_empty_array (self):
 		self.r ('[]', [])
