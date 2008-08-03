@@ -245,7 +245,7 @@ class ReadStringTests (TestCase):
 		        "U+DD1E is a reserved code point.")
 		
 	def test_invalid_escape (self):
-		self.re (u'["\\a"]', 1, 3, 2, "Unknown escape code.")
+		self.re (u'["\\a"]', 1, 3, 2, "Unknown escape code: \\a.")
 		
 	def test_direct_unicode (self):
 		self.r (u'["\U0001d11e"]', [u'\U0001d11e'])
@@ -262,7 +262,7 @@ class ReadStringTests (TestCase):
 		self.re (u'["\u001F"]', 1, 3, 2, "Unexpected U+001F.")
 		
 	def test_error_reporting_after_unicode_escape (self):
-		self.re (u'["\\u0020\\v"]', 1, 9, 8, "Unknown escape code.")
+		self.re (u'["\\u0020\\v"]', 1, 9, 8, "Unknown escape code: \\v.")
 		
 class ReadArrayTests (TestCase):
 	def test_empty_array (self):

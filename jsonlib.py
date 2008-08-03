@@ -402,7 +402,7 @@ def read_unichars (atom):
 					atom.full_string,
 					# -1 to report the start of the escape code
 					atom.offset + index - 1,
-					"Unknown escape code.",
+					"Unknown escape code: \\%s." % char,
 				)
 				raise ReadError (error)
 			index += 1
