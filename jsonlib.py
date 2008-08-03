@@ -408,14 +408,14 @@ def read_unichars (atom):
 			index += 1
 			escaped = False
 			
-def parse_long (atom, string, base = 10):
+def parse_long (atom, string):
 	"""Convert a string to a long, forbidding leading zeros."""
 	if string[0] == '0':
 		if len (string) > 1:
 			error = format_error (atom, "Number with leading zero.")
 			raise ReadError (error)
 		return 0
-	return int (string, base)
+	return int (string, 10)
 	
 def parse_number (atom, match):
 	"""Parse a number from a regex match.
