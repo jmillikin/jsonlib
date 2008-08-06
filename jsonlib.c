@@ -60,6 +60,8 @@ typedef struct _ParserState {
 	
 	Py_UNICODE *stringparse_buffer;
 	Py_ssize_t stringparse_buffer_size;
+	
+	int got_root: 1;
 } ParserState;
 
 typedef enum
@@ -915,8 +917,10 @@ json_read (ParserState *state)
 			                  "No expression found.");
 			return NULL;
 		case '{':
+			state->got_root = TRUE;
 			return read_object (state);
 		case '[':
+			state->got_root = TRUE;
 			return read_array (state);
 		case '"':
 			return read_string (state);
@@ -1092,6 +1096,13 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	}
 	
 	Py_XDECREF (state.Decimal);
+	
+	if (result && !state.got_root)
+	{
+		set_error_simple (&state, state.start,
+		                  "Expecting an array or object.");
+		result = NULL;
+	}
 	
 	if (result)
 	{
