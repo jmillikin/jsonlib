@@ -31,17 +31,12 @@ except LookupError:
 	HAVE_UTF32 = False
 else:
 	HAVE_UTF32 = True
-
-class TestCase (unittest.TestCase):
+	
+class ParserTestCase (unittest.TestCase):
 	def r (self, string, expected):
 		value = read (string)
 		self.assertEqual (value, expected)
 		self.assertEqual (type (value), type (expected))
-		
-	def w (self, value, expected, **kwargs):
-		serialized = write (value, encoding = None, **kwargs)
-		self.assertEqual (serialized, expected)
-		self.assertEqual (type (serialized), type (expected))
 		
 	def re (self, string, line, column, position, expected_error_message):
 		full_expected = ("JSON parsing error at line %d, column %d"
@@ -54,6 +49,12 @@ class TestCase (unittest.TestCase):
 		except ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
 			
+class SerializerTestCase (unittest.TestCase):
+	def w (self, value, expected, **kwargs):
+		serialized = write (value, encoding = None, **kwargs)
+		self.assertEqual (serialized, expected)
+		self.assertEqual (type (serialized), type (expected))
+		
 	def we (self, value, expected_error_message, error_type = None, **kwargs):
 		if error_type is None:
 			error_type = WriteError
@@ -63,10 +64,29 @@ class TestCase (unittest.TestCase):
 		except error_type, error:
 			self.assertEqual (unicode (error), expected_error_message)
 			
+def _load_tests (base_class):
+	loader = unittest.TestLoader ()
+	suite = unittest.TestSuite ()
+	from_local = loader.loadTestsFromTestCase
+	for name, value in globals ().items ():
+		if (isinstance (value, type) and
+		    issubclass (value, base_class)):
+			suite.addTests (from_local (value))
+	return suite
+	
+def parser ():
+	return _load_tests (ParserTestCase)
+	
+def serializer ():
+	return _load_tests (SerializerTestCase)
+	
+def suite ():
+	return _load_tests (unittest.TestCase)
+	
 # }}}
 
 # Tests for the parser {{{
-class ReadMiscTests (TestCase):
+class ReadMiscTests (ParserTestCase):
 	def test_fail_on_empty (self):
 		self.re ('', 1, 1, 0, "No expression found.")
 		self.re (' ', 1, 1, 0, "No expression found.")
@@ -94,7 +114,7 @@ class ReadMiscTests (TestCase):
 	def test_parse_atom_before_unwrapped_check (self):
 		self.re (u'n', 1, 1, 0, "Unexpected U+006E.")
 		
-class ReadExtraDataTests (TestCase):
+class ReadExtraDataTests (ParserTestCase):
 	def test_array_start (self):
 		self.re ('[][', 1, 3, 2, "Extra data after JSON expression.")
 		
@@ -125,7 +145,7 @@ class ReadExtraDataTests (TestCase):
 	def test_object_whitespace (self):
 		self.r ('{} ', {})
 		
-class ReadUnexpectedTests (TestCase):
+class ReadUnexpectedTests (ParserTestCase):
 	def test_array_end (self):
 		self.re (']', 1, 1, 0, "Unexpected U+005D.")
 		
@@ -141,7 +161,7 @@ class ReadUnexpectedTests (TestCase):
 	def test_other (self):
 		self.re ('+', 1, 1, 0, "Unexpected U+002B.")
 		
-class ReadKeywordTests (TestCase):
+class ReadKeywordTests (ParserTestCase):
 	def test_null (self):
 		self.r ('[null]', [None])
 		
@@ -156,7 +176,7 @@ class ReadKeywordTests (TestCase):
 		self.re ('[t]', 1, 2, 1, "Unexpected U+0074.")
 		self.re ('[f]', 1, 2, 1, "Unexpected U+0066.")
 		
-class ReadNumberTests (TestCase):
+class ReadNumberTests (ParserTestCase):
 	def test_zero (self):
 		self.r ('[0]', [0L])
 		
@@ -227,7 +247,7 @@ class ReadNumberTests (TestCase):
 	def test_non_ascii_number (self):
 		self.re (u'[\u0661]', 1, 2, 1, "Unexpected U+0661.")
 		
-class ReadStringTests (TestCase):
+class ReadStringTests (ParserTestCase):
 	def test_empty_string (self):
 		self.r ('[""]', [u''])
 		
@@ -310,7 +330,7 @@ class ReadStringTests (TestCase):
 	def test_error_reporting_after_unicode_escape (self):
 		self.re (u'["\\u0020\\v"]', 1, 9, 8, "Unknown escape code: \\v.")
 		
-class ReadArrayTests (TestCase):
+class ReadArrayTests (ParserTestCase):
 	def test_empty_array (self):
 		self.r ('[]', [])
 		
@@ -361,7 +381,7 @@ class ReadArrayTests (TestCase):
 		self.re ('[1:',  1, 3, 2, "Unexpected U+003A.")
 		self.re ('[1,:', 1, 4, 3, "Unexpected U+003A.")
 		
-class ReadObjectTests (TestCase):
+class ReadObjectTests (ParserTestCase):
 	def test_empty_object (self):
 		self.r ('{}', {})
 		
@@ -437,7 +457,7 @@ class ReadObjectTests (TestCase):
 		self.re ('{"a":1:}',  1, 7, 6, "Unexpected U+003A.")
 		self.re ('{"a":1,:}', 1, 8, 7, "Unexpected U+003A.")
 		
-class UnicodeEncodingDetectionTests (TestCase):
+class UnicodeEncodingDetectionTests (ParserTestCase):
 	def de (self, encoding, bom = ''):
 		def read_encoded (string, expected):
 			self.r (bom + string.encode (encoding), expected)
@@ -550,7 +570,7 @@ class UnicodeEncodingDetectionTests (TestCase):
 # }}}
 
 # Tests for the serializer {{{
-class WriteMiscTests (TestCase):
+class WriteMiscTests (SerializerTestCase):
 	def test_fail_on_unknown (self):
 		obj = object ()
 		self.we ([obj], "No known serializer for object: %r" % obj)
@@ -589,7 +609,7 @@ class WriteMiscTests (TestCase):
 			pass
 		self.w ([MyInt (10)], u'[10]')
 		
-class WriteKeywordTests (TestCase):
+class WriteKeywordTests (SerializerTestCase):
 	def test_null (self):
 		self.w ([None], u'[null]')
 		
@@ -599,7 +619,7 @@ class WriteKeywordTests (TestCase):
 	def test_false (self):
 		self.w ([False], u'[false]')
 		
-class WriteNumberTests (TestCase):
+class WriteNumberTests (SerializerTestCase):
 	def test_int (self):
 		self.w ([1], u'[1]')
 		
@@ -660,7 +680,7 @@ class WriteNumberTests (TestCase):
 	def test_fail_on_decimal_nan (self):
 		self.we ([Decimal ('NaN')], "Cannot serialize NaN.")
 		
-class WriteArrayTests (TestCase):
+class WriteArrayTests (SerializerTestCase):
 	def test_empty_array (self):
 		self.w ([], u'[]')
 		
@@ -709,7 +729,7 @@ class WriteArrayTests (TestCase):
 		a.append (a)
 		self.we (a, "Cannot serialize self-referential values.")
 		
-class WriteObjectTests (TestCase):
+class WriteObjectTests (SerializerTestCase):
 	def test_empty_object (self):
 		self.w ({}, u'{}')
 		
@@ -767,7 +787,7 @@ class WriteObjectTests (TestCase):
 		self.w ({'a': 1, 'b': 2, 'c': 3},
 		        u'{"a":1,"c":3,"b":2}')
 		
-class WriteStringTests (TestCase):
+class WriteStringTests (SerializerTestCase):
 	def test_empty_string (self):
 		self.w ([''], u'[""]', ascii_only = True)
 		self.w ([''], u'[""]', ascii_only = False)
@@ -854,7 +874,7 @@ class WriteStringTests (TestCase):
 		         u" ordinal not in range(128)",
 		         error_type = UnicodeDecodeError)
 		
-class WriteEncodingTests (TestCase):
+class WriteEncodingTests (SerializerTestCase):
 	# Don't use self.w in these, because it sets the encoding to
 	# None.
 	def test_encode_utf8_default (self):
@@ -877,16 +897,6 @@ class WriteEncodingTests (TestCase):
 		
 # }}}
 
-def suite ():
-	loader = unittest.TestLoader ()
-	suite = unittest.TestSuite ()
-	from_local = loader.loadTestsFromTestCase
-	for name, value in globals ().items ():
-		if (isinstance (value, type) and
-		    issubclass (value, unittest.TestCase)):
-			suite.addTests (from_local (value))
-	return suite
-	
 if __name__ == '__main__':
 	unittest.main (defaultTest = 'suite')
 	
