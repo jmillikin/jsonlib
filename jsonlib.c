@@ -581,8 +581,16 @@ read_string (ParserState *state)
 				
 				default:
 				{
-					set_error_simple (state, start + ii - 1,
-					                  "Unknown escape code.");
+					PyObject *err = NULL, *err_args = NULL;
+					err = PyString_FromString ("Unknown escape code: \\%s.");
+					err_args = Py_BuildValue ("(u#)", &c, 1);
+					if (err && err_args)
+					{
+						set_error (state, start + ii - 1,
+						           err, err_args);
+					}
+					Py_XDECREF (err);
+					Py_XDECREF (err_args);
 					return NULL;
 				}
 			}
