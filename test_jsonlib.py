@@ -11,6 +11,7 @@ import unittest
 import UserList
 import UserDict
 import UserString
+import functools
 
 from jsonlib import read, write, ReadError, WriteError, UnknownSerializerError
 # }}}
@@ -32,12 +33,30 @@ except LookupError:
 else:
 	HAVE_UTF32 = True
 	
-class ParserTestCase (unittest.TestCase):
+class ContinuableTestCase (unittest.TestCase):
+	def run (self, result = None):
+		if result is None:
+			result = self.defaultTestResult ()
+		self._result = result
+		return super (ContinuableTestCase, self).run (result)
+		
+def allow_test_continue (func):
+	@functools.wraps (func)
+	def new_func (self, *args, **kwargs):
+		try:
+			return func (self, *args, **kwargs)
+		except self.failureException:
+			self._result.addFailure (self, self._exc_info ())
+	return new_func
+	
+class ParserTestCase (ContinuableTestCase):
+	@allow_test_continue
 	def r (self, string, expected):
 		value = read (string)
 		self.assertEqual (value, expected)
 		self.assertEqual (type (value), type (expected))
 		
+	@allow_test_continue
 	def re (self, string, line, column, position, expected_error_message):
 		full_expected = ("JSON parsing error at line %d, column %d"
 		                 " (position %d): %s" % (line, column,
@@ -49,12 +68,14 @@ class ParserTestCase (unittest.TestCase):
 		except ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
 			
-class SerializerTestCase (unittest.TestCase):
+class SerializerTestCase (ContinuableTestCase):
+	@allow_test_continue
 	def w (self, value, expected, **kwargs):
 		serialized = write (value, encoding = None, **kwargs)
 		self.assertEqual (serialized, expected)
 		self.assertEqual (type (serialized), type (expected))
 		
+	@allow_test_continue
 	def we (self, value, expected_error_message, error_type = None, **kwargs):
 		if error_type is None:
 			error_type = WriteError
