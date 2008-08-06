@@ -858,6 +858,14 @@ read_object_impl (PyObject *object, ParserState *state)
 				return FALSE;
 			
 			skip_spaces (state);
+			if (*state->index == 0)
+			{
+				set_error_simple (state, start,
+				                  "Unterminated object.");
+				Py_DECREF (key);
+				return FALSE;
+			}
+			
 			if (*state->index != ':')
 			{
 				set_error_simple (state, state->index,
@@ -868,6 +876,13 @@ read_object_impl (PyObject *object, ParserState *state)
 			}
 			
 			state->index++;
+			if (*state->index == 0)
+			{
+				set_error_simple (state, start,
+				                  "Unterminated object.");
+				Py_DECREF (key);
+				return FALSE;
+			}
 			if (!(value = json_read (state)))
 			{
 				Py_DECREF (key);
