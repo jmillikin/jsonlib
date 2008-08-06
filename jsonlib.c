@@ -731,7 +731,7 @@ read_array_impl (PyObject *list, ParserState *state)
 		c = *state->index;
 		if (c == 0)
 		{
-			set_error_simple (state, state->index,
+			set_error_simple (state, start,
 			                  "Unterminated array.");
 			return FALSE;
 		}
