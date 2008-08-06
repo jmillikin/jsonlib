@@ -1,6 +1,7 @@
 # Copyright (C) 2008 John Millikin. See LICENSE.txt for details.
 # Author: John Millikin <jmillikin@gmail.com>
 
+# Imports {{{
 import array
 import codecs
 import collections
@@ -12,7 +13,9 @@ import UserDict
 import UserString
 
 from jsonlib import read, write, ReadError, WriteError, UnknownSerializerError
+# }}}
 
+# Support & Utility definitions {{{
 try:
 	INFINITY = float ('inf')
 except ValueError:
@@ -60,6 +63,9 @@ class TestCase (unittest.TestCase):
 		except error_type, error:
 			self.assertEqual (unicode (error), expected_error_message)
 			
+# }}}
+
+# Tests for the parser {{{
 class ReadMiscTests (TestCase):
 	def test_fail_on_empty (self):
 		self.re ('', 1, 1, 0, "No expression found.")
@@ -541,6 +547,9 @@ class UnicodeEncodingDetectionTests (TestCase):
 	def test_utf8_sig (self):
 		self.r ('\xef\xbb\xbf["testing"]', [u'testing'])
 		
+# }}}
+
+# Tests for the serializer {{{
 class WriteMiscTests (TestCase):
 	def test_fail_on_unknown (self):
 		obj = object ()
@@ -866,30 +875,16 @@ class WriteEncodingTests (TestCase):
 		self.assertEqual (type (value), unicode)
 		self.assertEqual (value, u'["\U0001D11E \u24CA"]')
 		
-TEST_CASES = [
-	ReadMiscTests,
-	ReadExtraDataTests,
-	ReadUnexpectedTests,
-	ReadKeywordTests,
-	ReadNumberTests,
-	ReadStringTests,
-	ReadArrayTests,
-	ReadObjectTests,
-	UnicodeEncodingDetectionTests,
-	WriteMiscTests,
-	WriteKeywordTests,
-	WriteNumberTests,
-	WriteArrayTests,
-	WriteObjectTests,
-	WriteStringTests,
-	WriteEncodingTests,
-]
+# }}}
+
 def suite ():
 	loader = unittest.TestLoader ()
 	suite = unittest.TestSuite ()
 	from_local = loader.loadTestsFromTestCase
-	for test_case in TEST_CASES:
-		suite.addTests (from_local (test_case))
+	for name, value in globals ().items ():
+		if (isinstance (value, type) and
+		    issubclass (value, unittest.TestCase)):
+			suite.addTests (from_local (value))
 	return suite
 	
 if __name__ == '__main__':
