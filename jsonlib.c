@@ -75,6 +75,8 @@ typedef enum
 {
 	OBJECT_EMPTY,
 	OBJECT_NEED_KEY,
+	OBJECT_NEED_COLON,
+	OBJECT_NEED_VALUE,
 	OBJECT_GOT_VALUE
 } ParseObjectState;
 
@@ -223,6 +225,43 @@ skip_spaces (ParserState *state)
 	        c == '\x20'
 	))
 		state->index++;
+}
+
+static int
+parser_find_next_value (ParserState *state)
+{
+	/* Return codes:
+	 * 
+	 * 0 = found atom or value
+	 * 1 = found non-value
+	 * 2 = end of stream
+	**/
+	skip_spaces (state);
+	switch (*state->index)
+	{
+		case 0:
+			return 2;
+		case '"':
+		case 't':
+		case 'f':
+		case 'n':
+		case '-':
+		case '0':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+		case '[':
+		case '{':
+			return 0;
+		default:
+			return 1;
+	}
 }
 
 static Py_UCS4
@@ -736,62 +775,70 @@ read_array_impl (PyObject *list, ParserState *state)
 {
 	Py_UNICODE *start, c;
 	ParseArrayState array_state = ARRAY_EMPTY;
+	int next_atom;
 	
 	start = state->index;
 	state->index++;
 	while (TRUE)
 	{
 		skip_spaces (state);
-		c = *state->index;
-		if (c == 0)
+		if (!(c = *state->index))
 		{
 			set_error_simple (state, start,
 			                  "Unterminated array.");
 			return FALSE;
 		}
 		
-		else if (c == ']')
+		switch (array_state)
 		{
-			if (array_state == ARRAY_NEED_VALUE)
-			{
+			case ARRAY_EMPTY:
+				if (c == ']')
+				{
+					state->index++;
+					return TRUE;
+				}
+			case ARRAY_NEED_VALUE:
+				next_atom = parser_find_next_value (state);
+				if (next_atom == 0)
+				{
+					PyObject *value;
+					int result;
+					
+					if (!(value = json_read (state)))
+						return FALSE;
+					
+					result  = PyList_Append (list, value);
+					Py_DECREF (value);
+					if (result == -1)
+						return FALSE;
+					
+					array_state = ARRAY_GOT_VALUE;
+					break;
+				}
+				
+				else if (next_atom == 2)
+				{
+					set_error_simple (state, start,
+					                  "Unterminated array.");
+					return FALSE;
+				}
 				set_error_unexpected (state, state->index, "array value");
 				return FALSE;
-			}
-			state->index++;
-			return TRUE;
-		}
-		
-		else if (c == ',')
-		{
-			if (array_state != ARRAY_GOT_VALUE)
-			{
-				set_error_unexpected (state, state->index, "array value");
-				return FALSE;
-			}
-			array_state = ARRAY_NEED_VALUE;
-			state->index++;
-		}
-		
-		else
-		{
-			PyObject *value;
-			int result;
-			
-			if (array_state == ARRAY_GOT_VALUE)
-			{
+				
+			case ARRAY_GOT_VALUE:
+				if (c == ',')
+				{
+					array_state = ARRAY_NEED_VALUE;
+					state->index++;
+					break;
+				}
+				else if (c == ']')
+				{
+					state->index++;
+					return TRUE;
+				}
 				set_error_unexpected (state, state->index, "comma");
 				return FALSE;
-			}
-			
-			if (!(value = json_read (state)))
-				return FALSE;
-			
-			result  = PyList_Append (list, value);
-			Py_DECREF (value);
-			if (result == -1)
-				return FALSE;
-			
-			array_state = ARRAY_GOT_VALUE;
 		}
 	}
 }
@@ -815,101 +862,102 @@ read_object_impl (PyObject *object, ParserState *state)
 {
 	Py_UNICODE *start, c;
 	ParseObjectState object_state = OBJECT_EMPTY;
+	PyObject *key = NULL;
 	
 	start = state->index;
 	state->index++;
 	while (TRUE)
 	{
 		skip_spaces (state);
-		c = *state->index;
-		if (c == 0)
+		if (!(c = *state->index))
 		{
 			set_error_simple (state, start,
 			                  "Unterminated object.");
+			Py_XDECREF (key);
 			return FALSE;
 		}
 		
-		else if (c == '}')
+		switch (object_state)
 		{
-			if (object_state == OBJECT_NEED_KEY)
+			case OBJECT_EMPTY:
+				if (c == '}')
+				{
+					state->index++;
+					Py_XDECREF (key);
+					return TRUE;
+				}
+			case OBJECT_NEED_KEY:
+				assert (key == NULL);
+				if (c != '"')
+				{
+					set_error_unexpected (state, state->index,
+					                      "property name");
+					return FALSE;
+				}
+				if (!(key = json_read (state)))
+					return FALSE;
+				object_state = OBJECT_NEED_COLON;
+				break;
+			case OBJECT_NEED_COLON:
+				if (c != ':')
+				{
+					set_error_unexpected (state, state->index,
+					                      "colon");
+					Py_XDECREF (key);
+					return FALSE;
+				}
+				state->index++;
+				object_state = OBJECT_NEED_VALUE;
+				break;
+			case OBJECT_NEED_VALUE:
 			{
-				set_error_simple (state, state->index,
-				                  "Expecting property name.");
+				PyObject *value;
+				int result, next_atom;
+				
+				assert (key != NULL);
+				next_atom = parser_find_next_value (state);
+				if (next_atom == 0)
+				{
+					if (!(value = json_read (state)))
+					{
+						Py_XDECREF (key);
+						return FALSE;
+					}
+					result = PyDict_SetItem (object, key, value);
+					Py_DECREF (key);
+					Py_DECREF (value);
+					key = NULL;
+					if (result == -1)
+						return FALSE;
+					object_state = OBJECT_GOT_VALUE;
+					break;
+				}
+				else if (next_atom == 2)
+				{
+					set_error_simple (state, start,
+					                  "Unterminated array.");
+					return FALSE;
+				}
+				
+				set_error_unexpected (state, state->index, "property value");
 				return FALSE;
 			}
-			state->index++;
-			return TRUE;
-		}
-		
-		else if (c == ',')
-		{
-			if (object_state != OBJECT_GOT_VALUE)
-			{
-				set_error_simple (state, state->index,
-				                  "Expecting property name.");
-				return FALSE;
-			}
-			object_state = OBJECT_NEED_KEY;
-			state->index++;
-		}
-		
-		else if (c == '"')
-		{
-			PyObject *key, *value;
-			int result;
-			
-			if (object_state == OBJECT_GOT_VALUE)
-			{
+			case OBJECT_GOT_VALUE:
+				if (c == ',')
+				{
+					object_state = OBJECT_NEED_KEY;
+					state->index++;
+					break;
+				}
+				else if (c == '}')
+				{
+					state->index++;
+					Py_XDECREF (key);
+					return TRUE;
+				}
 				set_error_unexpected (state, state->index, "comma");
+				Py_XDECREF (key);
 				return FALSE;
-			}
-			
-			if (!(key = json_read (state)))
-				return FALSE;
-			
-			skip_spaces (state);
-			if (*state->index == 0)
-			{
-				set_error_simple (state, start,
-				                  "Unterminated object.");
-				Py_DECREF (key);
-				return FALSE;
-			}
-			
-			if (*state->index != ':')
-			{
-				set_error_unexpected (state, state->index, NULL);
-				Py_DECREF (key);
-				return FALSE;
-			}
-			
-			state->index++;
-			if (*state->index == 0)
-			{
-				set_error_simple (state, start,
-				                  "Unterminated object.");
-				Py_DECREF (key);
-				return FALSE;
-			}
-			if (!(value = json_read (state)))
-			{
-				Py_DECREF (key);
-				return FALSE;
-			}
-			
-			result = PyDict_SetItem (object, key, value);
-			Py_DECREF (key);
-			Py_DECREF (value);
-			if (result == -1)
-				return FALSE;
-			
-			object_state = OBJECT_GOT_VALUE;
-		}
-		
-		else
-		{
-			set_error_unexpected (state, state->index, NULL);
-			return FALSE;
 		}
 	}
 }

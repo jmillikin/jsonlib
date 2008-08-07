@@ -64,6 +64,10 @@ class UnknownSerializerError (WriteError):
 		else:
 			WriteError.__init__ (self, err)
 			
+class UnknownAtomError (ValueError):
+	"""For internal use, not raised by any external functions."""
+	pass
+	
 # }}}
 
 # Constants {{{
@@ -464,9 +468,7 @@ def parse_atom (atom):
 		error = format_error (atom, "Invalid number.")
 		raise ReadError (error)
 		
-	char_ord = next_char_ord (atom.value)
-	error = format_error (atom, "Unexpected %s." % char_ord)
-	raise ReadError (error)
+	raise UnknownAtomError (atom.value)
 	
 def read (string):
 	"""Parse a JSON expression into a Python value.
@@ -480,7 +482,10 @@ def read (string):
 	
 	# Callbacks
 	def on_expected_root_value (token):
-		parse_atom (token)
+		try:
+			parse_atom (token)
+		except UnknownAtomError:
+			on_unexpected (token)
 		error = format_error (token, "Expecting an array or object.")
 		raise ReadError (error)
 		
@@ -508,7 +513,8 @@ def read (string):
 		if isinstance (key, unicode):
 			read_item_stack[-1][0].append (key)
 		else:
-			error = format_error (token, "Expecting property name.")
+			char_ord = next_char_ord (token.value)
+			error = format_error (token, "Unexpected %s while looking for property name." % char_ord)
 			raise ReadError (error)
 			
 	def on_object_end (_):
@@ -521,22 +527,34 @@ def read (string):
 		"""Called when an atom token is retrieved."""
 		read_item_stack[-1][0].append (parse_atom (atom))
 		
+	def on_array_value (atom):
+		try:
+			on_atom (atom)
+		except UnknownAtomError:
+			on_expecting_array_value (atom)
+			
 	def on_unterminated_object (token):
 		_, start = read_item_stack[-1]
 		error = format_error (token.full_string, start, "Unterminated object.")
 		raise ReadError (error)
 		
 	def on_expected_colon (token):
-		error = format_error (token, "Expected colon after object"
-		                             " property name.")
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s while looking for colon." % char_ord)
 		raise ReadError (error)
 		
 	def on_empty_expression (token):
 		error = format_error (token.full_string, 0, "No expression found.")
 		raise ReadError (error)
 		
-	def on_missing_object_key (token):
-		error = format_error (token, "Expecting property name.")
+	def on_expected_object_key (token):
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s while looking for property name." % char_ord)
+		raise ReadError (error)
+		
+	def on_expected_object_value (token):
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s while looking for property value." % char_ord)
 		raise ReadError (error)
 		
 	def on_expecting_array_value (token):
@@ -581,7 +599,7 @@ def read (string):
 			('COLON', 'error', on_extra_data),
 			('EOF', 'complete')),
 		('array', 'empty',
-			('ATOM', 'got-value', on_atom),
+			('ATOM', 'got-value', on_array_value),
 			('ARRAY_START', 'empty', on_array_start),
 			('ARRAY_END', 'got-value', on_array_end),
 			('OBJECT_START', 'empty', on_object_start),
@@ -609,48 +627,48 @@ def read (string):
 			('EOF', 'error', on_unterminated_array)),
 		('object', 'empty',
 			('ATOM', 'with-key', on_object_key),
-			('ARRAY_START', 'error', on_unexpected),
-			('ARRAY_END', 'error', on_unexpected),
-			('OBJECT_START', 'error', on_unexpected),
+			('ARRAY_START', 'error', on_expected_object_key),
+			('ARRAY_END', 'error', on_expected_object_key),
+			('OBJECT_START', 'error', on_expected_object_key),
 			('OBJECT_END', 'got-value', on_object_end),
-			('COMMA', 'error', on_missing_object_key),
-			('COLON', 'error', on_unexpected),
+			('COMMA', 'error', on_expected_object_key),
+			('COLON', 'error', on_expected_object_key),
 			('EOF', 'error', on_unterminated_object)),
 		('object', 'with-key',
-			('ATOM', 'error', on_unexpected),
-			('ARRAY_START', 'error', on_unexpected),
-			('ARRAY_END', 'error', on_unexpected),
-			('OBJECT_START', 'error', on_unexpected),
+			('ATOM', 'error', on_expected_colon),
+			('ARRAY_START', 'error', on_expected_colon),
+			('ARRAY_END', 'error', on_expected_colon),
+			('OBJECT_START', 'error', on_expected_colon),
 			('OBJECT_END', 'error', on_expected_colon),
-			('COMMA', 'error', on_unexpected),
+			('COMMA', 'error', on_expected_colon),
 			('COLON', 'need-value'),
 			('EOF', 'error', on_unterminated_object)),
 		('object', 'need-value',
 			('ATOM', 'got-value', on_atom),
 			('ARRAY_START', 'empty', on_array_start),
-			('ARRAY_END', 'error', on_unexpected),
+			('ARRAY_END', 'error', on_expected_object_value),
 			('OBJECT_START', 'empty', on_object_start),
-			('OBJECT_END', 'error', on_unexpected),
-			('COMMA', 'error', on_unexpected),
-			('COLON', 'error', on_unexpected),
+			('OBJECT_END', 'error', on_expected_object_value),
+			('COMMA', 'error', on_expected_object_value),
+			('COLON', 'error', on_expected_object_value),
 			('EOF', 'error', on_unterminated_object)),
 		('object', 'got-value',
 			('ATOM', 'error', on_expecting_comma),
-			('ARRAY_START', 'error', on_unexpected),
-			('ARRAY_END', 'error', on_unexpected),
-			('OBJECT_START', 'error', on_unexpected),
+			('ARRAY_START', 'error', on_expecting_comma),
+			('ARRAY_END', 'error', on_expecting_comma),
+			('OBJECT_START', 'error', on_expecting_comma),
 			('OBJECT_END', 'got-value', on_object_end),
 			('COMMA', 'need-key'),
-			('COLON', 'error', on_unexpected),
+			('COLON', 'error', on_expecting_comma),
 			('EOF', 'error', on_unterminated_object)),
 		('object', 'need-key',
 			('ATOM', 'with-key', on_object_key),
-			('ARRAY_START', 'error', on_unexpected),
-			('ARRAY_END', 'error', on_unexpected),
-			('OBJECT_START', 'error', on_unexpected),
-			('OBJECT_END', 'error', on_missing_object_key),
-			('COMMA', 'error', on_unexpected),
-			('COLON', 'error', on_unexpected),
+			('ARRAY_START', 'error', on_expected_object_key),
+			('ARRAY_END', 'error', on_expected_object_key),
+			('OBJECT_START', 'error', on_expected_object_key),
+			('OBJECT_END', 'error', on_expected_object_key),
+			('COMMA', 'error', on_expected_object_key),
+			('COLON', 'error', on_expected_object_key),
 			('EOF', 'error', on_unterminated_object)),
 	)
 	
