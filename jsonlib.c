@@ -321,19 +321,33 @@ set_error_simple (ParserState *state, Py_UNICODE *position,
 }
 
 static void
-set_error_unexpected (ParserState *state, Py_UNICODE *position)
+set_error_unexpected (ParserState *state, Py_UNICODE *position,
+                      const char *wanted)
 {
 	PyObject *err_str, *err_format_args;
 	Py_UCS4 c = next_ucs4 (state, position);
 	
-	if (c > 0xFFFF)
-		err_str = PyString_FromString ("Unexpected U+%08X.");
+	if (wanted)
+	{
+		if (c > 0xFFFF)
+			err_str = PyString_FromString ("Unexpected U+%08X while looking for %s.");
+		else
+			err_str = PyString_FromString ("Unexpected U+%04X while looking for %s.");
+	}
 	else
-		err_str = PyString_FromString ("Unexpected U+%04X.");
+	{
+		if (c > 0xFFFF)
+			err_str = PyString_FromString ("Unexpected U+%08X.");
+		else
+			err_str = PyString_FromString ("Unexpected U+%04X.");
+	}
 	
 	if (err_str)
 	{
-		err_format_args = Py_BuildValue ("(k)", c);
+		if (wanted)
+			err_format_args = Py_BuildValue ("(ks)", c, wanted);
+		else
+			err_format_args = Py_BuildValue ("(k)", c);
 		if (err_format_args)
 		{
 			set_error (state, position, err_str, err_format_args);
@@ -507,7 +521,7 @@ read_string (ParserState *state)
 		/* Check for illegal characters */
 		if (c < 0x20)
 		{
-			set_error_unexpected (state, start + ii);
+			set_error_unexpected (state, start + ii, NULL);
 			return NULL;
 		}
 		
@@ -740,8 +754,7 @@ read_array_impl (PyObject *list, ParserState *state)
 		{
 			if (array_state == ARRAY_NEED_VALUE)
 			{
-				set_error_simple (state, state->index,
-				                  "Expecting array item.");
+				set_error_unexpected (state, state->index, "array value");
 				return FALSE;
 			}
 			state->index++;
@@ -752,8 +765,7 @@ read_array_impl (PyObject *list, ParserState *state)
 		{
 			if (array_state != ARRAY_GOT_VALUE)
 			{
-				set_error_simple (state, state->index,
-				                  "Expecting array item.");
+				set_error_unexpected (state, state->index, "array value");
 				return FALSE;
 			}
 			array_state = ARRAY_NEED_VALUE;
@@ -767,8 +779,7 @@ read_array_impl (PyObject *list, ParserState *state)
 			
 			if (array_state == ARRAY_GOT_VALUE)
 			{
-				set_error_simple (state, state->index,
-				                  "Expecting comma.");
+				set_error_unexpected (state, state->index, "comma");
 				return FALSE;
 			}
 			
@@ -849,8 +860,7 @@ read_object_impl (PyObject *object, ParserState *state)
 			
 			if (object_state == OBJECT_GOT_VALUE)
 			{
-				set_error_simple (state, state->index,
-				                  "Expecting comma.");
+				set_error_unexpected (state, state->index, "comma");
 				return FALSE;
 			}
 			
@@ -868,9 +878,7 @@ read_object_impl (PyObject *object, ParserState *state)
 			
 			if (*state->index != ':')
 			{
-				set_error_simple (state, state->index,
-				                  "Expected colon after object"
-				                  " property name.");
+				set_error_unexpected (state, state->index, NULL);
 				Py_DECREF (key);
 				return FALSE;
 			}
@@ -900,8 +908,7 @@ read_object_impl (PyObject *object, ParserState *state)
 		
 		else
 		{
-			set_error_simple (state, state->index,
-			                  "Expecting property name.");
+			set_error_unexpected (state, state->index, NULL);
 			return FALSE;
 		}
 	}
@@ -969,7 +976,7 @@ json_read (ParserState *state)
 		default:
 			break;
 	}
-	set_error_unexpected (state, state->index);
+	set_error_unexpected (state, state->index, NULL);
 	return NULL;
 }
 

@@ -368,7 +368,7 @@ class ReadArrayTests (ParserTestCase):
 		self.r ('[1, "b", ["c", "d"]]', [1L, "b", ["c", "d"]])
 		
 	def test_failure_missing_comma (self):
-		self.re ('[1 2]', 1, 4, 3, "Expecting comma.")
+		self.re ('[1 2]', 1, 4, 3, "Unexpected U+0032 while looking for comma.")
 		
 	def test_error_unterminated_array (self):
 		self.re ('[1, 2, 3, [', 1, 11, 10, "Unterminated array.")
@@ -380,27 +380,27 @@ class ReadArrayTests (ParserTestCase):
 		self.re ('[1,', 1, 1, 0, "Unterminated array.")
 		
 	def test_unexpected_array_start (self):
-		self.re ('[1[',  1, 3, 2, "Unexpected U+005B.")
+		self.re ('[1[',  1, 3, 2, "Unexpected U+005B while looking for comma.")
 		
 	def test_unexpected_array_end (self):
-		self.re ('[1,]', 1, 4, 3, "Unexpected U+005D.")
+		self.re ('[1,]', 1, 4, 3, "Unexpected U+005D while looking for array value.")
 		
 	def test_unexpected_object_start (self):
-		self.re ('[1{',  1, 3, 2, "Unexpected U+007B.")
+		self.re ('[1{',  1, 3, 2, "Unexpected U+007B while looking for comma.")
 		
 	def test_unexpected_object_end (self):
-		self.re ('[}',   1, 2, 1, "Unexpected U+007D.")
-		self.re ('[1}',  1, 3, 2, "Unexpected U+007D.")
-		self.re ('[1,}', 1, 4, 3, "Unexpected U+007D.")
+		self.re ('[}',   1, 2, 1, "Unexpected U+007D while looking for array value.")
+		self.re ('[1}',  1, 3, 2, "Unexpected U+007D while looking for comma.")
+		self.re ('[1,}', 1, 4, 3, "Unexpected U+007D while looking for array value.")
 		
 	def test_unexpected_comma (self):
-		self.re ('[,',   1, 2, 1, "Unexpected U+002C.")
-		self.re ('[1,,', 1, 4, 3, "Unexpected U+002C.")
+		self.re ('[,',   1, 2, 1, "Unexpected U+002C while looking for array value.")
+		self.re ('[1,,', 1, 4, 3, "Unexpected U+002C while looking for array value.")
 		
 	def test_unexpected_colon (self):
-		self.re ('[:',   1, 2, 1, "Unexpected U+003A.")
-		self.re ('[1:',  1, 3, 2, "Unexpected U+003A.")
-		self.re ('[1,:', 1, 4, 3, "Unexpected U+003A.")
+		self.re ('[:',   1, 2, 1, "Unexpected U+003A while looking for array value.")
+		self.re ('[1:',  1, 3, 2, "Unexpected U+003A while looking for comma.")
+		self.re ('[1,:', 1, 4, 3, "Unexpected U+003A while looking for array value.")
 		
 class ReadObjectTests (ParserTestCase):
 	def test_empty_object (self):
@@ -430,7 +430,7 @@ class ReadObjectTests (ParserTestCase):
 		self.re ('{,}', 1, 2, 1, "Expecting property name.")
 		
 	def test_failure_missing_comma (self):
-		self.re ('{"a": 1 "b": 2}', 1, 9, 8, "Expecting comma.")
+		self.re ('{"a": 1 "b": 2}', 1, 9, 8, "Unexpected U+0022 while looking for comma.")
 		
 	def test_failure_trailing_newline (self):
 		self.re ('{"a": "b",\n}\n', 2, 1, 11, "Expecting property name.")

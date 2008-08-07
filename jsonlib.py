@@ -439,7 +439,9 @@ def next_char_ord (string):
 		lower -= 0xDC00
 		value = ((upper << 10) + lower) + 0x10000
 		
-	return value
+	if value > 0xffff:
+		return "U+%08X" % value
+	return "U+%04X" % value
 	
 def parse_atom (atom):
 	"""Parse a JSON atom into a Python value."""
@@ -463,10 +465,7 @@ def parse_atom (atom):
 		raise ReadError (error)
 		
 	char_ord = next_char_ord (atom.value)
-	if char_ord > 0xffff:
-		error = format_error (atom, "Unexpected U+%08X." % char_ord)
-	else:
-		error = format_error (atom, "Unexpected U+%04X." % char_ord)
+	error = format_error (atom, "Unexpected %s." % char_ord)
 	raise ReadError (error)
 	
 def read (string):
@@ -540,8 +539,14 @@ def read (string):
 		error = format_error (token, "Expecting property name.")
 		raise ReadError (error)
 		
+	def on_expecting_array_value (token):
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s while looking for array value." % char_ord)
+		raise ReadError (error)
+		
 	def on_expecting_comma (token):
-		error = format_error (token, "Expecting comma.")
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s while looking for comma." % char_ord)
 		raise ReadError (error)
 		
 	def on_extra_data (token):
@@ -550,7 +555,7 @@ def read (string):
 		
 	def on_unexpected (token):
 		char_ord = next_char_ord (token.value)
-		error = format_error (token, "Unexpected U+%04X." % char_ord)
+		error = format_error (token, "Unexpected %s." % char_ord)
 		raise ReadError (error)
 		
 	machine = StateMachine ('need-value', ['root'])
@@ -580,27 +585,27 @@ def read (string):
 			('ARRAY_START', 'empty', on_array_start),
 			('ARRAY_END', 'got-value', on_array_end),
 			('OBJECT_START', 'empty', on_object_start),
-			('OBJECT_END', 'error', on_unexpected),
-			('COMMA', 'error', on_unexpected),
-			('COLON', 'error', on_unexpected),
+			('OBJECT_END', 'error', on_expecting_array_value),
+			('COMMA', 'error', on_expecting_array_value),
+			('COLON', 'error', on_expecting_array_value),
 			('EOF', 'error', on_unterminated_array)),
 		('array', 'need-value',
 			('ATOM', 'got-value', on_atom),
 			('ARRAY_START', 'empty', on_array_start),
-			('ARRAY_END', 'error', on_unexpected),
+			('ARRAY_END', 'error', on_expecting_array_value),
 			('OBJECT_START', 'empty', on_object_start),
-			('OBJECT_END', 'error', on_unexpected),
-			('COMMA', 'error', on_unexpected),
-			('COLON', 'error', on_unexpected),
+			('OBJECT_END', 'error', on_expecting_array_value),
+			('COMMA', 'error', on_expecting_array_value),
+			('COLON', 'error', on_expecting_array_value),
 			('EOF', 'error', on_unterminated_array)),
 		('array', 'got-value',
 			('ATOM', 'error', on_expecting_comma),
-			('ARRAY_START', 'error', on_unexpected),
+			('ARRAY_START', 'error', on_expecting_comma),
 			('ARRAY_END', 'got-value', on_array_end),
-			('OBJECT_START', 'error', on_unexpected),
-			('OBJECT_END', 'error', on_unexpected),
+			('OBJECT_START', 'error', on_expecting_comma),
+			('OBJECT_END', 'error', on_expecting_comma),
 			('COMMA', 'need-value'),
-			('COLON', 'error', on_unexpected),
+			('COLON', 'error', on_expecting_comma),
 			('EOF', 'error', on_unterminated_array)),
 		('object', 'empty',
 			('ATOM', 'with-key', on_object_key),
