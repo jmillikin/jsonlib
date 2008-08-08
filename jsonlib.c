@@ -234,17 +234,11 @@ parser_find_next_value (ParserState *state)
 	 * 
 	 * 0 = found atom or value
 	 * 1 = found non-value
-	 * 2 = end of stream
 	**/
-	skip_spaces (state);
-	switch (*state->index)
+	Py_UNICODE *c = state->index;
+	switch (c[0])
 	{
-		case 0:
-			return 2;
 		case '"':
-		case 't':
-		case 'f':
-		case 'n':
 		case '-':
 		case '0':
 		case '1':
@@ -259,6 +253,15 @@ parser_find_next_value (ParserState *state)
 		case '[':
 		case '{':
 			return 0;
+		case 't':
+			if (c[1] == 'r' && c[2] == 'u' && c[3] == 'e')
+				return 0;
+		case 'f':
+			if (c[1] == 'a' && c[2] == 'l' && c[3] == 's' && c[4] == 'e')
+				return 0;
+		case 'n':
+			if (c[1] == 'u' && c[2] == 'l' && c[3] == 'l')
+				return 0;
 		default:
 			return 1;
 	}
@@ -816,12 +819,6 @@ read_array_impl (PyObject *list, ParserState *state)
 					break;
 				}
 				
-				else if (next_atom == 2)
-				{
-					set_error_simple (state, start,
-					                  "Unterminated array.");
-					return FALSE;
-				}
 				set_error_unexpected (state, state->index, "array value");
 				return FALSE;
 				
@@ -931,12 +928,6 @@ read_object_impl (PyObject *object, ParserState *state)
 						return FALSE;
 					object_state = OBJECT_GOT_VALUE;
 					break;
-				}
-				else if (next_atom == 2)
-				{
-					set_error_simple (state, start,
-					                  "Unterminated array.");
-					return FALSE;
 				}
 				
 				set_error_unexpected (state, state->index, "property value");
