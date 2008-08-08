@@ -219,19 +219,16 @@ class StateMachine (object):
 			callback = lambda *a, **kw: None
 		self._transitions[key] = (end_state, callback)
 		
-	def connect_many (self, *transitions):
+	def connect_many (self, stack, state, **transitions):
 		"""Connect many transitions at once. 
 		
 		Each transition is in the format (stack, state, (value,
 		end_state, callback, stack_action), ...).
 		
 		"""
-		for state_def in transitions:
-			stack, state = state_def[:2]
-			connections = state_def[2:]
-			for connection in connections:
-				self.connect (state, stack, *connection)
-				
+		for value, connection in transitions.items ():
+			self.connect (state, stack, value, *connection)
+			
 	def transition (self, value, *args, **kwargs):
 		"""Execute a transition between one state and another.
 		
@@ -513,9 +510,7 @@ def read (string):
 		if isinstance (key, unicode):
 			read_item_stack[-1][0].append (key)
 		else:
-			char_ord = next_char_ord (token.value)
-			error = format_error (token, "Unexpected %s while looking for property name." % char_ord)
-			raise ReadError (error)
+			on_unexpected (token, "property name")
 			
 	def on_object_end (_):
 		"""Called when an object has ended."""
@@ -538,139 +533,130 @@ def read (string):
 		error = format_error (token.full_string, start, "Unterminated object.")
 		raise ReadError (error)
 		
-	def on_expected_colon (token):
-		char_ord = next_char_ord (token.value)
-		error = format_error (token, "Unexpected %s while looking for colon." % char_ord)
-		raise ReadError (error)
-		
 	def on_empty_expression (token):
 		error = format_error (token.full_string, 0, "No expression found.")
 		raise ReadError (error)
 		
+	def on_expected_colon (token):
+		on_unexpected (token, "colon")
+		
 	def on_expected_object_key (token):
-		char_ord = next_char_ord (token.value)
-		error = format_error (token, "Unexpected %s while looking for property name." % char_ord)
-		raise ReadError (error)
+		on_unexpected (token, "property name")
 		
 	def on_expected_object_value (token):
-		char_ord = next_char_ord (token.value)
-		error = format_error (token, "Unexpected %s while looking for property value." % char_ord)
-		raise ReadError (error)
+		on_unexpected (token, "property value")
 		
 	def on_expecting_array_value (token):
-		char_ord = next_char_ord (token.value)
-		error = format_error (token, "Unexpected %s while looking for array value." % char_ord)
-		raise ReadError (error)
+		on_unexpected (token, "array value")
 		
 	def on_expecting_comma (token):
-		char_ord = next_char_ord (token.value)
-		error = format_error (token, "Unexpected %s while looking for comma." % char_ord)
-		raise ReadError (error)
+		on_unexpected (token, "comma")
 		
 	def on_extra_data (token):
 		error = format_error (token, "Extra data after JSON expression.")
 		raise ReadError (error)
 		
-	def on_unexpected (token):
+	def on_unexpected (token, looking_for = None):
 		char_ord = next_char_ord (token.value)
-		error = format_error (token, "Unexpected %s." % char_ord)
+		if looking_for is None:
+			error = format_error (token, "Unexpected %s." % char_ord)
+		else:
+			error = format_error (token, "Unexpected %s while looking for %s." % (char_ord, looking_for))
 		raise ReadError (error)
 		
 	machine = StateMachine ('need-value', ['root'])
 	
 	# Register state transitions
-	machine.connect_many (
-		('root', 'need-value',
-			('ATOM', 'error', on_expected_root_value),
-			('ARRAY_START', 'empty', on_array_start),
-			('ARRAY_END', 'error', on_unexpected),
-			('OBJECT_START', 'empty', on_object_start),
-			('OBJECT_END', 'error', on_unexpected),
-			('COMMA', 'error', on_unexpected),
-			('COLON', 'error', on_unexpected),
-			('EOF', 'error', on_empty_expression)),
-		('root', 'got-value',
-			('ATOM', 'error', on_extra_data),
-			('ARRAY_START', 'error', on_extra_data),
-			('ARRAY_END', 'error', on_extra_data),
-			('OBJECT_START', 'error', on_extra_data),
-			('OBJECT_END', 'error', on_extra_data),
-			('COMMA', 'error', on_extra_data),
-			('COLON', 'error', on_extra_data),
-			('EOF', 'complete')),
-		('array', 'empty',
-			('ATOM', 'got-value', on_array_value),
-			('ARRAY_START', 'empty', on_array_start),
-			('ARRAY_END', 'got-value', on_array_end),
-			('OBJECT_START', 'empty', on_object_start),
-			('OBJECT_END', 'error', on_expecting_array_value),
-			('COMMA', 'error', on_expecting_array_value),
-			('COLON', 'error', on_expecting_array_value),
-			('EOF', 'error', on_unterminated_array)),
-		('array', 'need-value',
-			('ATOM', 'got-value', on_atom),
-			('ARRAY_START', 'empty', on_array_start),
-			('ARRAY_END', 'error', on_expecting_array_value),
-			('OBJECT_START', 'empty', on_object_start),
-			('OBJECT_END', 'error', on_expecting_array_value),
-			('COMMA', 'error', on_expecting_array_value),
-			('COLON', 'error', on_expecting_array_value),
-			('EOF', 'error', on_unterminated_array)),
-		('array', 'got-value',
-			('ATOM', 'error', on_expecting_comma),
-			('ARRAY_START', 'error', on_expecting_comma),
-			('ARRAY_END', 'got-value', on_array_end),
-			('OBJECT_START', 'error', on_expecting_comma),
-			('OBJECT_END', 'error', on_expecting_comma),
-			('COMMA', 'need-value'),
-			('COLON', 'error', on_expecting_comma),
-			('EOF', 'error', on_unterminated_array)),
-		('object', 'empty',
-			('ATOM', 'with-key', on_object_key),
-			('ARRAY_START', 'error', on_expected_object_key),
-			('ARRAY_END', 'error', on_expected_object_key),
-			('OBJECT_START', 'error', on_expected_object_key),
-			('OBJECT_END', 'got-value', on_object_end),
-			('COMMA', 'error', on_expected_object_key),
-			('COLON', 'error', on_expected_object_key),
-			('EOF', 'error', on_unterminated_object)),
-		('object', 'with-key',
-			('ATOM', 'error', on_expected_colon),
-			('ARRAY_START', 'error', on_expected_colon),
-			('ARRAY_END', 'error', on_expected_colon),
-			('OBJECT_START', 'error', on_expected_colon),
-			('OBJECT_END', 'error', on_expected_colon),
-			('COMMA', 'error', on_expected_colon),
-			('COLON', 'need-value'),
-			('EOF', 'error', on_unterminated_object)),
-		('object', 'need-value',
-			('ATOM', 'got-value', on_atom),
-			('ARRAY_START', 'empty', on_array_start),
-			('ARRAY_END', 'error', on_expected_object_value),
-			('OBJECT_START', 'empty', on_object_start),
-			('OBJECT_END', 'error', on_expected_object_value),
-			('COMMA', 'error', on_expected_object_value),
-			('COLON', 'error', on_expected_object_value),
-			('EOF', 'error', on_unterminated_object)),
-		('object', 'got-value',
-			('ATOM', 'error', on_expecting_comma),
-			('ARRAY_START', 'error', on_expecting_comma),
-			('ARRAY_END', 'error', on_expecting_comma),
-			('OBJECT_START', 'error', on_expecting_comma),
-			('OBJECT_END', 'got-value', on_object_end),
-			('COMMA', 'need-key'),
-			('COLON', 'error', on_expecting_comma),
-			('EOF', 'error', on_unterminated_object)),
-		('object', 'need-key',
-			('ATOM', 'with-key', on_object_key),
-			('ARRAY_START', 'error', on_expected_object_key),
-			('ARRAY_END', 'error', on_expected_object_key),
-			('OBJECT_START', 'error', on_expected_object_key),
-			('OBJECT_END', 'error', on_expected_object_key),
-			('COMMA', 'error', on_expected_object_key),
-			('COLON', 'error', on_expected_object_key),
-			('EOF', 'error', on_unterminated_object)),
-	)
+	machine.connect_many ('root', 'need-value',
+		ATOM = ('error', on_expected_root_value),
+		ARRAY_START = ('empty', on_array_start),
+		ARRAY_END = ('error', on_unexpected),
+		OBJECT_START = ('empty', on_object_start),
+		OBJECT_END = ('error', on_unexpected),
+		COMMA = ('error', on_unexpected),
+		COLON = ('error', on_unexpected),
+		EOF = ('error', on_empty_expression))
+	machine.connect_many ('root', 'got-value',
+		ATOM = ('error', on_extra_data),
+		ARRAY_START = ('error', on_extra_data),
+		ARRAY_END = ('error', on_extra_data),
+		OBJECT_START = ('error', on_extra_data),
+		OBJECT_END = ('error', on_extra_data),
+		COMMA = ('error', on_extra_data),
+		COLON = ('error', on_extra_data),
+		EOF = ('complete',))
+	machine.connect_many ('array', 'empty',
+		ATOM = ('got-value', on_array_value),
+		ARRAY_START = ('empty', on_array_start),
+		ARRAY_END = ('got-value', on_array_end),
+		OBJECT_START = ('empty', on_object_start),
+		OBJECT_END = ('error', on_expecting_array_value),
+		COMMA = ('error', on_expecting_array_value),
+		COLON = ('error', on_expecting_array_value),
+		EOF = ('error', on_unterminated_array))
+	machine.connect_many ('array', 'need-value',
+		ATOM = ('got-value', on_atom),
+		ARRAY_START = ('empty', on_array_start),
+		ARRAY_END = ('error', on_expecting_array_value),
+		OBJECT_START = ('empty', on_object_start),
+		OBJECT_END = ('error', on_expecting_array_value),
+		COMMA = ('error', on_expecting_array_value),
+		COLON = ('error', on_expecting_array_value),
+		EOF = ('error', on_unterminated_array))
+	machine.connect_many ('array', 'got-value',
+		ATOM = ('error', on_expecting_comma),
+		ARRAY_START = ('error', on_expecting_comma),
+		ARRAY_END = ('got-value', on_array_end),
+		OBJECT_START = ('error', on_expecting_comma),
+		OBJECT_END = ('error', on_expecting_comma),
+		COMMA = ('need-value',),
+		COLON = ('error', on_expecting_comma),
+		EOF = ('error', on_unterminated_array))
+	machine.connect_many ('object', 'empty',
+		ATOM = ('with-key', on_object_key),
+		ARRAY_START = ('error', on_expected_object_key),
+		ARRAY_END = ('error', on_expected_object_key),
+		OBJECT_START = ('error', on_expected_object_key),
+		OBJECT_END = ('got-value', on_object_end),
+		COMMA = ('error', on_expected_object_key),
+		COLON = ('error', on_expected_object_key),
+		EOF = ('error', on_unterminated_object))
+	machine.connect_many ('object', 'with-key',
+		ATOM = ('error', on_expected_colon),
+		ARRAY_START = ('error', on_expected_colon),
+		ARRAY_END = ('error', on_expected_colon),
+		OBJECT_START = ('error', on_expected_colon),
+		OBJECT_END = ('error', on_expected_colon),
+		COMMA = ('error', on_expected_colon),
+		COLON = ('need-value',),
+		EOF = ('error', on_unterminated_object))
+	machine.connect_many ('object', 'need-value',
+		ATOM = ('got-value', on_atom),
+		ARRAY_START = ('empty', on_array_start),
+		ARRAY_END = ('error', on_expected_object_value),
+		OBJECT_START = ('empty', on_object_start),
+		OBJECT_END = ('error', on_expected_object_value),
+		COMMA = ('error', on_expected_object_value),
+		COLON = ('error', on_expected_object_value),
+		EOF = ('error', on_unterminated_object))
+	machine.connect_many ('object', 'got-value',
+		ATOM = ('error', on_expecting_comma),
+		ARRAY_START = ('error', on_expecting_comma),
+		ARRAY_END = ('error', on_expecting_comma),
+		OBJECT_START = ('error', on_expecting_comma),
+		OBJECT_END = ('got-value', on_object_end),
+		COMMA = ('need-key',),
+		COLON = ('error', on_expecting_comma),
+		EOF = ('error', on_unterminated_object))
+	machine.connect_many ('object', 'need-key',
+		ATOM = ('with-key', on_object_key),
+		ARRAY_START = ('error', on_expected_object_key),
+		ARRAY_END = ('error', on_expected_object_key),
+		OBJECT_START = ('error', on_expected_object_key),
+		OBJECT_END = ('error', on_expected_object_key),
+		COMMA = ('error', on_expected_object_key),
+		COLON = ('error', on_expected_object_key),
+		EOF = ('error', on_unterminated_object))
 	
 	for token in tokenize (string):
 		try:
