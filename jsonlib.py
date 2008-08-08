@@ -699,8 +699,8 @@ def get_separators (start, end, indent_string, indent_level):
 		next_indent = indent_string * indent_level
 		return start + '\n', '\n' + next_indent + end, indent, ',\n'
 		
-def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
-                 on_unknown, parent_objects, indent_level):
+def write_array (value, _write, sort_keys, indent_string, ascii_only,
+                 coerce_keys, on_unknown, parent_objects, indent_level):
 	"""Serialize an iterable to a list of strings in JSON array format."""
 	
 	v_id = id (value)
@@ -708,29 +708,27 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 		raise WriteError ("Cannot serialize self-referential values.")
 		
 	if len (value) == 0:
-		return '[]'
+		return _write ('[]')
 		
 	separators = get_separators ('[', ']', indent_string, indent_level)
 	start, end, pre_value, post_value = separators
 	
-	retval = [start]
-	
+	_write (start)
 	for index, item in enumerate (value):
-		retval.append (pre_value)
-		retval.extend (_py_write (item, sort_keys, indent_string,
-		                          ascii_only, coerce_keys, on_unknown,
-		                          parent_objects + (v_id,),
-		                          indent_level + 1))
+		_write (pre_value)
+		_py_write (item, _write, sort_keys, indent_string,
+		           ascii_only, coerce_keys, on_unknown,
+		           parent_objects + (v_id,),
+		           indent_level + 1)
 		if (index + 1) < len (value):
-			retval.append (post_value)
-	retval.append (end)
-	return retval
+			_write (post_value)
+	_write (end)
 	
 def write_iterable (value, *args, **kwargs):
-	return write_array (tuple (value), *args, **kwargs)
+	write_array (tuple (value), *args, **kwargs)
 	
-def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
-                  on_unknown, parent_objects, indent_level):
+def write_object (value, _write, sort_keys, indent_string, ascii_only,
+                  coerce_keys, on_unknown, parent_objects, indent_level):
 	"""Serialize a mapping to a list of strings in JSON object format."""
 	
 	v_id = id (value)
@@ -738,13 +736,12 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 		raise WriteError ("Cannot serialize self-referential values.")
 		
 	if len (value) == 0:
-		return '{}'
+		return _write ('{}')
 		
 	separators = get_separators ('{', '}', indent_string, indent_level)
 	start, end, pre_value, post_value = separators
 	
-	retval = [start]
-	
+	_write (start)
 	if sort_keys:
 		items = sorted (value.items ())
 	else:
@@ -753,32 +750,31 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	for index, (key, sub_value) in enumerate (items):
 		is_string = isinstance (key, str)
 		is_unicode = isinstance (key, unicode)
-		retval.append (pre_value)
+		_write (pre_value)
 		if is_string:
-			retval.extend (write_string (key, ascii_only))
+			_write (write_string (key, ascii_only))
 		elif is_unicode:
-			retval.extend (write_unicode (key, ascii_only))
+			_write (write_unicode (key, ascii_only))
 		elif coerce_keys:
 			try:
 				new_key = write_basic (key, ascii_only)
 			except UnknownSerializerError:
 				new_key = unicode (key)
-			retval.extend (write_unicode (new_key, ascii_only))
+			_write (write_unicode (new_key, ascii_only))
 		else:
 			raise WriteError ("Only strings may be used as object "
 			                  "keys.")
 		if indent_string is not None:
-			retval.append (': ')
+			_write (': ')
 		else:
-			retval.append (':')
-		retval.extend (_py_write (sub_value, sort_keys, indent_string,
-		                          ascii_only, coerce_keys, on_unknown,
-		                          parent_objects + (v_id,),
-		                          indent_level + 1))
+			_write (':')
+		_py_write (sub_value, _write, sort_keys, indent_string,
+		           ascii_only, coerce_keys, on_unknown,
+		           parent_objects + (v_id,),
+		           indent_level + 1)
 		if (index + 1) < len (value):
-			retval.append (post_value)
-	retval.append (end)
-	return retval
+			_write (post_value)
+	_write (end)
 	
 def write_string (value, ascii_only):
 	"""Serialize a string to its JSON representation.
@@ -791,6 +787,9 @@ def write_string (value, ascii_only):
 	return write_unicode (unicode (value), ascii_only)
 	
 def write_unicode (value, ascii_only):
+	return u''.join (_write_unicode (value, ascii_only))
+	
+def _write_unicode (value, ascii_only):
 	"""Serialize a unicode string to its JSON representation."""
 	stream = iter (value)
 	yield '"'
@@ -891,8 +890,8 @@ def write_basic (value, ascii_only):
 			
 	raise UnknownSerializerError (value)
 	
-def _py_write (value, sort_keys, indent_string, ascii_only, coerce_keys,
-               on_unknown, parent_objects, indent_level,
+def _py_write (value, _write, sort_keys, indent_string, ascii_only,
+               coerce_keys, on_unknown, parent_objects, indent_level,
                in_on_unknown = False):
 	"""Serialize a Python value into a list of byte strings.
 	
@@ -902,21 +901,21 @@ def _py_write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	# Check basic types first
 	for keyword, kw_value in KEYWORDS:
 		if value is kw_value:
-			return (keyword,)
+			return _write (keyword)
 			
 	for type_, func in BASIC_TYPE_WRITERS:
 		if isinstance (value, type_):
 			if not parent_objects:
 				err = "The outermost container must be an array or object."
 				raise WriteError (err)
-			return func (value)
+			return _write (func (value))
 			
 	for type_, func in STR_TYPE_WRITERS:
 		if isinstance (value, type_):
 			if not parent_objects:
 				err = "The outermost container must be an array or object."
 				raise WriteError (err)
-			return func (value, ascii_only)
+			return _write (func (value, ascii_only))
 			
 	# Container types
 	if hasattr (value, 'items'):
@@ -930,15 +929,16 @@ def _py_write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 		except TypeError:
 			if on_unknown and not in_on_unknown:
 				new_value = on_unknown (value)
-				return _py_write (new_value, sort_keys,
-				                  indent_string, ascii_only,
-				                  coerce_keys,
-				                  on_unknown, parent_objects,
-				                  indent_level, True)
+				_py_write (new_value, _write, sort_keys,
+				           indent_string, ascii_only,
+				           coerce_keys,
+				           on_unknown, parent_objects,
+				           indent_level, True)
+				return
 			raise UnknownSerializerError (value)
 			
-	return func (value, sort_keys, indent_string, ascii_only,
-	             coerce_keys, on_unknown, parent_objects, indent_level)
+	func (value, _write, sort_keys, indent_string, ascii_only,
+	      coerce_keys, on_unknown, parent_objects, indent_level)
 	
 def dump (value, out, sort_keys = False, indent = None, ascii_only = True,
           coerce_keys = False, encoding = 'utf-8', on_unknown = None):
@@ -948,9 +948,20 @@ def dump (value, out, sort_keys = False, indent = None, ascii_only = True,
 	a file-like object.
 	
 	"""
-	s = write (value, sort_keys, indent, ascii_only, coerce_keys,
-	           encoding, on_unknown)
-	out.write (s)
+	if not (indent is None or len (indent) == 0):
+		if len (indent.strip (u'\u0020\u0009\u000A\u000D')) > 0:
+			raise TypeError ("Only whitespace may be used for indentation.")
+			
+	if on_unknown is not None and not callable (on_unknown):
+		raise TypeError ("The on_unknown object must be callable.")
+	
+	def _write (text):
+		if not isinstance (text, unicode):
+			text = unicode (text, 'ascii')
+		out.write (text.encode (encoding))
+		
+	_py_write (value, _write, sort_keys, indent, ascii_only, coerce_keys,
+	           on_unknown, (), 0)
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False, encoding = 'utf-8', on_unknown = None):
@@ -1008,8 +1019,9 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 			
 	if on_unknown is not None and not callable (on_unknown):
 		raise TypeError ("The on_unknown object must be callable.")
-	pieces = _py_write (value, sort_keys, indent, ascii_only,
-	                    coerce_keys, on_unknown, (), 0)
+	pieces = []
+	_py_write (value, pieces.append, sort_keys, indent, ascii_only,
+	           coerce_keys, on_unknown, (), 0)
 	u_string = u''.join (pieces)
 	if encoding is None:
 		return u_string

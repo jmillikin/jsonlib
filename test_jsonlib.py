@@ -935,6 +935,14 @@ class StreamingSerializerTests (SerializerTestCase):
 		jsonlib.dump ([], io)
 		self.assertEqual (io.getvalue (), '[]')
 		
+	def test_partial_serialization_on_error (self):
+		io = StringIO ()
+		try:
+			jsonlib.dump ([object ()], io)
+		except UnknownSerializerError:
+			pass
+		self.assertEqual (io.getvalue (), '[')
+		
 # }}}
 
 if __name__ == '__main__':
