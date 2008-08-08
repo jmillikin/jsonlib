@@ -935,6 +935,11 @@ class StreamingSerializerTests (SerializerTestCase):
 		jsonlib.dump ([], io)
 		self.assertEqual (io.getvalue (), '[]')
 		
+	def test_serialize_complex_to_stream (self):
+		io = StringIO ()
+		jsonlib.dump (["a", "b", u"c \U0001D11E \u24Ca", {"a": "b"}], io)
+		self.assertEqual (io.getvalue (), '["a","b","c \\ud834\\udd1e \\u24ca",{"a":"b"}]')
+		
 	def test_partial_serialization_on_error (self):
 		io = StringIO ()
 		try:
