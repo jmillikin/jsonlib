@@ -943,6 +943,13 @@ class StreamingSerializerTests (SerializerTestCase):
 			pass
 		self.assertEqual (io.getvalue (), '[')
 		
+	def test_encode_utf16_specialcased (self):
+		# Test that special cases that return pure ASCII are still
+		# re-encoded if needed.
+		io = StringIO ()
+		value = jsonlib.dump ([], io, encoding = 'utf-16-le')
+		self.assertEqual (io.getvalue (), '[\x00]\x00')
+		
 # }}}
 
 if __name__ == '__main__':
