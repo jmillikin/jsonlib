@@ -112,10 +112,7 @@ TOKEN_SPLITTER = re.compile (
 	u'(?:[^\u0009\u0020\u000a\u000d\\[\\]{}:,]+))|'
 	
 	# Whitespace
-	u'([\u0009\u0020\u000a\u000d])|'
-	
-	# Anything else, will trigger an exception
-	'(.+?)',
+	u'([\u0009\u0020\u000a\u000d])',
 re.UNICODE)
 
 BASIC_TOKENS = {
@@ -155,8 +152,8 @@ WRITE_ESCAPES = {
 	'\\': '\\\\'
 }
 
-for char_ord in range (0, 0x20):
-	WRITE_ESCAPES.setdefault (chr (char_ord), '\\u%04x' % char_ord)
+for __char_ord in range (0, 0x20):
+	WRITE_ESCAPES.setdefault (chr (__char_ord), '\\u%04x' % __char_ord)
 	
 # }}}
 
@@ -299,16 +296,14 @@ def tokenize (string):
 	"""
 	position = 0
 	for match in TOKEN_SPLITTER.findall (string):
-		basic, atom, whitespace, unknown = match
+		basic, atom, whitespace = match
 		if basic:
 			token_type = BASIC_TOKENS[basic]
 			yield Token (token_type, string, position, basic)
 		elif atom:
 			yield Token ('ATOM', string, position, atom)
-		elif whitespace:
-			pass
 		else:
-			raise ReadError ("Unknown token: %r" % unknown_token)
+			assert whitespace
 		position += sum (map (len, match))
 		
 	yield Token ('EOF', string, position, '')
@@ -361,7 +356,7 @@ def read_unicode_escape (atom, index):
 		second_hex -= 0xDC00
 		
 		# Merge into 20-bit character
-		retval = unichr ((first_half << 10) + second_half + 0x10000)
+		retval = unichr ((first_hex << 10) + second_hex + 0x10000)
 	return retval, index + 10
 	
 def read_unichars (atom):
@@ -495,7 +490,7 @@ def read (string):
 		array, _ = read_item_stack.pop ()
 		read_item_stack[-1][0].append (array)
 		
-	def on_unterminated_array (_):
+	def on_unterminated_array (token):
 		_, start = read_item_stack[-1]
 		error = format_error (token.full_string, start, "Unterminated array.")
 		raise ReadError (error)
