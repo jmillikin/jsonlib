@@ -940,6 +940,18 @@ def _py_write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	return func (value, sort_keys, indent_string, ascii_only,
 	             coerce_keys, on_unknown, parent_objects, indent_level)
 	
+def dump (value, out, sort_keys = False, indent = None, ascii_only = True,
+          coerce_keys = False, encoding = 'utf-8', on_unknown = None):
+	"""Serialize a Python value to a JSON-formatted byte string.
+	
+	Rather than being returned as a string, the output is written to
+	a file-like object.
+	
+	"""
+	s = write (value, sort_keys, indent, ascii_only, coerce_keys,
+	           encoding, on_unknown)
+	out.write (s)
+	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False, encoding = 'utf-8', on_unknown = None):
 	"""Serialize a Python value to a JSON-formatted byte string.

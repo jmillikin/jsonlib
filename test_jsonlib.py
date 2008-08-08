@@ -8,11 +8,13 @@ import collections
 from decimal import Decimal
 import sets
 import unittest
+from StringIO import StringIO
 import UserList
 import UserDict
 import UserString
 
 from jsonlib import read, write, ReadError, WriteError, UnknownSerializerError
+import jsonlib
 # }}}
 
 # Support & Utility definitions {{{
@@ -926,6 +928,12 @@ class WriteEncodingTests (SerializerTestCase):
 		               encoding = None)
 		self.assertEqual (type (value), unicode)
 		self.assertEqual (value, u'["\U0001D11E \u24CA"]')
+		
+class StreamingSerializerTests (SerializerTestCase):
+	def test_serialize_to_stream (self):
+		io = StringIO ()
+		jsonlib.dump ([], io)
+		self.assertEqual (io.getvalue (), '[]')
 		
 # }}}
 
