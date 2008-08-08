@@ -679,7 +679,8 @@ def unicode_autodetect_encoding (bytestring):
 			return bytestring[len(bom):].decode (encoding)
 			
 	# Autodetect UTF-* encodings using the algorithm in the RFC
-	header = tuple (1 if ord (b) else 0 for b in bytestring[:4])
+	# Don't use inline if..else for Python 2.4
+	header = tuple ((ord (b) and 1) or 0 for b in bytestring[:4])
 	for utf_header, encoding in UTF_HEADERS:
 		if header == utf_header:
 			return bytestring.decode (encoding)

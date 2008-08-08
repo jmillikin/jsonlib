@@ -11,7 +11,6 @@ import unittest
 import UserList
 import UserDict
 import UserString
-import functools
 
 from jsonlib import read, write, ReadError, WriteError, UnknownSerializerError
 # }}}
@@ -41,13 +40,15 @@ class ContinuableTestCase (unittest.TestCase):
 		return super (ContinuableTestCase, self).run (result)
 		
 def allow_test_continue (func):
-	@functools.wraps (func)
 	def new_func (self, *args, **kwargs):
 		return func (self, *args, **kwargs)
 		try:
 			return func (self, *args, **kwargs)
 		except self.failureException:
 			self._result.addFailure (self, self._exc_info ())
+	for attr in ('__module__', '__name__', '__doc__'):
+		setattr (new_func, attr, getattr (func, attr))
+	new_func.__dict__.update (func.__dict__)
 	return new_func
 	
 class ParserTestCase (ContinuableTestCase):
