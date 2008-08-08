@@ -725,6 +725,9 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	if v_id in parent_objects:
 		raise WriteError ("Cannot serialize self-referential values.")
 		
+	if len (value) == 0:
+		return '[]'
+		
 	separators = get_separators ('[', ']', indent_string, indent_level)
 	start, end, pre_value, post_value = separators
 	
@@ -751,6 +754,9 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	v_id = id (value)
 	if v_id in parent_objects:
 		raise WriteError ("Cannot serialize self-referential values.")
+		
+	if len (value) == 0:
+		return '{}'
 		
 	separators = get_separators ('{', '}', indent_string, indent_level)
 	start, end, pre_value, post_value = separators
@@ -870,7 +876,7 @@ def write_complex (value):
 	if value.imag == 0.0:
 		return repr (value.real)
 	raise WriteError ("Cannot serialize complex numbers with"
-	                         " imaginary components.")
+	                  " imaginary components.")
 	
 STR_TYPE_WRITERS = [
 	(unicode, write_unicode),
@@ -952,39 +958,6 @@ def _py_write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	return func (value, sort_keys, indent_string, ascii_only,
 	             coerce_keys, on_unknown, parent_objects, indent_level)
 	
-	# 
-	w_func = CONTAINER_TYPES.get (type (value))
-	
-	# Might be a subclass
-	if w_func is None:
-		for mapper_type, mapper in CONTAINER_TYPES.items ():
-			if isinstance (value, mapper_type):
-				w_func = mapper
-				
-	# Check for user-defined mapping types
-	if w_func is None:
-		if hasattr (value, 'items'):
-			w_func = write_object
-			
-	if w_func:
-		return w_func (value, sort_keys, indent_string, ascii_only,
-		               coerce_keys, parent_objects, indent_level)
-		
-	if parent_objects:
-		return write_basic (value, ascii_only)
-		
-	raise WriteError ("The outermost container must be an array or object.")
-	# Check for user-defined iterables. Run this check after
-	# write_basic to avoid iterating over strings.
-	try:
-		iter (value)
-		func = write_iterable
-	except TypeError:
-		pass
-	
-		return write_iterable (value, sort_keys, indent_string, ascii_only,
-		                       coerce_keys, parent_objects, indent_level)
-		
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False, encoding = 'utf-8', on_unknown = None):
 	"""Serialize a Python value to a JSON-formatted byte string.
