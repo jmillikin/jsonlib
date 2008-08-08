@@ -940,7 +940,7 @@ def _py_write (value, _write, sort_keys, indent_string, ascii_only,
 	func (value, _write, sort_keys, indent_string, ascii_only,
 	      coerce_keys, on_unknown, parent_objects, indent_level)
 	
-def dump (value, out, sort_keys = False, indent = None, ascii_only = True,
+def dump (value, fp, sort_keys = False, indent = None, ascii_only = True,
           coerce_keys = False, encoding = 'utf-8', on_unknown = None):
 	"""Serialize a Python value to a JSON-formatted byte string.
 	
@@ -958,7 +958,7 @@ def dump (value, out, sort_keys = False, indent = None, ascii_only = True,
 	def _write (text):
 		if not isinstance (text, unicode):
 			text = unicode (text, 'ascii')
-		out.write (text.encode (encoding))
+		fp.write (text.encode (encoding))
 		
 	_py_write (value, _write, sort_keys, indent, ascii_only, coerce_keys,
 	           on_unknown, (), 0)
