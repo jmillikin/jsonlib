@@ -1,6 +1,7 @@
 # Copyright (C) 2008 John Millikin. See LICENSE.txt for details.
 # Author: John Millikin <jmillikin@gmail.com>
 
+# Imports {{{
 import array
 import codecs
 import collections
@@ -10,9 +11,12 @@ import unittest
 import UserList
 import UserDict
 import UserString
+import functools
 
 from jsonlib import read, write, ReadError, WriteError, UnknownSerializerError
+# }}}
 
+# Support & Utility definitions {{{
 try:
 	INFINITY = float ('inf')
 except ValueError:
@@ -28,18 +32,32 @@ except LookupError:
 	HAVE_UTF32 = False
 else:
 	HAVE_UTF32 = True
-
-class TestCase (unittest.TestCase):
+	
+class ContinuableTestCase (unittest.TestCase):
+	def run (self, result = None):
+		if result is None:
+			result = self.defaultTestResult ()
+		self._result = result
+		return super (ContinuableTestCase, self).run (result)
+		
+def allow_test_continue (func):
+	@functools.wraps (func)
+	def new_func (self, *args, **kwargs):
+		return func (self, *args, **kwargs)
+		try:
+			return func (self, *args, **kwargs)
+		except self.failureException:
+			self._result.addFailure (self, self._exc_info ())
+	return new_func
+	
+class ParserTestCase (ContinuableTestCase):
+	@allow_test_continue
 	def r (self, string, expected):
 		value = read (string)
 		self.assertEqual (value, expected)
 		self.assertEqual (type (value), type (expected))
 		
-	def w (self, value, expected, **kwargs):
-		serialized = write (value, encoding = None, **kwargs)
-		self.assertEqual (serialized, expected)
-		self.assertEqual (type (serialized), type (expected))
-		
+	@allow_test_continue
 	def re (self, string, line, column, position, expected_error_message):
 		full_expected = ("JSON parsing error at line %d, column %d"
 		                 " (position %d): %s" % (line, column,
@@ -51,6 +69,14 @@ class TestCase (unittest.TestCase):
 		except ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
 			
+class SerializerTestCase (ContinuableTestCase):
+	@allow_test_continue
+	def w (self, value, expected, **kwargs):
+		serialized = write (value, encoding = None, **kwargs)
+		self.assertEqual (serialized, expected)
+		self.assertEqual (type (serialized), type (expected))
+		
+	@allow_test_continue
 	def we (self, value, expected_error_message, error_type = None, **kwargs):
 		if error_type is None:
 			error_type = WriteError
@@ -60,36 +86,104 @@ class TestCase (unittest.TestCase):
 		except error_type, error:
 			self.assertEqual (unicode (error), expected_error_message)
 			
-class ReadMiscTests (TestCase):
+def _load_tests (base_class):
+	loader = unittest.TestLoader ()
+	suite = unittest.TestSuite ()
+	from_local = loader.loadTestsFromTestCase
+	for name, value in globals ().items ():
+		if (isinstance (value, type) and
+		    issubclass (value, base_class)):
+			suite.addTests (from_local (value))
+	return suite
+	
+def parser ():
+	return _load_tests (ParserTestCase)
+	
+def serializer ():
+	return _load_tests (SerializerTestCase)
+	
+def suite ():
+	return _load_tests (unittest.TestCase)
+	
+# }}}
+
+# Tests for the parser {{{
+class ReadMiscTests (ParserTestCase):
 	def test_fail_on_empty (self):
 		self.re ('', 1, 1, 0, "No expression found.")
 		self.re (' ', 1, 1, 0, "No expression found.")
 		
 	def test_fail_on_invalid_whitespace (self):
-		self.re (u'[\u000C]', 1, 2, 1, "Unexpected U+000C.")
-		self.re (u'[\u000E]', 1, 2, 1, "Unexpected U+000E.")
-		self.re (u'[\u00A0]', 1, 2, 1, "Unexpected U+00A0.")
-		self.re (u'[\u2002]', 1, 2, 1, "Unexpected U+2002.")
-		self.re (u'[\u2028]', 1, 2, 1, "Unexpected U+2028.")
-		self.re (u'[\u2029]', 1, 2, 1, "Unexpected U+2029.")
+		self.re (u'[\u000C]', 1, 2, 1, "Unexpected U+000C while looking for array value.")
+		self.re (u'[\u000E]', 1, 2, 1, "Unexpected U+000E while looking for array value.")
+		self.re (u'[\u00A0]', 1, 2, 1, "Unexpected U+00A0 while looking for array value.")
+		self.re (u'[\u2002]', 1, 2, 1, "Unexpected U+2002 while looking for array value.")
+		self.re (u'[\u2028]', 1, 2, 1, "Unexpected U+2028 while looking for array value.")
+		self.re (u'[\u2029]', 1, 2, 1, "Unexpected U+2029 while looking for array value.")
 		
 	def test_with_two_lines (self):
-		self.re (u'\n[\u000B]', 2, 2, 2, "Unexpected U+000B.")
+		self.re (u'\n[\u000B]', 2, 2, 2, "Unexpected U+000B while looking for array value.")
 		
 	def test_unexpected_character (self):
-		self.re (u'[+]', 1, 2, 1, "Unexpected U+002B.")
+		self.re (u'[+]', 1, 2, 1, "Unexpected U+002B while looking for array value.")
 		
 	def test_unexpected_character_astral (self):
-		self.re (u'[\U0001d11e]', 1, 2, 1, "Unexpected U+0001D11E.")
+		self.re (u'[\U0001d11e]', 1, 2, 1, "Unexpected U+0001D11E while looking for array value.")
 		
-	def test_extra_data (self):
-		self.re ('[][]', 1, 3, 2, "Extra data after JSON expression.")
+	def test_no_unwrapped_values (self):
+		self.re (u'1', 1, 1, 0, "Expecting an array or object.")
 		
-	def test_no_extra_data_on_whitespace (self):
+	def test_parse_atom_before_unwrapped_check (self):
+		self.re (u'n', 1, 1, 0, "Unexpected U+006E.")
+		
+class ReadExtraDataTests (ParserTestCase):
+	def test_array_start (self):
+		self.re ('[][', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_array_end (self):
+		self.re ('[]]', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_object_start (self):
+		self.re ('[]{', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_object_end (self):
+		self.re ('[]}', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_atom (self):
+		self.re ('[]1', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_comma (self):
+		self.re ('[],', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_colon (self):
+		self.re ('[]:', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_other (self):
+		self.re ('[]+', 1, 3, 2, "Extra data after JSON expression.")
+		
+	def test_array_whitespace (self):
 		self.r ('[] ', [])
+		
+	def test_object_whitespace (self):
 		self.r ('{} ', {})
 		
-class ReadKeywordTests (TestCase):
+class ReadUnexpectedTests (ParserTestCase):
+	def test_array_end (self):
+		self.re (']', 1, 1, 0, "Unexpected U+005D.")
+		
+	def test_object_end (self):
+		self.re ('}', 1, 1, 0, "Unexpected U+007D.")
+		
+	def test_comma (self):
+		self.re (',', 1, 1, 0, "Unexpected U+002C.")
+		
+	def test_colon (self):
+		self.re (':', 1, 1, 0, "Unexpected U+003A.")
+		
+	def test_other (self):
+		self.re ('+', 1, 1, 0, "Unexpected U+002B.")
+		
+class ReadKeywordTests (ParserTestCase):
 	def test_null (self):
 		self.r ('[null]', [None])
 		
@@ -100,11 +194,11 @@ class ReadKeywordTests (TestCase):
 		self.r ('[false]', [False])
 		
 	def test_invalid_keyword (self):
-		self.re ('n', 1, 1, 0, "Unexpected U+006E.")
-		self.re ('t', 1, 1, 0, "Unexpected U+0074.")
-		self.re ('f', 1, 1, 0, "Unexpected U+0066.")
+		self.re ('[n]', 1, 2, 1, "Unexpected U+006E while looking for array value.")
+		self.re ('[t]', 1, 2, 1, "Unexpected U+0074 while looking for array value.")
+		self.re ('[f]', 1, 2, 1, "Unexpected U+0066 while looking for array value.")
 		
-class ReadNumberTests (TestCase):
+class ReadNumberTests (ParserTestCase):
 	def test_zero (self):
 		self.r ('[0]', [0L])
 		
@@ -164,16 +258,18 @@ class ReadNumberTests (TestCase):
 		self.assertEqual (repr (value[0]), 'Decimal("-0.0")')
 		
 	def test_invalid_number (self):
-		self.re ('-.', 1, 1, 0, "Invalid number.")
-		self.re ('0.', 1, 1, 0, "Invalid number.")
+		self.re ('[-.]', 1, 2, 1, "Invalid number.")
+	
+	def test_invalid_number_2 (self):
+		self.re ('[0.]', 1, 2, 1, "Invalid number.")
 		
 	def test_no_plus_sign (self):
-		self.re ('+1', 1, 1, 0, "Unexpected U+002B.")
+		self.re ('[+1]', 1, 2, 1, "Unexpected U+002B while looking for array value.")
 		
 	def test_non_ascii_number (self):
-		self.re (u'[\u0661]', 1, 2, 1, "Unexpected U+0661.")
+		self.re (u'[\u0661]', 1, 2, 1, "Unexpected U+0661 while looking for array value.")
 		
-class ReadStringTests (TestCase):
+class ReadStringTests (ParserTestCase):
 	def test_empty_string (self):
 		self.r ('[""]', [u''])
 		
@@ -237,7 +333,7 @@ class ReadStringTests (TestCase):
 		        "U+DD1E is a reserved code point.")
 		
 	def test_invalid_escape (self):
-		self.re (u'["\\a"]', 1, 3, 2, "Unknown escape code.")
+		self.re (u'["\\a"]', 1, 3, 2, "Unknown escape code: \\a.")
 		
 	def test_direct_unicode (self):
 		self.r (u'["\U0001d11e"]', [u'\U0001d11e'])
@@ -253,7 +349,10 @@ class ReadStringTests (TestCase):
 		self.re (u'["\u0002"]', 1, 3, 2, "Unexpected U+0002.")
 		self.re (u'["\u001F"]', 1, 3, 2, "Unexpected U+001F.")
 		
-class ReadArrayTests (TestCase):
+	def test_error_reporting_after_unicode_escape (self):
+		self.re (u'["\\u0020\\v"]', 1, 9, 8, "Unknown escape code: \\v.")
+		
+class ReadArrayTests (ParserTestCase):
 	def test_empty_array (self):
 		self.r ('[]', [])
 		
@@ -270,9 +369,41 @@ class ReadArrayTests (TestCase):
 		self.r ('[1, "b", ["c", "d"]]', [1L, "b", ["c", "d"]])
 		
 	def test_failure_missing_comma (self):
-		self.re ('[1 2]', 1, 4, 3, "Expecting comma.")
+		self.re ('[1 2]', 1, 4, 3, "Unexpected U+0032 while looking for comma.")
 		
-class ReadObjectTests (TestCase):
+	def test_error_unterminated_array (self):
+		self.re ('[1, 2, 3, [', 1, 11, 10, "Unterminated array.")
+		
+	def test_error_unterminated_array_with_value (self):
+		self.re ('[1', 1, 1, 0, "Unterminated array.")
+		
+	def test_error_unterminated_array_expecting_value (self):
+		self.re ('[1,', 1, 1, 0, "Unterminated array.")
+		
+	def test_unexpected_array_start (self):
+		self.re ('[1[',  1, 3, 2, "Unexpected U+005B while looking for comma.")
+		
+	def test_unexpected_array_end (self):
+		self.re ('[1,]', 1, 4, 3, "Unexpected U+005D while looking for array value.")
+		
+	def test_unexpected_object_start (self):
+		self.re ('[1{',  1, 3, 2, "Unexpected U+007B while looking for comma.")
+		
+	def test_unexpected_object_end (self):
+		self.re ('[}',   1, 2, 1, "Unexpected U+007D while looking for array value.")
+		self.re ('[1}',  1, 3, 2, "Unexpected U+007D while looking for comma.")
+		self.re ('[1,}', 1, 4, 3, "Unexpected U+007D while looking for array value.")
+		
+	def test_unexpected_comma (self):
+		self.re ('[,',   1, 2, 1, "Unexpected U+002C while looking for array value.")
+		self.re ('[1,,', 1, 4, 3, "Unexpected U+002C while looking for array value.")
+		
+	def test_unexpected_colon (self):
+		self.re ('[:',   1, 2, 1, "Unexpected U+003A while looking for array value.")
+		self.re ('[1:',  1, 3, 2, "Unexpected U+003A while looking for comma.")
+		self.re ('[1,:', 1, 4, 3, "Unexpected U+003A while looking for array value.")
+		
+class ReadObjectTests (ParserTestCase):
 	def test_empty_object (self):
 		self.r ('{}', {})
 		
@@ -290,30 +421,70 @@ class ReadObjectTests (TestCase):
 		self.r ('{"a": 1, "b": {"c": "2"}}',
 		        {"a": 1L, "b": {"c": "2"}})
 		
-	def test_failure_unterminated (self):
-		self.re ('[[], {"a": 1', 1, 6, 5, "Unterminated object.")
-		
 	def test_failure_no_colon (self):
-		self.re ('{"a"}', 1, 5, 4,
-		        "Expected colon after object property name.")
+		self.re ('{"a"}', 1, 5, 4, "Unexpected U+007D while looking for colon.")
 		
 	def test_failure_invalid_key (self):
-		self.re ('{1: 2}', 1, 2, 1, "Expecting property name.")
-		self.re ('{"a": 1,}', 1, 9, 8, "Expecting property name.")
-		self.re ('{,}', 1, 2, 1, "Expecting property name.")
+		self.re ('{1: 2}', 1, 2, 1, "Unexpected U+0031 while looking for property name.")
+		self.re ('{"a": 1,}', 1, 9, 8, "Unexpected U+007D while looking for property name.")
+		self.re ('{,}', 1, 2, 1, "Unexpected U+002C while looking for property name.")
 		
 	def test_failure_missing_comma (self):
-		self.re ('{"a": 1 "b": 2}', 1, 9, 8, "Expecting comma.")
+		self.re ('{"a": 1 "b": 2}', 1, 9, 8, "Unexpected U+0022 while looking for comma.")
 		
 	def test_failure_trailing_newline (self):
-		self.re ('{"a": "b",\n}\n', 2, 1, 11, "Expecting property name.")
+		self.re ('{"a": "b",\n}\n', 2, 1, 11, "Unexpected U+007D while looking for property name.")
 		
-class UnicodeEncodingDetectionTests (TestCase):
+	def test_unterminated (self):
+		self.re ('{',       1, 1, 0, "Unterminated object.")
+		self.re ('{"a"',    1, 1, 0, "Unterminated object.")
+		self.re ('{"a":',   1, 1, 0, "Unterminated object.")
+		self.re ('{"a":1',  1, 1, 0, "Unterminated object.")
+		self.re ('{"a":1,', 1, 1, 0, "Unterminated object.")
+		
+	def test_unexpected_atom (self):
+		self.re ('{"a"1', 1, 5, 4, "Unexpected U+0031 while looking for colon.")
+		
+	def test_unexpected_array_start (self):
+		self.re ('{[',       1, 2, 1, "Unexpected U+005B while looking for property name.")
+		self.re ('{"a"[',    1, 5, 4, "Unexpected U+005B while looking for colon.")
+		self.re ('{"a":1[',  1, 7, 6, "Unexpected U+005B while looking for comma.")
+		self.re ('{"a":1,[', 1, 8, 7, "Unexpected U+005B while looking for property name.")
+		
+	def test_unexpected_array_end (self):
+		self.re ('{]',       1, 2, 1, "Unexpected U+005D while looking for property name.")
+		self.re ('{"a"]',    1, 5, 4, "Unexpected U+005D while looking for colon.")
+		self.re ('{"a":]',   1, 6, 5, "Unexpected U+005D while looking for property value.")
+		self.re ('{"a":1]',  1, 7, 6, "Unexpected U+005D while looking for comma.")
+		self.re ('{"a":1,]', 1, 8, 7, "Unexpected U+005D while looking for property name.")
+		
+	def test_unexpected_object_start (self):
+		self.re ('{{',       1, 2, 1, "Unexpected U+007B while looking for property name.")
+		self.re ('{"a"{',    1, 5, 4, "Unexpected U+007B while looking for colon.")
+		self.re ('{"a":1{',  1, 7, 6, "Unexpected U+007B while looking for comma.")
+		self.re ('{"a":1,{', 1, 8, 7, "Unexpected U+007B while looking for property name.")
+		
+	def test_unexpected_object_end (self):
+		self.re ('{"a":}', 1, 6, 5, "Unexpected U+007D while looking for property value.")
+		
+	def test_unexpected_comma (self):
+		self.re ('{"a",}',    1, 5, 4, "Unexpected U+002C while looking for colon.")
+		self.re ('{"a":,}',   1, 6, 5, "Unexpected U+002C while looking for property value.")
+		self.re ('{"a":1,,}', 1, 8, 7, "Unexpected U+002C while looking for property name.")
+		
+	def test_unexpected_colon (self):
+		self.re ('{:',        1, 2, 1, "Unexpected U+003A while looking for property name.")
+		self.re ('{"a"::}',   1, 6, 5, "Unexpected U+003A while looking for property value.")
+		self.re ('{"a":1:}',  1, 7, 6, "Unexpected U+003A while looking for comma.")
+		self.re ('{"a":1,:}', 1, 8, 7, "Unexpected U+003A while looking for property name.")
+		
+class UnicodeEncodingDetectionTests (ParserTestCase):
 	def de (self, encoding, bom = ''):
 		def read_encoded (string, expected):
 			self.r (bom + string.encode (encoding), expected)
 			
 		# Test various string lengths
+		read_encoded (u'[]', [])
 		read_encoded (u'[1]', [1L])
 		read_encoded (u'[12]', [12L])
 		read_encoded (u'[123]', [123L])
@@ -417,13 +588,20 @@ class UnicodeEncodingDetectionTests (TestCase):
 	def test_utf8_sig (self):
 		self.r ('\xef\xbb\xbf["testing"]', [u'testing'])
 		
-class WriteMiscTests (TestCase):
+# }}}
+
+# Tests for the serializer {{{
+class WriteMiscTests (SerializerTestCase):
 	def test_fail_on_unknown (self):
 		obj = object ()
 		self.we ([obj], "No known serializer for object: %r" % obj)
 		
 	def test_fail_on_unwrapped_atom (self):
 		self.we (1, "The outermost container must be an array or object.")
+		self.we ("1", "The outermost container must be an array or object.")
+		
+	def test_whitespace_indent (self):
+		self.w ([], u'[]', indent = u'\u0020\u0009\u000A\u000D')
 		
 	def test_fail_on_non_whitespace_indent (self):
 		self.we ([], "Only whitespace may be used for indentation.",
@@ -456,7 +634,7 @@ class WriteMiscTests (TestCase):
 			pass
 		self.w ([MyInt (10)], u'[10]')
 		
-class WriteKeywordTests (TestCase):
+class WriteKeywordTests (SerializerTestCase):
 	def test_null (self):
 		self.w ([None], u'[null]')
 		
@@ -466,7 +644,7 @@ class WriteKeywordTests (TestCase):
 	def test_false (self):
 		self.w ([False], u'[false]')
 		
-class WriteNumberTests (TestCase):
+class WriteNumberTests (SerializerTestCase):
 	def test_int (self):
 		self.w ([1], u'[1]')
 		
@@ -527,7 +705,7 @@ class WriteNumberTests (TestCase):
 	def test_fail_on_decimal_nan (self):
 		self.we ([Decimal ('NaN')], "Cannot serialize NaN.")
 		
-class WriteArrayTests (TestCase):
+class WriteArrayTests (SerializerTestCase):
 	def test_empty_array (self):
 		self.w ([], u'[]')
 		
@@ -536,6 +714,9 @@ class WriteArrayTests (TestCase):
 		
 	def test_multiple_value_array (self):
 		self.w ([True, True], u'[true,true]')
+		
+	def test_indent_empty (self):
+		self.w ([], u'[]', indent = '')
 		
 	def test_empty_indent (self):
 		self.w ([True, True], u'[\ntrue,\ntrue\n]', indent = '')
@@ -576,7 +757,7 @@ class WriteArrayTests (TestCase):
 		a.append (a)
 		self.we (a, "Cannot serialize self-referential values.")
 		
-class WriteObjectTests (TestCase):
+class WriteObjectTests (SerializerTestCase):
 	def test_empty_object (self):
 		self.w ({}, u'{}')
 		
@@ -589,6 +770,9 @@ class WriteObjectTests (TestCase):
 	def test_sort_keys (self):
 		self.w ({'e': True, 'm': True}, u'{"e":true,"m":true}',
 		        sort_keys = True)
+		
+	def test_indent_empty (self):
+		self.w ({}, u'{}', indent = '')
 		
 	def test_empty_indent (self):
 		self.w ({'a': True, 'b': True}, u'{\n"a": true,\n"b": true\n}',
@@ -634,7 +818,7 @@ class WriteObjectTests (TestCase):
 		self.w ({'a': 1, 'b': 2, 'c': 3},
 		        u'{"a":1,"c":3,"b":2}')
 		
-class WriteStringTests (TestCase):
+class WriteStringTests (SerializerTestCase):
 	def test_empty_string (self):
 		self.w ([''], u'[""]', ascii_only = True)
 		self.w ([''], u'[""]', ascii_only = False)
@@ -721,7 +905,7 @@ class WriteStringTests (TestCase):
 		         u" ordinal not in range(128)",
 		         error_type = UnicodeDecodeError)
 		
-class WriteEncodingTests (TestCase):
+class WriteEncodingTests (SerializerTestCase):
 	# Don't use self.w in these, because it sets the encoding to
 	# None.
 	def test_encode_utf8_default (self):
@@ -742,30 +926,8 @@ class WriteEncodingTests (TestCase):
 		self.assertEqual (type (value), unicode)
 		self.assertEqual (value, u'["\U0001D11E \u24CA"]')
 		
-TEST_CASES = [
-	ReadMiscTests,
-	ReadKeywordTests,
-	ReadNumberTests,
-	ReadStringTests,
-	ReadArrayTests,
-	ReadObjectTests,
-	UnicodeEncodingDetectionTests,
-	WriteMiscTests,
-	WriteKeywordTests,
-	WriteNumberTests,
-	WriteArrayTests,
-	WriteObjectTests,
-	WriteStringTests,
-	WriteEncodingTests,
-]
-def suite ():
-	loader = unittest.TestLoader ()
-	suite = unittest.TestSuite ()
-	from_local = loader.loadTestsFromTestCase
-	for test_case in TEST_CASES:
-		suite.addTests (from_local (test_case))
-	return suite
-	
+# }}}
+
 if __name__ == '__main__':
 	unittest.main (defaultTest = 'suite')
 	

@@ -1,12 +1,39 @@
-# Copyright (C) 2008 John Millikin. See LICENSE.txt for details.
-# Author: John Millikin <jmillikin@gmail.com>
-
 """JSON serializer/deserializer for Python.
 
 The main implementation of this module is accessed through calls to
 ``read()`` and ``write()``. See their documentation for details.
 
 """
+__author__ = "John Millikin <jmillikin@gmail.com>"
+__version__ = (1, 3, 5)
+__license__ = """Copyright (c) 2008 John Millikin
+
+Permission is hereby granted, free of charge, to any person
+obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use,
+copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+"""
+
+__all__ = [
+	'read', 'write',
+	'ReadError', 'WriteError', 'UnknownSerializerError',
+]
 
 import codecs
 from decimal import Decimal
@@ -14,6 +41,7 @@ import re
 import sys
 from UserString import UserString
 
+# Exception classes {{{
 class ReadError (ValueError):
 	"""Exception raised if there is an error parsing a JSON expression."""
 	pass
@@ -36,6 +64,13 @@ class UnknownSerializerError (WriteError):
 		else:
 			WriteError.__init__ (self, err)
 			
+class UnknownAtomError (ValueError):
+	"""For internal use, not raised by any external functions."""
+	pass
+	
+# }}}
+
+# Constants {{{
 KEYWORDS = (('null', None), ('true', True), ('false', False))
 try:
 	INFINITY = float ('inf')
@@ -46,120 +81,20 @@ try:
 except ValueError:
 	NAN = INFINITY/INFINITY
 	
-def chunk (iterable, chunk_size):
-	"""Retrieve an iterable in chunks.
-	
-	If there are extra values left over after the iterable is
-	exhausted, they are lost.
-	
-	"""
-	_chunk = []
-	for value in iterable:
-		_chunk.append (value)
-		if len (_chunk) == chunk_size:
-			yield _chunk
-			_chunk = []
-			
-class StateMachine (object):
-	"""A simple push-down automaton."""
-	
-	PUSH = 0
-	POP = 1
-	
-	def __init__ (self, initial_state, initial_stack = ('')):
-		self._state = initial_state
-		self._stack = list (initial_stack)[:]
-		self._transitions = {}
-		
-	def connect (self, state, stack, value, end_state, callback = None,
-	             *stack_action):
-		"""Connect a transition to a callback.
-		
-		.. describe:: state
-			
-			A string representing the expected state.
-			
-		.. describe:: stack
-			
-			The value that should be on the stack.
-			
-		.. describe:: value
-			
-			The value passed to transition.
-			
-		.. describe:: end_state
-			
-			The state to transition to.
-			
-		.. describe:: callback
-			
-			If not None, this function will be called with
-			any extra data passed to transition.
-			
-		.. describe:: stack_action
-			
-			The operation to perform on the stack, such
-			as PUSH, 'var'.
-		
-		"""
-		key = (stack, state, value)
-		
-		if key in self._transitions:
-			raise ValueError ("This state/stack/input combination "
-			                  "has already been connected: %r" %
-			                  [key])
-			
-		self._transitions[key] = (end_state, stack_action, callback)
-		
-	def connect_many (self, *transitions):
-		"""Connect many transitions at once. 
-		
-		Each transition is in the format (stack, state, (value,
-		end_state, callback, stack_action), ...).
-		
-		"""
-		for state_def in transitions:
-			stack, state = state_def[:2]
-			connections = state_def[2:]
-			for connection in connections:
-				self.connect (state, stack, *connection)
-				
-	def transition (self, value, *args, **kwargs):
-		"""Execute a transition between one state and another.
-		
-		.. describe:: value
-			
-			Combined with the current state and top of the
-			stack to discover the transition to take.
-			
-		.. describe:: *args, **kwargs
-			
-			Passed to the callback function, if it exists.
-		
-		"""
-		key = (self._stack[-1], self._state, value)
-		if key not in self._transitions:
-			raise ValueError ("No such transition: %r" % (key,))
-			
-		end_state, stack_action, callback = self._transitions[key]
-		try:
-			if callback:
-				retval = callback (*args, **kwargs)
-			else:
-				retval = None
-				
-			if stack_action:
-				if stack_action[0] == self.PUSH:
-					self._stack.append (stack_action[1])
-				elif stack_action[0] == self.POP:
-					self._stack.pop ()
-			self._state = end_state
-			return retval
-			
-		except:
-			self._state = 'error'
-			raise
-			
+UNICODE_BOMS = [
+	(codecs.BOM_UTF32_BE, 'utf-32-be'),
+	(codecs.BOM_UTF32_LE, 'utf-32-le'),
+	(codecs.BOM_UTF16_BE, 'utf-16-be'),
+	(codecs.BOM_UTF16_LE, 'utf-16-le'),
+	(codecs.BOM_UTF8, 'utf-8'),
+]
+UTF_HEADERS = [
+	((0, 0, 0, 1), 'utf-32-be'),
+	((1, 0, 0, 0), 'utf-32-le'),
+	((0, 1, 0, 1), 'utf-16-be'),
+	((1, 0, 1, 0), 'utf-16-le'),
+]
+
 NUMBER_SPLITTER = re.compile (
 	'^(?P<minus>-)?(?P<int>[0-9]+)' # Basic integer portion
 	'(?:\\.(?P<frac>[0-9]+))?'      # Fractional portion
@@ -171,10 +106,10 @@ TOKEN_SPLITTER = re.compile (
 	'([\\[\\]{}:,])|'
 	
 	# String atom
-	'("(?:[^"\\\\]|\\\\.)*")|'
+	'((?:"(?:[^"\\\\]|\\\\.)*")|'
 	
 	# Non-string atom
-	u'([^\u0009\u0020\u000a\u000d\\[\\]{}:,]+)|'
+	u'(?:[^\u0009\u0020\u000a\u000d\\[\\]{}:,]+))|'
 	
 	# Whitespace
 	u'([\u0009\u0020\u000a\u000d])|'
@@ -182,6 +117,15 @@ TOKEN_SPLITTER = re.compile (
 	# Anything else, will trigger an exception
 	'(.+?)',
 re.UNICODE)
+
+BASIC_TOKENS = {
+	'[': 'ARRAY_START',
+	']': 'ARRAY_END',
+	'{': 'OBJECT_START',
+	'}': 'OBJECT_END',
+	':': 'COLON',
+	',': 'COMMA',
+}
 
 READ_ESCAPES = {
 	'\\': '\\',
@@ -214,17 +158,114 @@ WRITE_ESCAPES = {
 for char_ord in range (0, 0x20):
 	WRITE_ESCAPES.setdefault (chr (char_ord), '\\u%04x' % char_ord)
 	
-class Token (object):
-	"""A JSON token."""
-	__slots__ = ['name']
-	def __init__ (self, name):
-		self.name = name
-	def __repr__ (self):
-		return 'Token<%r>' % self.name
-	def __call__ (self, full_string, offset, value):
-		return TokenInstance (self, full_string, offset, value)
+# }}}
+
+# Parser {{{
+def chunk (iterable, chunk_size):
+	"""Retrieve an iterable in chunks.
+	
+	If there are extra values left over after the iterable is
+	exhausted, they are lost.
+	
+	"""
+	_chunk = []
+	for value in iterable:
+		_chunk.append (value)
+		if len (_chunk) == chunk_size:
+			yield _chunk
+			_chunk = []
+			
+class StateMachine (object):
+	"""A simple push-down automaton."""
+	
+	def __init__ (self, initial_state, initial_stack = ('')):
+		self._state = initial_state
+		self._stack = list (initial_stack)[:]
+		self._transitions = {}
 		
-class TokenInstance (object):
+	def connect (self, state, stack, value, end_state, callback = None):
+		"""Connect a transition to a callback.
+		
+		.. describe:: state
+			
+			A string representing the expected state.
+			
+		.. describe:: stack
+			
+			The value that should be on the stack.
+			
+		.. describe:: value
+			
+			The value passed to transition.
+			
+		.. describe:: end_state
+			
+			The state to transition to.
+			
+		.. describe:: callback
+			
+			If not None, this function will be called with
+			any extra data passed to transition.
+			
+		"""
+		key = (stack, state, value)
+		
+		if key in self._transitions:
+			raise ValueError ("This state/stack/input combination "
+			                  "has already been connected: %r" %
+			                  [key])
+			
+		if callback is None:
+			callback = lambda *a, **kw: None
+		self._transitions[key] = (end_state, callback)
+		
+	def connect_many (self, *transitions):
+		"""Connect many transitions at once. 
+		
+		Each transition is in the format (stack, state, (value,
+		end_state, callback, stack_action), ...).
+		
+		"""
+		for state_def in transitions:
+			stack, state = state_def[:2]
+			connections = state_def[2:]
+			for connection in connections:
+				self.connect (state, stack, *connection)
+				
+	def transition (self, value, *args, **kwargs):
+		"""Execute a transition between one state and another.
+		
+		.. describe:: value
+			
+			Combined with the current state and top of the
+			stack to discover the transition to take.
+			
+		.. describe:: *args, **kwargs
+			
+			Passed to the callback function, if it exists.
+		
+		"""
+		key = (self._stack[-1], self._state, value)
+		try:
+			end_state, callback = self._transitions[key]
+		except KeyError:
+			raise ValueError ("No such transition: %r" % (key,))
+			
+		try:
+			retval = callback (*args, **kwargs)
+			self._state = end_state
+			return retval
+		except:
+			self._state = 'error'
+			raise
+			
+	def push (self, value):
+		self._stack.append (value)
+		
+	def pop (self):
+		self._stack.pop ()
+		
+class Token (object):
 	"""Instance of a JSON token"""
 	__slots__ = ['type', 'value', 'offset', 'full_string']
 	def __init__ (self, token_type, full_string, offset, value):
@@ -235,17 +276,6 @@ class TokenInstance (object):
 	def __repr__ (self):
 		return '%s<%r>' % (self.type.name, self.value)
 		
-
-# Inputs
-ARRAY_START = Token ('ARRAY_START')
-ARRAY_END = Token ('ARRAY_END')
-OBJECT_START = Token ('OBJECT_START')
-OBJECT_END = Token ('OBJECT_END')
-COLON = Token ('COLON')
-COMMA = Token ('COMMA')
-ATOM = Token ('ATOM')
-EOF = Token ('EOF')
-
 def format_error (*args):
 	if len (args) == 2:
 		token, description = args
@@ -270,28 +300,23 @@ def tokenize (string):
 		The string to tokenize. Should be in unicode.
 	
 	"""
-	basic_types = {'[': ARRAY_START, ']': ARRAY_END,
-	               '{': OBJECT_START, '}': OBJECT_END,
-	               ':': COLON, ',': COMMA}
-	
 	position = 0
 	for match in TOKEN_SPLITTER.findall (string):
-		basic_string, string_atom, other_atom, whitespace, unknown_token = match
-		if basic_string:
-			yield basic_types[basic_string] (string, position, basic_string)
-		elif string_atom:
-			yield ATOM (string, position, string_atom)
-		elif other_atom:
-			yield ATOM (string, position, other_atom)
+		basic, atom, whitespace, unknown = match
+		if basic:
+			token_type = BASIC_TOKENS[basic]
+			yield Token (token_type, string, position, basic)
+		elif atom:
+			yield Token ('ATOM', string, position, atom)
 		elif whitespace:
 			pass
 		else:
 			raise ReadError ("Unknown token: %r" % unknown_token)
 		position += sum (map (len, match))
 		
-	yield EOF (string, position, 'EOF')
+	yield Token ('EOF', string, position, '')
 	
-def read_unicode_escape (atom, index, stream):
+def read_unicode_escape (atom, index):
 	"""Read a JSON-style Unicode escape.
 	
 	Unicode escapes may take one of two forms:
@@ -304,89 +329,97 @@ def read_unicode_escape (atom, index, stream):
 	  returned as a surrogate pair.
 	
 	"""
-	get_n = lambda n: u''.join ([stream.next () for ii in range (n)])
-	
-	try:
-		unicode_value = int (get_n (4), 16)
-	except StopIteration:
-		error = format_error (atom.full_string, index - 1,
+	s = atom.value
+	first_hex_str = s[index+1:index+5]
+	if len (first_hex_str) < 4:
+		error = format_error (atom.full_string, atom.offset + index - 1,
 		                      "Unterminated unicode escape.")
+		raise ReadError (error)
+	first_hex = int (first_hex_str, 16)
+	
+	# Some code points are reserved for indicating surrogate pairs
+	if 0xDC00 <= first_hex <= 0xDFFF:
+		error = format_error (
+			atom.full_string, atom.offset + index - 1,
+			"U+%04X is a reserved code point." % first_hex
+		)
 		raise ReadError (error)
 		
 	# Check if it's a UTF-16 surrogate pair
-	if 0xD800 <= unicode_value <= 0xDBFF:
-		first_half = unicode_value
-		try:
-			next_escape = get_n (2)
-		except StopIteration:
-			error = format_error (atom.full_string, index + 5,
-			                      "Missing surrogate pair half.")
-			raise ReadError (error)
-		if next_escape != '\\u':
-			error = format_error (atom.full_string, index + 5,
-			                      "Missing surrogate pair half.")
-			raise ReadError (error)
-		try:
-			second_half = int (get_n (4), 16)
-		except StopIteration:
-			error = format_error (atom.full_string, index + 5,
-			                      "Missing surrogate pair half.")
-			raise ReadError (error)
-			
-		if sys.maxunicode <= 65535:
-			# No wide character support
-			return unichr (first_half) + unichr (second_half)
-		else:
-			# Convert to 10-bit halves of the 20-bit character
-			first_half -= 0xD800
-			second_half -= 0xDC00
-			
-			# Merge into 20-bit character
-			unicode_value = (first_half << 10) + second_half + 0x10000
-			return unichr (unicode_value)
-	elif 0xDC00 <= unicode_value <= 0xDFFF:
-		error = format_error (atom.full_string, index - 1,
-		                      "U+%04X is a reserved code point." % unicode_value)
+	if not (0xD800 <= first_hex <= 0xDBFF):
+		return unichr (first_hex), index + 4
+		
+	second_hex_str = s[index+5:index+11]
+	if not (len (second_hex_str) >= 6 and second_hex_str.startswith ('\\u')):
+		error = format_error (atom.full_string, atom.offset + index + 5,
+		                      "Missing surrogate pair half.")
 		raise ReadError (error)
+		
+	second_hex = int (second_hex_str[2:], 16)
+	if sys.maxunicode <= 65535:
+		retval = unichr (first_hex) + unichr (second_hex)
 	else:
-		return unichr (unicode_value)
+		# Convert to 10-bit halves of the 20-bit character
+		first_hex -= 0xD800
+		second_hex -= 0xDC00
+		
+		# Merge into 20-bit character
+		retval = unichr ((first_half << 10) + second_half + 0x10000)
+	return retval, index + 10
 	
 def read_unichars (atom):
 	"""Read unicode characters from an escaped string."""
-	escaped = False
-	stream = iter (atom.value[1:-1])
+	string = atom.value
+	assert string[0] == '"'
+	assert string[-1] == '"'
+	
 	illegal = set (map (unichr, range (0x20)))
-	for index, char in enumerate (stream):
-		full_idx = atom.offset + index + 1
-		if char in illegal:
-			error = format_error (atom.full_string, full_idx,
-			                      "Unexpected U+%04X." % ord (char))
-			raise ReadError (error)
-		if escaped:
+	
+	index = 1
+	escaped = False
+	while True:
+		while not escaped:
+			char = string[index]
+			if char == '\\':
+				escaped = True
+			elif char == '"':
+				return
+			elif char in illegal:
+				error = format_error (
+					atom.full_string, atom.offset + index,
+					"Unexpected U+%04X." % ord (char),
+				)
+				raise ReadError (error)
+			else:
+				yield char
+			index += 1
+			
+		while escaped:
+			char = string[index]
 			if char in READ_ESCAPES:
 				yield READ_ESCAPES[char]
-				escaped = False
 			elif char == 'u':
-				yield read_unicode_escape (atom, full_idx, stream)
-				escaped = False
+				unescaped, index = read_unicode_escape (atom, index)
+				yield unescaped
 			else:
-				error = format_error (atom.full_string, full_idx - 1,
-				                      "Unknown escape code.")
+				error = format_error (
+					atom.full_string,
+					# -1 to report the start of the escape code
+					atom.offset + index - 1,
+					"Unknown escape code: \\%s." % char,
+				)
 				raise ReadError (error)
-				
-		elif char == '\\':
-			escaped = True
-		else:
-			yield char
+			index += 1
+			escaped = False
 			
-def parse_long (atom, string, base = 10):
+def parse_long (atom, string):
 	"""Convert a string to a long, forbidding leading zeros."""
 	if string[0] == '0':
 		if len (string) > 1:
 			error = format_error (atom, "Number with leading zero.")
 			raise ReadError (error)
 		return 0
-	return int (string, base)
+	return int (string, 10)
 	
 def parse_number (atom, match):
 	"""Parse a number from a regex match.
@@ -410,11 +443,13 @@ def next_char_ord (string):
 		lower -= 0xDC00
 		value = ((upper << 10) + lower) + 0x10000
 		
-	return value
+	if value > 0xffff:
+		return "U+%08X" % value
+	return "U+%04X" % value
 	
 def parse_atom (atom):
 	"""Parse a JSON atom into a Python value."""
-	assert atom.type == ATOM
+	assert atom.type == 'ATOM'
 	
 	for keyword, value in KEYWORDS:
 		if atom.value == keyword:
@@ -433,30 +468,44 @@ def parse_atom (atom):
 		error = format_error (atom, "Invalid number.")
 		raise ReadError (error)
 		
-	char_ord = next_char_ord (atom.value)
-	if char_ord > 0xffff:
-		error = format_error (atom, "Unexpected U+%08X." % char_ord)
-	else:
-		error = format_error (atom, "Unexpected U+%04X." % char_ord)
-	raise ReadError (error)
+	raise UnknownAtomError (atom.value)
 	
-def _py_read (string):
-	"""Parse a unicode string in JSON format into a Python value."""
+def read (string):
+	"""Parse a JSON expression into a Python value.
+	
+	If string is a byte string, it will be converted to Unicode
+	before parsing (see unicode_autodetect_encoding).
+	
+	"""
+	string = unicode_autodetect_encoding (string)
 	read_item_stack = [([], 0)]
 	
 	# Callbacks
-	def on_atom (atom):
-		"""Called when an atom token is retrieved."""
-		read_item_stack[-1][0].append (parse_atom (atom))
+	def on_expected_root_value (token):
+		try:
+			parse_atom (token)
+		except UnknownAtomError:
+			on_unexpected (token)
+		error = format_error (token, "Expecting an array or object.")
+		raise ReadError (error)
 		
-	def on_container_start (token):
-		"""Called when an array or object begins."""
+	def on_array_start (token):
+		machine.push ('array')
 		read_item_stack.append (([], token.offset))
 		
-	def on_array_end (_):
-		"""Called when an array has ended."""
+	def on_array_end (token):
+		machine.pop ()
 		array, _ = read_item_stack.pop ()
 		read_item_stack[-1][0].append (array)
+		
+	def on_unterminated_array (_):
+		_, start = read_item_stack[-1]
+		error = format_error (token.full_string, start, "Unterminated array.")
+		raise ReadError (error)
+		
+	def on_object_start (token):
+		machine.push ('object')
+		read_item_stack.append (([], token.offset))
 		
 	def on_object_key (token):
 		"""Called when an object key is retrieved."""
@@ -464,92 +513,163 @@ def _py_read (string):
 		if isinstance (key, unicode):
 			read_item_stack[-1][0].append (key)
 		else:
-			error = format_error (token, "Expecting property name.")
+			char_ord = next_char_ord (token.value)
+			error = format_error (token, "Unexpected %s while looking for property name." % char_ord)
 			raise ReadError (error)
 			
 	def on_object_end (_):
 		"""Called when an object has ended."""
+		machine.pop ()
 		pairs, _ = read_item_stack.pop ()
 		read_item_stack[-1][0].append (dict (chunk (pairs, 2)))
 		
+	def on_atom (atom):
+		"""Called when an atom token is retrieved."""
+		read_item_stack[-1][0].append (parse_atom (atom))
+		
+	def on_array_value (atom):
+		try:
+			on_atom (atom)
+		except UnknownAtomError:
+			on_expecting_array_value (atom)
+			
 	def on_unterminated_object (token):
 		_, start = read_item_stack[-1]
 		error = format_error (token.full_string, start, "Unterminated object.")
 		raise ReadError (error)
 		
 	def on_expected_colon (token):
-		error = format_error (token, "Expected colon after object"
-		                             " property name.")
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s while looking for colon." % char_ord)
 		raise ReadError (error)
 		
 	def on_empty_expression (token):
 		error = format_error (token.full_string, 0, "No expression found.")
 		raise ReadError (error)
 		
-	def on_missing_object_key (token):
-		error = format_error (token, "Expecting property name.")
+	def on_expected_object_key (token):
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s while looking for property name." % char_ord)
+		raise ReadError (error)
+		
+	def on_expected_object_value (token):
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s while looking for property value." % char_ord)
+		raise ReadError (error)
+		
+	def on_expecting_array_value (token):
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s while looking for array value." % char_ord)
 		raise ReadError (error)
 		
 	def on_expecting_comma (token):
-		error = format_error (token, "Expecting comma.")
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s while looking for comma." % char_ord)
 		raise ReadError (error)
 		
 	def on_extra_data (token):
 		error = format_error (token, "Extra data after JSON expression.")
 		raise ReadError (error)
 		
+	def on_unexpected (token):
+		char_ord = next_char_ord (token.value)
+		error = format_error (token, "Unexpected %s." % char_ord)
+		raise ReadError (error)
+		
 	machine = StateMachine ('need-value', ['root'])
-	
-	PUSH = StateMachine.PUSH
-	POP = StateMachine.POP
 	
 	# Register state transitions
 	machine.connect_many (
 		('root', 'need-value',
-			(ATOM, 'complete', on_atom),
-			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
-			(EOF, 'error', on_empty_expression)),
+			('ATOM', 'error', on_expected_root_value),
+			('ARRAY_START', 'empty', on_array_start),
+			('ARRAY_END', 'error', on_unexpected),
+			('OBJECT_START', 'empty', on_object_start),
+			('OBJECT_END', 'error', on_unexpected),
+			('COMMA', 'error', on_unexpected),
+			('COLON', 'error', on_unexpected),
+			('EOF', 'error', on_empty_expression)),
 		('root', 'got-value',
-			(EOF, 'complete'),
-			(ARRAY_START, 'error', on_extra_data)),
-		('root', 'complete', (EOF, 'complete')),
-		
+			('ATOM', 'error', on_extra_data),
+			('ARRAY_START', 'error', on_extra_data),
+			('ARRAY_END', 'error', on_extra_data),
+			('OBJECT_START', 'error', on_extra_data),
+			('OBJECT_END', 'error', on_extra_data),
+			('COMMA', 'error', on_extra_data),
+			('COLON', 'error', on_extra_data),
+			('EOF', 'complete')),
 		('array', 'empty',
-			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(ARRAY_END, 'got-value', on_array_end, POP),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
-			(ATOM, 'got-value', on_atom)),
+			('ATOM', 'got-value', on_array_value),
+			('ARRAY_START', 'empty', on_array_start),
+			('ARRAY_END', 'got-value', on_array_end),
+			('OBJECT_START', 'empty', on_object_start),
+			('OBJECT_END', 'error', on_expecting_array_value),
+			('COMMA', 'error', on_expecting_array_value),
+			('COLON', 'error', on_expecting_array_value),
+			('EOF', 'error', on_unterminated_array)),
 		('array', 'need-value',
-			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
-			(ATOM, 'got-value', on_atom)),
+			('ATOM', 'got-value', on_atom),
+			('ARRAY_START', 'empty', on_array_start),
+			('ARRAY_END', 'error', on_expecting_array_value),
+			('OBJECT_START', 'empty', on_object_start),
+			('OBJECT_END', 'error', on_expecting_array_value),
+			('COMMA', 'error', on_expecting_array_value),
+			('COLON', 'error', on_expecting_array_value),
+			('EOF', 'error', on_unterminated_array)),
 		('array', 'got-value',
-			(ARRAY_END, 'got-value', on_array_end, POP),
-			(COMMA, 'need-value'),
-			(ATOM, 'error', on_expecting_comma)),
-		
+			('ATOM', 'error', on_expecting_comma),
+			('ARRAY_START', 'error', on_expecting_comma),
+			('ARRAY_END', 'got-value', on_array_end),
+			('OBJECT_START', 'error', on_expecting_comma),
+			('OBJECT_END', 'error', on_expecting_comma),
+			('COMMA', 'need-value'),
+			('COLON', 'error', on_expecting_comma),
+			('EOF', 'error', on_unterminated_array)),
 		('object', 'empty',
-			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
-			(OBJECT_END, 'got-value', on_object_end, POP),
-			(ATOM, 'with-key', on_object_key),
-			(COMMA, 'error', on_missing_object_key)),
+			('ATOM', 'with-key', on_object_key),
+			('ARRAY_START', 'error', on_expected_object_key),
+			('ARRAY_END', 'error', on_expected_object_key),
+			('OBJECT_START', 'error', on_expected_object_key),
+			('OBJECT_END', 'got-value', on_object_end),
+			('COMMA', 'error', on_expected_object_key),
+			('COLON', 'error', on_expected_object_key),
+			('EOF', 'error', on_unterminated_object)),
 		('object', 'with-key',
-			(COLON, 'need-value'),
-			(OBJECT_END, 'error', on_expected_colon)),
+			('ATOM', 'error', on_expected_colon),
+			('ARRAY_START', 'error', on_expected_colon),
+			('ARRAY_END', 'error', on_expected_colon),
+			('OBJECT_START', 'error', on_expected_colon),
+			('OBJECT_END', 'error', on_expected_colon),
+			('COMMA', 'error', on_expected_colon),
+			('COLON', 'need-value'),
+			('EOF', 'error', on_unterminated_object)),
 		('object', 'need-value',
-			(ARRAY_START, 'empty', on_container_start, PUSH, 'array'),
-			(OBJECT_START, 'empty', on_container_start, PUSH, 'object'),
-			(ATOM, 'got-value', on_atom)),
+			('ATOM', 'got-value', on_atom),
+			('ARRAY_START', 'empty', on_array_start),
+			('ARRAY_END', 'error', on_expected_object_value),
+			('OBJECT_START', 'empty', on_object_start),
+			('OBJECT_END', 'error', on_expected_object_value),
+			('COMMA', 'error', on_expected_object_value),
+			('COLON', 'error', on_expected_object_value),
+			('EOF', 'error', on_unterminated_object)),
 		('object', 'got-value',
-			(OBJECT_END, 'got-value', on_object_end, POP),
-			(COMMA, 'need-key'),
-			(EOF, 'error', on_unterminated_object),
-			(ATOM, 'error', on_expecting_comma)),
+			('ATOM', 'error', on_expecting_comma),
+			('ARRAY_START', 'error', on_expecting_comma),
+			('ARRAY_END', 'error', on_expecting_comma),
+			('OBJECT_START', 'error', on_expecting_comma),
+			('OBJECT_END', 'got-value', on_object_end),
+			('COMMA', 'need-key'),
+			('COLON', 'error', on_expecting_comma),
+			('EOF', 'error', on_unterminated_object)),
 		('object', 'need-key',
-			(ATOM, 'with-key', on_object_key),
-			(OBJECT_END, 'error', on_missing_object_key)),
+			('ATOM', 'with-key', on_object_key),
+			('ARRAY_START', 'error', on_expected_object_key),
+			('ARRAY_END', 'error', on_expected_object_key),
+			('OBJECT_START', 'error', on_expected_object_key),
+			('OBJECT_END', 'error', on_expected_object_key),
+			('COMMA', 'error', on_expected_object_key),
+			('COLON', 'error', on_expected_object_key),
+			('EOF', 'error', on_unterminated_object)),
 	)
 	
 	for token in tokenize (string):
@@ -562,65 +682,33 @@ def _py_read (string):
 			
 	return read_item_stack[0][0][0]
 	
-def safe_unichr (codepoint):
-	"""Similar to unichr(), except handles narrow builds.
-	
-	If a codepoint above 0x10000 is passed to this function, and the
-	system cannot handle wide characters, the return value will be a
-	string of length 2 containing the surrogate pair."""
-	if codepoint >= 0x10000 > sys.maxunicode:
-		# No wide character support
-		upper = (codepoint & 0xFFC00 - 0x10000) >> 10
-		lower = codepoint & 0x3FF
-		
-		upper += 0xD800
-		lower += 0xDC00
-		
-		return unichr (upper) + unichr (lower)
-	else:
-		return unichr (codepoint)
-		
-def unicode_autodetect_encoding (bytes):
+def unicode_autodetect_encoding (bytestring):
 	"""Intelligently convert a byte string to Unicode.
 	
 	Assumes the encoding used is one of the UTF-* variants. If the
 	input is already in unicode, this is a noop.
 	
 	"""
-	if isinstance (bytes, unicode):
-		return bytes
+	if isinstance (bytestring, unicode):
+		return bytestring
 		
-	def struct_decode (format, offset = 0):
-		"""Helper for decoding UTF-32."""
-		_bytes = bytes[offset:]
-		codes = struct.unpack (format % (len (_bytes) / 4), _bytes)
-		return u''.join (safe_unichr (code) for code in codes)
-		
-	boms = ((codecs.BOM_UTF32_BE, lambda: struct_decode ('>%dl', 4)),
-	        (codecs.BOM_UTF32_LE, lambda: struct_decode ('<%dl', 4)),
-	        (codecs.BOM_UTF16_BE, lambda: bytes[2:].decode ('utf-16-be')),
-	        (codecs.BOM_UTF16_LE, lambda: bytes[2:].decode ('utf-16-le')),
-	        (codecs.BOM_UTF8, lambda: bytes[3:].decode ('utf-8')))
-	
-	utf_headers = (((0, 0, 0, 1), lambda: struct_decode ('>%dl')),
-	              ((1, 0, 0, 0), lambda: struct_decode ('<%dl')),
-	              ((0, 1, 0, 1), lambda: bytes.decode ('utf-16-be')),
-	              ((1, 0, 1, 0), lambda: bytes.decode ('utf-16-le')))
-	
-	# Check for Byte Order Mark
-	for bom, func in boms:
-		if bytes.startswith (bom):
-			return func ()
+	# Check for UTF byte order marks in the bytestring
+	for bom, encoding in UNICODE_BOMS:
+		if bytestring.startswith (bom):
+			return bytestring[len(bom):].decode (encoding)
 			
-	# First two characters are always ASCII
-	header = tuple (((ord (b) and 1) or 0) for b in bytes[:4])
-	for utf_header, func in utf_headers:
+	# Autodetect UTF-* encodings using the algorithm in the RFC
+	header = tuple (1 if ord (b) else 0 for b in bytestring[:4])
+	for utf_header, encoding in UTF_HEADERS:
 		if header == utf_header:
-			return func ()
+			return bytestring.decode (encoding)
 			
 	# Default to UTF-8
-	return bytes.decode ('utf-8')
+	return bytestring.decode ('utf-8')
 	
+# }}}
+
+# Serializer {{{
 def get_separators (start, end, indent_string, indent_level):
 	if indent_string is None:
 		return start, end, '', ','
@@ -636,6 +724,9 @@ def write_array (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	v_id = id (value)
 	if v_id in parent_objects:
 		raise WriteError ("Cannot serialize self-referential values.")
+		
+	if len (value) == 0:
+		return '[]'
 		
 	separators = get_separators ('[', ']', indent_string, indent_level)
 	start, end, pre_value, post_value = separators
@@ -663,6 +754,9 @@ def write_object (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	v_id = id (value)
 	if v_id in parent_objects:
 		raise WriteError ("Cannot serialize self-referential values.")
+		
+	if len (value) == 0:
+		return '{}'
 		
 	separators = get_separators ('{', '}', indent_string, indent_level)
 	start, end, pre_value, post_value = separators
@@ -782,7 +876,7 @@ def write_complex (value):
 	if value.imag == 0.0:
 		return repr (value.real)
 	raise WriteError ("Cannot serialize complex numbers with"
-	                         " imaginary components.")
+	                  " imaginary components.")
 	
 STR_TYPE_WRITERS = [
 	(unicode, write_unicode),
@@ -864,53 +958,6 @@ def _py_write (value, sort_keys, indent_string, ascii_only, coerce_keys,
 	return func (value, sort_keys, indent_string, ascii_only,
 	             coerce_keys, on_unknown, parent_objects, indent_level)
 	
-	# 
-	w_func = CONTAINER_TYPES.get (type (value))
-	
-	# Might be a subclass
-	if w_func is None:
-		for mapper_type, mapper in CONTAINER_TYPES.items ():
-			if isinstance (value, mapper_type):
-				w_func = mapper
-				
-	# Check for user-defined mapping types
-	if w_func is None:
-		if hasattr (value, 'items'):
-			w_func = write_object
-			
-	if w_func:
-		return w_func (value, sort_keys, indent_string, ascii_only,
-		               coerce_keys, parent_objects, indent_level)
-		
-	if parent_objects:
-		return write_basic (value, ascii_only)
-		
-	raise WriteError ("The outermost container must be an array or object.")
-	# Check for user-defined iterables. Run this check after
-	# write_basic to avoid iterating over strings.
-	try:
-		iter (value)
-		func = write_iterable
-	except TypeError:
-		pass
-	
-		return write_iterable (value, sort_keys, indent_string, ascii_only,
-		                       coerce_keys, parent_objects, indent_level)
-		
-	
-def read (string):
-	"""Parse a JSON expression into a Python value.
-	
-	If string is a byte string, it will be converted to Unicode
-	before parsing (see unicode_autodetect_encoding).
-	
-	"""
-	u_string = unicode_autodetect_encoding (string)
-	value = _py_read (u_string)
-	if not isinstance (value, (dict, list)):
-		raise ReadError ("Tried to deserialize a basic value.")
-	return value
-	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False, encoding = 'utf-8', on_unknown = None):
 	"""Serialize a Python value to a JSON-formatted byte string.
@@ -974,3 +1021,5 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		return u_string
 	return u_string.encode (encoding)
 	
+# }}}
+

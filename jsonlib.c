@@ -60,6 +60,8 @@ typedef struct _ParserState {
 	
 	Py_UNICODE *stringparse_buffer;
 	Py_ssize_t stringparse_buffer_size;
+	
+	int got_root: 1;
 } ParserState;
 
 typedef enum
@@ -73,6 +75,8 @@ typedef enum
 {
 	OBJECT_EMPTY,
 	OBJECT_NEED_KEY,
+	OBJECT_NEED_COLON,
+	OBJECT_NEED_VALUE,
 	OBJECT_GOT_VALUE
 } ParseObjectState;
 
@@ -223,6 +227,46 @@ skip_spaces (ParserState *state)
 		state->index++;
 }
 
+static int
+parser_find_next_value (ParserState *state)
+{
+	/* Return codes:
+	 * 
+	 * 0 = found atom or value
+	 * 1 = found non-value
+	**/
+	Py_UNICODE *c = state->index;
+	switch (c[0])
+	{
+		case '"':
+		case '-':
+		case '0':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+		case '[':
+		case '{':
+			return 0;
+		case 't':
+			if (c[1] == 'r' && c[2] == 'u' && c[3] == 'e')
+				return 0;
+		case 'f':
+			if (c[1] == 'a' && c[2] == 'l' && c[3] == 's' && c[4] == 'e')
+				return 0;
+		case 'n':
+			if (c[1] == 'u' && c[2] == 'l' && c[3] == 'l')
+				return 0;
+		default:
+			return 1;
+	}
+}
+
 static Py_UCS4
 next_ucs4 (ParserState *state, Py_UNICODE *index)
 {
@@ -319,19 +363,33 @@ set_error_simple (ParserState *state, Py_UNICODE *position,
 }
 
 static void
-set_error_unexpected (ParserState *state, Py_UNICODE *position)
+set_error_unexpected (ParserState *state, Py_UNICODE *position,
+                      const char *wanted)
 {
 	PyObject *err_str, *err_format_args;
 	Py_UCS4 c = next_ucs4 (state, position);
 	
-	if (c > 0xFFFF)
-		err_str = PyString_FromString ("Unexpected U+%08X.");
+	if (wanted)
+	{
+		if (c > 0xFFFF)
+			err_str = PyString_FromString ("Unexpected U+%08X while looking for %s.");
+		else
+			err_str = PyString_FromString ("Unexpected U+%04X while looking for %s.");
+	}
 	else
-		err_str = PyString_FromString ("Unexpected U+%04X.");
+	{
+		if (c > 0xFFFF)
+			err_str = PyString_FromString ("Unexpected U+%08X.");
+		else
+			err_str = PyString_FromString ("Unexpected U+%04X.");
+	}
 	
 	if (err_str)
 	{
-		err_format_args = Py_BuildValue ("(k)", c);
+		if (wanted)
+			err_format_args = Py_BuildValue ("(ks)", c, wanted);
+		else
+			err_format_args = Py_BuildValue ("(k)", c);
 		if (err_format_args)
 		{
 			set_error (state, position, err_str, err_format_args);
@@ -505,7 +563,7 @@ read_string (ParserState *state)
 		/* Check for illegal characters */
 		if (c < 0x20)
 		{
-			set_error_unexpected (state, start + ii);
+			set_error_unexpected (state, start + ii, NULL);
 			return NULL;
 		}
 		
@@ -581,8 +639,16 @@ read_string (ParserState *state)
 				
 				default:
 				{
-					set_error_simple (state, start + ii - 1,
-					                  "Unknown escape code.");
+					PyObject *err = NULL, *err_args = NULL;
+					err = PyString_FromString ("Unknown escape code: \\%s.");
+					err_args = Py_BuildValue ("(u#)", &c, 1);
+					if (err && err_args)
+					{
+						set_error (state, start + ii - 1,
+						           err, err_args);
+					}
+					Py_XDECREF (err);
+					Py_XDECREF (err_args);
 					return NULL;
 				}
 			}
@@ -712,65 +778,64 @@ read_array_impl (PyObject *list, ParserState *state)
 {
 	Py_UNICODE *start, c;
 	ParseArrayState array_state = ARRAY_EMPTY;
+	int next_atom;
 	
 	start = state->index;
 	state->index++;
 	while (TRUE)
 	{
 		skip_spaces (state);
-		c = *state->index;
-		if (c == 0)
+		if (!(c = *state->index))
 		{
-			set_error_simple (state, state->index,
+			set_error_simple (state, start,
 			                  "Unterminated array.");
 			return FALSE;
 		}
 		
-		else if (c == ']')
+		switch (array_state)
 		{
-			if (array_state == ARRAY_NEED_VALUE)
-			{
-				set_error_simple (state, state->index,
-				                  "Expecting array item.");
+			case ARRAY_EMPTY:
+				if (c == ']')
+				{
+					state->index++;
+					return TRUE;
+				}
+			case ARRAY_NEED_VALUE:
+				next_atom = parser_find_next_value (state);
+				if (next_atom == 0)
+				{
+					PyObject *value;
+					int result;
+					
+					if (!(value = json_read (state)))
+						return FALSE;
+					
+					result  = PyList_Append (list, value);
+					Py_DECREF (value);
+					if (result == -1)
+						return FALSE;
+					
+					array_state = ARRAY_GOT_VALUE;
+					break;
+				}
+				
+				set_error_unexpected (state, state->index, "array value");
 				return FALSE;
-			}
-			state->index++;
-			return TRUE;
-		}
-		
-		else if (c == ',')
-		{
-			if (array_state != ARRAY_GOT_VALUE)
-			{
-				set_error_simple (state, state->index,
-				                  "Expecting array item.");
+				
+			case ARRAY_GOT_VALUE:
+				if (c == ',')
+				{
+					array_state = ARRAY_NEED_VALUE;
+					state->index++;
+					break;
+				}
+				else if (c == ']')
+				{
+					state->index++;
+					return TRUE;
+				}
+				set_error_unexpected (state, state->index, "comma");
 				return FALSE;
-			}
-			array_state = ARRAY_NEED_VALUE;
-			state->index++;
-		}
-		
-		else
-		{
-			PyObject *value;
-			int result;
-			
-			if (array_state == ARRAY_GOT_VALUE)
-			{
-				set_error_simple (state, state->index,
-				                  "Expecting comma.");
-				return FALSE;
-			}
-			
-			if (!(value = json_read (state)))
-				return FALSE;
-			
-			result  = PyList_Append (list, value);
-			Py_DECREF (value);
-			if (result == -1)
-				return FALSE;
-			
-			array_state = ARRAY_GOT_VALUE;
 		}
 	}
 }
@@ -794,90 +859,96 @@ read_object_impl (PyObject *object, ParserState *state)
 {
 	Py_UNICODE *start, c;
 	ParseObjectState object_state = OBJECT_EMPTY;
+	PyObject *key = NULL;
 	
 	start = state->index;
 	state->index++;
 	while (TRUE)
 	{
 		skip_spaces (state);
-		c = *state->index;
-		if (c == 0)
+		if (!(c = *state->index))
 		{
 			set_error_simple (state, start,
 			                  "Unterminated object.");
+			Py_XDECREF (key);
 			return FALSE;
 		}
 		
-		else if (c == '}')
+		switch (object_state)
 		{
-			if (object_state == OBJECT_NEED_KEY)
+			case OBJECT_EMPTY:
+				if (c == '}')
+				{
+					state->index++;
+					Py_XDECREF (key);
+					return TRUE;
+				}
+			case OBJECT_NEED_KEY:
+				assert (key == NULL);
+				if (c != '"')
+				{
+					set_error_unexpected (state, state->index,
+					                      "property name");
+					return FALSE;
+				}
+				if (!(key = json_read (state)))
+					return FALSE;
+				object_state = OBJECT_NEED_COLON;
+				break;
+			case OBJECT_NEED_COLON:
+				if (c != ':')
+				{
+					set_error_unexpected (state, state->index,
+					                      "colon");
+					Py_XDECREF (key);
+					return FALSE;
+				}
+				state->index++;
+				object_state = OBJECT_NEED_VALUE;
+				break;
+			case OBJECT_NEED_VALUE:
 			{
-				set_error_simple (state, state->index,
-				                  "Expecting property name.");
+				PyObject *value;
+				int result, next_atom;
+				
+				assert (key != NULL);
+				next_atom = parser_find_next_value (state);
+				if (next_atom == 0)
+				{
+					if (!(value = json_read (state)))
+					{
+						Py_XDECREF (key);
+						return FALSE;
+					}
+					result = PyDict_SetItem (object, key, value);
+					Py_DECREF (key);
+					Py_DECREF (value);
+					key = NULL;
+					if (result == -1)
+						return FALSE;
+					object_state = OBJECT_GOT_VALUE;
+					break;
+				}
+				
+				set_error_unexpected (state, state->index, "property value");
 				return FALSE;
 			}
-			state->index++;
-			return TRUE;
-		}
-		
-		else if (c == ',')
-		{
-			if (object_state != OBJECT_GOT_VALUE)
-			{
-				set_error_simple (state, state->index,
-				                  "Expecting property name.");
+			case OBJECT_GOT_VALUE:
+				if (c == ',')
+				{
+					object_state = OBJECT_NEED_KEY;
+					state->index++;
+					break;
+				}
+				else if (c == '}')
+				{
+					state->index++;
+					Py_XDECREF (key);
+					return TRUE;
+				}
+				set_error_unexpected (state, state->index, "comma");
+				Py_XDECREF (key);
 				return FALSE;
-			}
-			object_state = OBJECT_NEED_KEY;
-			state->index++;
-		}
-		
-		else if (c == '"')
-		{
-			PyObject *key, *value;
-			int result;
-			
-			if (object_state == OBJECT_GOT_VALUE)
-			{
-				set_error_simple (state, state->index,
-				                  "Expecting comma.");
-				return FALSE;
-			}
-			
-			if (!(key = json_read (state)))
-				return FALSE;
-			
-			skip_spaces (state);
-			if (*state->index != ':')
-			{
-				set_error_simple (state, state->index,
-				                  "Expected colon after object"
-				                  " property name.");
-				Py_DECREF (key);
-				return FALSE;
-			}
-			
-			state->index++;
-			if (!(value = json_read (state)))
-			{
-				Py_DECREF (key);
-				return FALSE;
-			}
-			
-			result = PyDict_SetItem (object, key, value);
-			Py_DECREF (key);
-			Py_DECREF (value);
-			if (result == -1)
-				return FALSE;
-			
-			object_state = OBJECT_GOT_VALUE;
-		}
-		
-		else
-		{
-			set_error_simple (state, state->index,
-			                  "Expecting property name.");
-			return FALSE;
 		}
 	}
 }
@@ -907,8 +978,10 @@ json_read (ParserState *state)
 			                  "No expression found.");
 			return NULL;
 		case '{':
+			state->got_root = TRUE;
 			return read_object (state);
 		case '[':
+			state->got_root = TRUE;
 			return read_array (state);
 		case '"':
 			return read_string (state);
@@ -942,7 +1015,7 @@ json_read (ParserState *state)
 		default:
 			break;
 	}
-	set_error_unexpected (state, state->index);
+	set_error_unexpected (state, state->index, NULL);
 	return NULL;
 }
 
@@ -1084,6 +1157,13 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	}
 	
 	Py_XDECREF (state.Decimal);
+	
+	if (result && !state.got_root)
+	{
+		set_error_simple (&state, state.start,
+		                  "Expecting an array or object.");
+		result = NULL;
+	}
 	
 	if (result)
 	{
@@ -2463,7 +2543,9 @@ initjsonlib (void)
 	PyModule_AddObject(module, "UnknownSerializerError",
 	                   UnknownSerializerError);
 	
-	/* If you change the version here, also change it in setup.py. */
+	/* If you change the version here, also change it in setup.py and
+	 * jsonlib.py.
+	**/
 	version = Py_BuildValue ("(iii)", 1, 3, 5);
 	PyModule_AddObject (module, "__version__", version);
 }
