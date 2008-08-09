@@ -821,6 +821,12 @@ class WriteObjectTests (SerializerTestCase):
 		self.w ({'a': 1, 'b': 2, 'c': 3},
 		        u'{"a":1,"c":3,"b":2}')
 		
+	def test_userstring_key (self):
+		self.w ({UserString.UserString ('a'): 'b'}, u'{"a":"b"}')
+		
+	def test_userstring_coerce (self):
+		self.w ({UserString.UserString ('a'): 'b'}, u'{"a":"b"}', coerce_keys = True)
+		
 class WriteStringTests (SerializerTestCase):
 	def test_empty_string (self):
 		self.w ([''], u'[""]', ascii_only = True)
