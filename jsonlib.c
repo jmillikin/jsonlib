@@ -103,11 +103,14 @@ typedef struct _WriterState
 	PyObject *indent_string;
 	int ascii_only;
 	int coerce_keys;
+	char *encoding;
 	PyObject *on_unknown;
 	
 	Py_UNICODE *buffer;
 	Py_ssize_t buffer_size;
 	Py_ssize_t buffer_max_size;
+	
+	PyObject *fp;
 	
 	/* Constants, saved to avoid lookup later */
 	PyObject *true_str;
@@ -1240,6 +1243,16 @@ writer_append_ascii (WriterState *state, const char *text)
 {
 	Py_ssize_t ii, text_len = strlen (text);
 	
+	if (state->fp)
+	{
+		PyObject *encoded;
+		int result;
+		encoded = PyString_Encode (text, strlen (text), state->encoding, "strict");
+		result = PyFile_WriteObject (encoded, state->fp, Py_PRINT_RAW);
+		Py_DECREF (encoded);
+		return (result == 0);
+	}
+	
 	if (!writer_buffer_resize (state, text_len))
 		return FALSE;
 	for (ii = 0; ii < text_len; ii++)
@@ -1250,9 +1263,34 @@ writer_append_ascii (WriterState *state, const char *text)
 }
 
 static int
+writer_append_ascii_obj (WriterState *state, PyObject *text)
+{
+	if (state->fp)
+	{
+		PyObject *encoded;
+		int result;
+		encoded = PyString_AsEncodedObject (text, state->encoding,
+		                                    "strict");
+		result = PyFile_WriteObject (encoded, state->fp, Py_PRINT_RAW);
+		Py_DECREF (encoded);
+		return (result == 0);
+	}
+	
+	return writer_append_ascii (state, PyString_AS_STRING (text));
+}
+
+static int
 writer_append_unicode (WriterState *state, Py_UNICODE *text, Py_ssize_t len)
 {
 	Py_ssize_t ii;
+	if (state->fp)
+	{
+		PyErr_SetString (PyExc_AssertionError,
+		                 "writer_append_unicode() called when"
+		                 " encoding to a stream");
+		return FALSE;
+	}
+	
 	if (!writer_buffer_resize (state, len))
 		return FALSE;
 	for (ii = 0; ii < len; ii++)
@@ -1265,6 +1303,25 @@ writer_append_unicode (WriterState *state, Py_UNICODE *text, Py_ssize_t len)
 static int
 writer_append_unicode_obj (WriterState *state, PyObject *text)
 {
+	if (state->fp)
+	{
+		PyObject *str_obj;
+		int result;
+		
+		if (PyString_CheckExact (text))
+			return writer_append_ascii (state, PyString_AS_STRING (text));
+		if (!PyUnicode_CheckExact (text))
+		{
+			PyErr_SetString (PyExc_AssertionError, "type (text) in (str, unicode)");
+			return FALSE;
+		}
+		
+		str_obj = PyUnicode_AsEncodedString (text, state->encoding, "strict");
+		result = PyFile_WriteString (PyString_AS_STRING (str_obj), state->fp);
+		Py_DECREF (str_obj);
+		return (result == 0);
+	}
+	
 	if (PyUnicode_CheckExact (text))
 		return writer_append_unicode (state,
 			PyUnicode_AS_UNICODE (text),
@@ -2344,12 +2401,67 @@ valid_json_whitespace (PyObject *string)
 	return TRUE;
 }
 
+static int
+serializer_init_and_run_common (WriterState *state, PyObject *value)
+{
+	int indent_is_valid, succeeded = FALSE;
+	
+	if (!(state->on_unknown == Py_None ||
+	      PyCallable_Check (state->on_unknown)))
+	{
+		PyErr_SetString (PyExc_TypeError,
+		                 "The on_unknown object must be callable.");
+		return FALSE;
+	}
+	
+	indent_is_valid = valid_json_whitespace (state->indent_string);
+	if (!indent_is_valid)
+	{
+		if (indent_is_valid > -1)
+			PyErr_SetString (PyExc_TypeError,
+			                 "Only whitespace may be used for indentation.");
+		return FALSE;
+	}
+	
+	if (state->indent_string == Py_None)
+		state->colon = PyString_FromString (":");
+	else
+		state->colon = PyString_FromString (": ");
+	if (!state->colon) return FALSE;
+	
+	if ((state->Decimal = jsonlib_import ("decimal", "Decimal")) &&
+	    (state->UserString = jsonlib_import ("UserString", "UserString")) &&
+	    (state->true_str = unicode_from_ascii ("true")) &&
+	    (state->false_str = unicode_from_ascii ("false")) &&
+	    (state->null_str = unicode_from_ascii ("null")) &&
+	    (state->inf_str = unicode_from_ascii ("Infinity")) &&
+	    (state->neg_inf_str = unicode_from_ascii ("-Infinity")) &&
+	    (state->nan_str = unicode_from_ascii ("NaN")) &&
+	    (state->quote = unicode_from_ascii ("\"")))
+	{
+		succeeded = write_object (state, value, 0);
+	}
+	
+	Py_XDECREF (state->Decimal);
+	Py_XDECREF (state->UserString);
+	Py_XDECREF (state->true_str);
+	Py_XDECREF (state->false_str);
+	Py_XDECREF (state->null_str);
+	Py_XDECREF (state->inf_str);
+	Py_XDECREF (state->neg_inf_str);
+	Py_XDECREF (state->nan_str);
+	Py_XDECREF (state->quote);
+	Py_XDECREF (state->colon);
+	
+	return succeeded;
+}
+
 static PyObject*
 _write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 {
 	PyObject *value;
 	WriterState state = {NULL};
-	int indent_is_valid, succeeded = FALSE;
+	int succeeded = FALSE;
 	char *encoding;
 	
 	static char *kwlist[] = {"value", "sort_keys", "indent",
@@ -2373,51 +2485,7 @@ _write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	                                  &encoding, &state.on_unknown))
 		return NULL;
 	
-	if (!(state.on_unknown == Py_None || PyCallable_Check (state.on_unknown)))
-	{
-		PyErr_SetString (PyExc_TypeError,
-		                 "The on_unknown object must be callable.");
-		return NULL;
-	}
-	
-	indent_is_valid = valid_json_whitespace (state.indent_string);
-	if (!indent_is_valid)
-	{
-		if (indent_is_valid > -1)
-			PyErr_SetString (PyExc_TypeError,
-			                 "Only whitespace may be used for indentation.");
-		return NULL;
-	}
-	
-	if (state.indent_string == Py_None)
-		state.colon = PyString_FromString (":");
-	else
-		state.colon = PyString_FromString (": ");
-	if (!state.colon) return NULL;
-	
-	if ((state.Decimal = jsonlib_import ("decimal", "Decimal")) &&
-	    (state.UserString = jsonlib_import ("UserString", "UserString")) &&
-	    (state.true_str = unicode_from_ascii ("true")) &&
-	    (state.false_str = unicode_from_ascii ("false")) &&
-	    (state.null_str = unicode_from_ascii ("null")) &&
-	    (state.inf_str = unicode_from_ascii ("Infinity")) &&
-	    (state.neg_inf_str = unicode_from_ascii ("-Infinity")) &&
-	    (state.nan_str = unicode_from_ascii ("NaN")) &&
-	    (state.quote = unicode_from_ascii ("\"")))
-	{
-		succeeded = write_object (&state, value, 0);
-	}
-	
-	Py_XDECREF (state.Decimal);
-	Py_XDECREF (state.UserString);
-	Py_XDECREF (state.true_str);
-	Py_XDECREF (state.false_str);
-	Py_XDECREF (state.null_str);
-	Py_XDECREF (state.inf_str);
-	Py_XDECREF (state.neg_inf_str);
-	Py_XDECREF (state.nan_str);
-	Py_XDECREF (state.quote);
-	Py_XDECREF (state.colon);
+	succeeded = serializer_init_and_run_common (&state, value);
 	
 	if (succeeded)
 	{
@@ -2438,6 +2506,47 @@ _write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	}
 	return NULL;
 }
+
+static PyObject *
+_dump_entry (PyObject *self, PyObject *args, PyObject *kwargs)
+{
+	PyObject *value;
+	WriterState state = {NULL};
+	int succeeded = FALSE;
+	
+	static char *kwlist[] = {"value", "fp", "sort_keys", "indent",
+	                         "ascii_only", "coerce_keys", "encoding",
+	                         "on_unknown", NULL};
+	
+	/* Defaults */
+	state.sort_keys = FALSE;
+	state.indent_string = Py_None;
+	state.ascii_only = TRUE;
+	state.coerce_keys = FALSE;
+	state.on_unknown = Py_None;
+	state.encoding = "utf-8";
+	
+	if (!PyArg_ParseTupleAndKeywords (args, kwargs, "OO|iOiizO:dump",
+	                                  kwlist,
+	                                  &value,
+	                                  &state.fp,
+	                                  &state.sort_keys,
+	                                  &state.indent_string,
+	                                  &state.ascii_only,
+	                                  &state.coerce_keys,
+	                                  &state.encoding,
+	                                  &state.on_unknown))
+		return NULL;
+	
+	succeeded = serializer_init_and_run_common (&state, value);
+	
+	if (succeeded)
+	{
+		Py_INCREF (Py_None);
+		return Py_None;
+	}
+	return NULL;
+}
 /* }}} */
 
 /* python hooks {{{ */
@@ -2450,6 +2559,14 @@ static PyMethodDef module_methods[] = {
 	"\n"
 	"If ``string`` is a byte string, it will be converted to Unicode\n"
 	"before parsing.\n"
+	)},
+	
+	{"dump", (PyCFunction) (_dump_entry), METH_VARARGS | METH_KEYWORDS,
+	PyDoc_STR (
+	"Serialize a Python value to a JSON-formatted byte string.\n"
+	"\n"
+	"Rather than being returned as a string, the output is written to\n"
+	"a file-like object.\n"
 	)},
 	
 	{"write", (PyCFunction) (_write_entry), METH_VARARGS|METH_KEYWORDS,

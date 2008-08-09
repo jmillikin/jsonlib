@@ -8,11 +8,13 @@ import collections
 from decimal import Decimal
 import sets
 import unittest
+from StringIO import StringIO
 import UserList
 import UserDict
 import UserString
 
 from jsonlib import read, write, ReadError, WriteError, UnknownSerializerError
+import jsonlib
 # }}}
 
 # Support & Utility definitions {{{
@@ -926,6 +928,32 @@ class WriteEncodingTests (SerializerTestCase):
 		               encoding = None)
 		self.assertEqual (type (value), unicode)
 		self.assertEqual (value, u'["\U0001D11E \u24CA"]')
+		
+class StreamingSerializerTests (SerializerTestCase):
+	def test_serialize_to_stream (self):
+		io = StringIO ()
+		jsonlib.dump ([], io)
+		self.assertEqual (io.getvalue (), '[]')
+		
+	def test_serialize_complex_to_stream (self):
+		io = StringIO ()
+		jsonlib.dump (["a", "b", u"c \U0001D11E \u24Ca", {"a": "b"}], io)
+		self.assertEqual (io.getvalue (), '["a","b","c \\ud834\\udd1e \\u24ca",{"a":"b"}]')
+		
+	def test_partial_serialization_on_error (self):
+		io = StringIO ()
+		try:
+			jsonlib.dump ([object ()], io)
+		except UnknownSerializerError:
+			pass
+		self.assertEqual (io.getvalue (), '[')
+		
+	def test_encode_utf16_specialcased (self):
+		# Test that special cases that return pure ASCII are still
+		# re-encoded if needed.
+		io = StringIO ()
+		value = jsonlib.dump ([], io, encoding = 'utf-16-le')
+		self.assertEqual (io.getvalue (), '[\x00]\x00')
 		
 # }}}
 
