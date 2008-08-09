@@ -1427,11 +1427,11 @@ write_string (JSONEncoder *encoder, PyObject *string)
 	
 	for (ii = 0; ii < (size_t)str_len; ++ii)
 	{
-		if (buffer[ii] < 0x20 ||
-		    buffer[ii] > 0x7E ||
-		    buffer[ii] == '"' ||
+		if (buffer[ii] == '"' ||
 		    buffer[ii] == '/' ||
-		    buffer[ii] == '\\')
+		    buffer[ii] == '\\' ||
+		    buffer[ii] < 0x20 ||
+		    buffer[ii] > 0x7E)
 		{
 			safe = FALSE;
 			break;
@@ -1701,11 +1701,11 @@ write_unicode (JSONEncoder *encoder, PyObject *unicode)
 	
 	for (ii = 0; ii < str_len; ++ii)
 	{
-		if (buffer[ii] < 0x20 ||
-		    (encoder->ascii_only && buffer[ii] > 0x7E) ||
-		    buffer[ii] == '"' ||
+		if (buffer[ii] == '"' ||
 		    buffer[ii] == '/' ||
-		    buffer[ii] == '\\')
+		    buffer[ii] == '\\' ||
+		    buffer[ii] < 0x20 ||
+		    (encoder->ascii_only && buffer[ii] > 0x7E))
 		{
 			safe = FALSE;
 			break;
