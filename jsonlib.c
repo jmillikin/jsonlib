@@ -1461,7 +1461,7 @@ static PyObject *
 unicode_to_unicode (PyObject *unicode)
 {
 	PyObject *retval;
-	Py_UNICODE *old_buffer, *new_buffer, *buffer_pos;
+	Py_UNICODE *old_buffer, *new_buffer, *p, c;
 	size_t ii, old_buffer_size, new_buffer_size;
 	
 	old_buffer = PyUnicode_AS_UNICODE (unicode);
@@ -1487,7 +1487,7 @@ unicode_to_unicode (PyObject *unicode)
 	new_buffer_size = 2;
 	for (ii = 0; ii < old_buffer_size; ii++)
 	{
-		Py_UNICODE c = old_buffer[ii];
+		c = old_buffer[ii];
 		if (c == 0x08 ||
 		    c == 0x09 ||
 		    c == 0x0A ||
@@ -1507,66 +1507,40 @@ unicode_to_unicode (PyObject *unicode)
 	if (!new_buffer) return NULL;
 	
 	/* Fill the new buffer */
-	buffer_pos = new_buffer;
-	*buffer_pos++ = '"';
+	p = new_buffer;
+	*p++ = '"';
 	for (ii = 0; ii < old_buffer_size; ii++)
 	{
-		Py_UNICODE c = old_buffer[ii];
+		c = old_buffer[ii];
 		if (c == 0x08)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'b';
-		}
+			*p++ = '\\', *p++ = 'b';
 		else if (c == 0x09)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 't';
-		}
+			*p++ = '\\', *p++ = 't';
 		else if (c == 0x0A)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'n';
-		}
+			*p++ = '\\', *p++ = 'n';
 		else if (c == 0x0C)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'f';
-		}
+			*p++ = '\\', *p++ = 'f';
 		else if (c == 0x0D)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'r';
-		}
+			*p++ = '\\', *p++ = 'r';
 		else if (c == 0x22)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = '"';
-		}
+			*p++ = '\\', *p++ = '"';
 		else if (c == 0x2F)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = '/';
-		}
+			*p++ = '\\', *p++ = '/';
 		else if (c == 0x5C)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = '\\';
-		}
+			*p++ = '\\', *p++ = '\\';
 		else if (c <= 0x1F)
 		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'u';
-			*buffer_pos++ = '0';
-			*buffer_pos++ = '0';
-			*buffer_pos++ = hexdigit[(c >> 4) & 0x0000000F];
-			*buffer_pos++ = hexdigit[c & 0x0000000F];
+			*p++ = '\\';
+			*p++ = 'u';
+			*p++ = '0';
+			*p++ = '0';
+			*p++ = hexdigit[(c >> 4) & 0x0000000F];
+			*p++ = hexdigit[c & 0x0000000F];
 		}
 		else
-		{
-			*buffer_pos++ = c;
-		}
+			*p++ = c;
 	}
-	*buffer_pos++ = '"';
+	*p++ = '"';
 	
 	retval = PyUnicode_FromUnicode (new_buffer, new_buffer_size);
 	PyMem_Del (new_buffer);
@@ -1578,7 +1552,7 @@ unicode_to_ascii (PyObject *unicode)
 {
 	PyObject *retval;
 	Py_UNICODE *old_buffer;
-	char *new_buffer, *buffer_pos;
+	char *new_buffer, *p;
 	size_t ii, old_buffer_size, new_buffer_size;
 	
 	old_buffer = PyUnicode_AS_UNICODE (unicode);
@@ -1634,59 +1608,35 @@ unicode_to_ascii (PyObject *unicode)
 	if (!new_buffer) return NULL;
 	
 	/* Fill the new buffer */
-	buffer_pos = new_buffer;
-	*buffer_pos++ = '"';
+	p = new_buffer;
+	*p++ = '"';
 	for (ii = 0; ii < old_buffer_size; ii++)
 	{
 		Py_UNICODE c = old_buffer[ii];
 		if (c == 0x08)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'b';
-		}
+			*p++ = '\\', *p++ = 'b';
 		else if (c == 0x09)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 't';
-		}
+			*p++ = '\\', *p++ = 't';
 		else if (c == 0x0A)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'n';
-		}
+			*p++ = '\\', *p++ = 'n';
 		else if (c == 0x0C)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'f';
-		}
+			*p++ = '\\', *p++ = 'f';
 		else if (c == 0x0D)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'r';
-		}
+			*p++ = '\\', *p++ = 'r';
 		else if (c == 0x22)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = '"';
-		}
+			*p++ = '\\', *p++ = '"';
 		else if (c == 0x2F)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = '/';
-		}
+			*p++ = '\\', *p++ = '/';
 		else if (c == 0x5C)
-		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = '\\';
-		}
+			*p++ = '\\', *p++ = '\\';
 		else if (c <= 0x1F)
 		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'u';
-			*buffer_pos++ = '0';
-			*buffer_pos++ = '0';
-			*buffer_pos++ = hexdigit[(c >> 4) & 0x0000000F];
-			*buffer_pos++ = hexdigit[c & 0x0000000F];
+			*p++ = '\\';
+			*p++ = 'u';
+			*p++ = '0';
+			*p++ = '0';
+			*p++ = hexdigit[(c >> 4) & 0x0000000F];
+			*p++ = hexdigit[c & 0x0000000F];
 		}
 #ifdef Py_UNICODE_WIDE
 		else if (c > 0xFFFF)
@@ -1701,36 +1651,34 @@ unicode_to_ascii (PyObject *unicode)
 			upper += 0xD800;
 			lower += 0xDC00;
 			
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'u';
-			*buffer_pos++ = hexdigit[(upper >> 12) & 0x0000000F];
-			*buffer_pos++ = hexdigit[(upper >> 8) & 0x0000000F];
-			*buffer_pos++ = hexdigit[(upper >> 4) & 0x0000000F];
-			*buffer_pos++ = hexdigit[upper & 0x0000000F];
+			*p++ = '\\';
+			*p++ = 'u';
+			*p++ = hexdigit[(upper >> 12) & 0x0000000F];
+			*p++ = hexdigit[(upper >> 8) & 0x0000000F];
+			*p++ = hexdigit[(upper >> 4) & 0x0000000F];
+			*p++ = hexdigit[upper & 0x0000000F];
 			
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'u';
-			*buffer_pos++ = hexdigit[(lower >> 12) & 0x0000000F];
-			*buffer_pos++ = hexdigit[(lower >> 8) & 0x0000000F];
-			*buffer_pos++ = hexdigit[(lower >> 4) & 0x0000000F];
-			*buffer_pos++ = hexdigit[lower & 0x0000000F];
+			*p++ = '\\';
+			*p++ = 'u';
+			*p++ = hexdigit[(lower >> 12) & 0x0000000F];
+			*p++ = hexdigit[(lower >> 8) & 0x0000000F];
+			*p++ = hexdigit[(lower >> 4) & 0x0000000F];
+			*p++ = hexdigit[lower & 0x0000000F];
 		}
 #endif
 		else if (c > 0x7E)
 		{
-			*buffer_pos++ = '\\';
-			*buffer_pos++ = 'u';
-			*buffer_pos++ = hexdigit[(c >> 12) & 0x000F];
-			*buffer_pos++ = hexdigit[(c >> 8) & 0x000F];
-			*buffer_pos++ = hexdigit[(c >> 4) & 0x000F];
-			*buffer_pos++ = hexdigit[c & 0x000F];
+			*p++ = '\\';
+			*p++ = 'u';
+			*p++ = hexdigit[(c >> 12) & 0x000F];
+			*p++ = hexdigit[(c >> 8) & 0x000F];
+			*p++ = hexdigit[(c >> 4) & 0x000F];
+			*p++ = hexdigit[c & 0x000F];
 		}
 		else
-		{
-			*buffer_pos++ = (char) (c);
-		}
+			*p++ = (char) (c);
 	}
-	*buffer_pos++ = '"';
+	*p++ = '"';
 	
 	retval = PyString_FromStringAndSize (new_buffer, new_buffer_size);
 	PyMem_Free (new_buffer);
