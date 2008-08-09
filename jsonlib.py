@@ -748,7 +748,7 @@ def write_object (value, _write, sort_keys, indent_string, ascii_only,
 		items = value.items ()
 		
 	for index, (key, sub_value) in enumerate (items):
-		is_string = isinstance (key, str)
+		is_string = isinstance (key, (str, UserString))
 		is_unicode = isinstance (key, unicode)
 		_write (pre_value)
 		if is_string:
