@@ -1902,7 +1902,14 @@ mapping_process_key (JSONEncoder *encoder, PyObject *key, PyObject **key_ptr)
 	
 	if (PyString_Check (key) || PyUnicode_Check (key))
 	{
+		Py_INCREF (key);
 		*key_ptr = key;
+		return TRUE;
+	}
+	
+	if (PyObject_IsInstance (key, encoder->UserString))
+	{
+		*key_ptr = PyObject_Str (key);
 		return TRUE;
 	}
 	
@@ -1941,8 +1948,7 @@ mapping_get_key_and_value_from_item (JSONEncoder *encoder, PyObject *item,
 	(*value_ptr) = NULL;
 	
 	key = PySequence_GetItem (item, 0);
-	if (key)
-		value = PySequence_GetItem (item, 1);
+	value = PySequence_GetItem (item, 1);
 	
 	if (!(key && value))
 	{
@@ -1982,7 +1988,9 @@ write_dict (JSONEncoder *encoder, PyObject *dict, PyObject *start,
 		if (!mapping_process_key (encoder, raw_key, &key))
 			return FALSE;
 		
-		if (!(serialized = write_basic (encoder, key)))
+		serialized = write_basic (encoder, key);
+		Py_DECREF (key);
+		if (!serialized)
 			return FALSE;
 		
 		status = encoder_append_string (encoder, serialized);
