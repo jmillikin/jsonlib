@@ -177,7 +177,8 @@ static PyObject *
 unicode_from_ascii (const char *value);
 
 static int
-write_object (JSONEncoder *encoder, PyObject *object, int indent_level);
+write_object (JSONEncoder *encoder, PyObject *object, int indent_level,
+              int in_unknown_hook);
 
 static int
 write_iterable (JSONEncoder *encoder, PyObject *iterable, int indent_level);
@@ -1786,7 +1787,7 @@ write_sequence_impl (JSONEncoder *encoder, PyObject *seq,
 		if (!(item = PySequence_Fast_GET_ITEM (seq, ii)))
 			return FALSE;
 		
-		if (!write_object (encoder, item, indent_level + 1))
+		if (!write_object (encoder, item, indent_level + 1, FALSE))
 			return FALSE;
 		
 		if (ii + 1 < PySequence_Fast_GET_SIZE (seq))
@@ -1954,7 +1955,7 @@ write_dict (JSONEncoder *encoder, PyObject *dict, PyObject *start,
 		if (!encoder_append_string (encoder, encoder->colon))
 			return FALSE;
 		
-		if (!write_object (encoder, value, indent_level + 1))
+		if (!write_object (encoder, value, indent_level + 1, FALSE))
 			return FALSE;
 		
 		if (ii + 1 < item_count)
@@ -2018,7 +2019,7 @@ write_mapping_impl (JSONEncoder *encoder, PyObject *items,
 			return FALSE;
 		}
 		
-		status = write_object (encoder, value, indent_level + 1);
+		status = write_object (encoder, value, indent_level + 1, FALSE);
 		Py_DECREF (value);
 		if (!status)
 			return FALSE;
@@ -2220,8 +2221,8 @@ write_basic (JSONEncoder *encoder, PyObject *value)
 }
 
 static int
-write_object_pieces (JSONEncoder *encoder, PyObject *object,
-                     int indent_level, int in_unknown_hook)
+write_object (JSONEncoder *encoder, PyObject *object,
+              int indent_level, int in_unknown_hook)
 {
 	PyObject *pieces, *iter, *on_unknown_args;
 	PyObject *exc_type, *exc_value, *exc_traceback;
@@ -2295,15 +2296,9 @@ write_object_pieces (JSONEncoder *encoder, PyObject *object,
 		object = PyObject_CallObject (encoder->on_unknown, on_unknown_args);
 		Py_DECREF (on_unknown_args);
 		if (object)
-			return write_object_pieces (encoder, object, indent_level, TRUE);
+			return write_object (encoder, object, indent_level, TRUE);
 	}
 	return FALSE;
-}
-
-static int
-write_object (JSONEncoder *encoder, PyObject *object, int indent_level)
-{
-	return write_object_pieces (encoder, object, indent_level, FALSE);
 }
 
 static int
@@ -2366,7 +2361,7 @@ serializer_init_and_run_common (JSONEncoder *encoder, PyObject *value)
 	    (encoder->nan_str = unicode_from_ascii ("NaN")) &&
 	    (encoder->quote = unicode_from_ascii ("\"")))
 	{
-		succeeded = write_object (encoder, value, 0);
+		succeeded = write_object (encoder, value, 0, FALSE);
 	}
 	
 	Py_XDECREF (encoder->Decimal);
