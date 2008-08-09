@@ -271,7 +271,7 @@ parser_find_next_value (JSONDecoder *decoder)
 }
 
 static Py_UCS4
-next_ucs4 (JSONDecoder *decoder, Py_UNICODE *index)
+next_ucs4 (Py_UNICODE *index)
 {
 	unsigned long value = index[0];
 	if (value >= 0xD800 && value <= 0xDBFF)
@@ -370,7 +370,7 @@ set_error_unexpected (JSONDecoder *decoder, Py_UNICODE *position,
                       const char *wanted)
 {
 	PyObject *err_str, *err_format_args;
-	Py_UCS4 c = next_ucs4 (decoder, position);
+	Py_UCS4 c = next_ucs4 (position);
 	
 	if (wanted)
 	{
