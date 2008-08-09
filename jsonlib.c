@@ -1263,23 +1263,6 @@ writer_append_ascii (JSONEncoder *encoder, const char *text)
 }
 
 static int
-writer_append_ascii_obj (JSONEncoder *encoder, PyObject *text)
-{
-	if (encoder->fp)
-	{
-		PyObject *encoded;
-		int result;
-		encoded = PyString_AsEncodedObject (text, encoder->encoding,
-		                                    "strict");
-		result = PyFile_WriteObject (encoded, encoder->fp, Py_PRINT_RAW);
-		Py_DECREF (encoded);
-		return (result == 0);
-	}
-	
-	return writer_append_ascii (encoder, PyString_AS_STRING (text));
-}
-
-static int
 writer_append_unicode (JSONEncoder *encoder, Py_UNICODE *text, Py_ssize_t len)
 {
 	Py_ssize_t ii;
