@@ -1249,18 +1249,24 @@ encoder_buffer_append_unicode (JSONEncoder *base_encoder,
 }
 
 static int
+encoder_stream_append_common (JSONStreamEncoder *encoder, PyObject *encoded)
+{
+	int result;
+	if (!encoded)
+		return FALSE;
+	result = PyFile_WriteObject (encoded, encoder->stream, Py_PRINT_RAW);
+	Py_DECREF (encoded);
+	return (result == 0);
+}
+
+static int
 encoder_stream_append_ascii (JSONEncoder *base_encoder,
                              const char *text,
                              const Py_ssize_t len)
 {
 	JSONStreamEncoder *encoder = (JSONStreamEncoder *) (base_encoder);
-	PyObject *encoded;
-	int result;
-	
-	encoded = PyString_Encode (text, len, encoder->encoding, "strict");
-	result = PyFile_WriteObject (encoded, encoder->stream, Py_PRINT_RAW);
-	Py_DECREF (encoded);
-	return (result == 0);
+	return encoder_stream_append_common (encoder,
+		PyString_Encode (text, len, encoder->encoding, "strict"));
 }
 
 static int
@@ -1269,13 +1275,8 @@ encoder_stream_append_unicode (JSONEncoder *base_encoder,
                                const Py_ssize_t len)
 {
 	JSONStreamEncoder *encoder = (JSONStreamEncoder *) (base_encoder);
-	PyObject *encoded;
-	int result;
-	
-	encoded = PyUnicode_Encode (text, len, encoder->encoding, "strict");
-	result = PyFile_WriteObject (encoded, encoder->stream, Py_PRINT_RAW);
-	Py_DECREF (encoded);
-	return (result == 0);
+	return encoder_stream_append_common (encoder,
+		PyUnicode_Encode (text, len, encoder->encoding, "strict"));
 }
 
 static int
