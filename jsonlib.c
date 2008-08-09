@@ -1909,8 +1909,11 @@ mapping_process_key (JSONEncoder *encoder, PyObject *key, PyObject **key_ptr)
 	
 	if (PyObject_IsInstance (key, encoder->UserString))
 	{
+		Py_INCREF (key);
 		*key_ptr = PyObject_Str (key);
-		return TRUE;
+		Py_DECREF (key);
+		if (*key_ptr) return TRUE;
+		return FALSE;
 	}
 	
 	if (encoder->coerce_keys)
