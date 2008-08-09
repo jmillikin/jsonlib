@@ -1463,7 +1463,7 @@ static PyObject *
 unicode_to_unicode (PyObject *unicode)
 {
 	PyObject *retval;
-	Py_UNICODE *old_buffer, *new_buffer, *p, c;
+	Py_UNICODE *old_buffer, *p, c;
 	size_t ii, old_buffer_size, new_buffer_size;
 	
 	old_buffer = PyUnicode_AS_UNICODE (unicode);
@@ -1505,11 +1505,11 @@ unicode_to_unicode (PyObject *unicode)
 			new_buffer_size += 1;
 	}
 	
-	new_buffer = PyMem_New (Py_UNICODE, new_buffer_size);
-	if (!new_buffer) return NULL;
+	retval = PyUnicode_FromUnicode (NULL, new_buffer_size);
+	if (!retval) return NULL;
 	
 	/* Fill the new buffer */
-	p = new_buffer;
+	p = PyUnicode_AS_UNICODE (retval);
 	*p++ = '"';
 	for (ii = 0; ii < old_buffer_size; ii++)
 	{
@@ -1543,9 +1543,6 @@ unicode_to_unicode (PyObject *unicode)
 			*p++ = c;
 	}
 	*p++ = '"';
-	
-	retval = PyUnicode_FromUnicode (new_buffer, new_buffer_size);
-	PyMem_Del (new_buffer);
 	return retval;
 }
 
@@ -1554,7 +1551,7 @@ unicode_to_ascii (PyObject *unicode)
 {
 	PyObject *retval;
 	Py_UNICODE *old_buffer;
-	char *new_buffer, *p;
+	char *p;
 	size_t ii, old_buffer_size, new_buffer_size;
 	
 	old_buffer = PyUnicode_AS_UNICODE (unicode);
@@ -1606,11 +1603,11 @@ unicode_to_ascii (PyObject *unicode)
 			new_buffer_size += 1;
 	}
 	
-	new_buffer = PyMem_Malloc (new_buffer_size);
-	if (!new_buffer) return NULL;
+	retval = PyString_FromStringAndSize (NULL, new_buffer_size);
+	if (!retval) return NULL;
 	
 	/* Fill the new buffer */
-	p = new_buffer;
+	p = PyString_AS_STRING (retval);
 	*p++ = '"';
 	for (ii = 0; ii < old_buffer_size; ii++)
 	{
@@ -1681,9 +1678,6 @@ unicode_to_ascii (PyObject *unicode)
 			*p++ = (char) (c);
 	}
 	*p++ = '"';
-	
-	retval = PyString_FromStringAndSize (new_buffer, new_buffer_size);
-	PyMem_Free (new_buffer);
 	return retval;
 }
 
