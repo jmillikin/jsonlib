@@ -169,9 +169,6 @@ static int
 encoder_append_string (JSONEncoder *encoder, PyObject *text);
 
 static int
-encoder_append_chunks (JSONEncoder *encoder, PyObject *list);
-
-static int
 encoder_buffer_resize (JSONBufferEncoder *encoder, Py_ssize_t delta);
 /* }}} */
 
@@ -1307,36 +1304,6 @@ encoder_append_string (JSONEncoder *encoder, PyObject *text)
 }
 
 static int
-encoder_append_chunks (JSONEncoder *encoder, PyObject *list)
-{
-	Py_ssize_t ii, len;
-	
-	if (PyUnicode_CheckExact (list) || PyString_CheckExact (list))
-		return encoder_append_string (encoder, list);
-	
-#ifdef DEBUG
-	if (!PySequence_Check (list))
-	{
-		PyErr_SetString (PyExc_AssertionError, "is_sequence (seq)");
-		return FALSE;
-	}
-#endif
-	
-	len = PySequence_Fast_GET_SIZE (list);
-	for (ii = 0; ii < len; ++ii)
-	{
-		PyObject *item;
-		if (!(item = PySequence_Fast_GET_ITEM (list, ii)))
-			return FALSE;
-		
-		if (!encoder_append_string (encoder, item))
-			return FALSE;
-	}
-	
-	return TRUE;
-}
-
-static int
 encoder_buffer_resize (JSONBufferEncoder *encoder, Py_ssize_t delta)
 {
 	Py_ssize_t new_size;
@@ -1471,14 +1438,7 @@ write_string (JSONEncoder *encoder, PyObject *string)
 	
 	if (safe)
 	{
-		retval = PyList_New (3);
-		Py_INCREF (encoder->quote);
-		PyList_SetItem (retval, 0, encoder->quote);
-		Py_INCREF (string);
-		PyList_SetItem (retval, 1, string);
-		Py_INCREF (encoder->quote);
-		PyList_SetItem (retval, 2, encoder->quote);
-		return retval;
+		return PyString_FromFormat ("\"%s\"", buffer);
 	}
 	
 	/* Convert to Unicode and run through the escaping
@@ -1804,13 +1764,15 @@ write_unicode (JSONEncoder *encoder, PyObject *unicode)
 	
 	if (safe)
 	{
-		retval = PyList_New (3);
-		Py_INCREF (encoder->quote);
-		PyList_SetItem (retval, 0, encoder->quote);
-		Py_INCREF (unicode);
-		PyList_SetItem (retval, 1, unicode);
-		Py_INCREF (encoder->quote);
-		PyList_SetItem (retval, 2, encoder->quote);
+		PyObject *seq = NULL, *sep = NULL;
+		seq = Py_BuildValue ("(OOO)",
+		                     encoder->quote,
+		                     unicode,
+		                     encoder->quote);
+		sep = PyUnicode_FromUnicode (NULL, 0);
+		retval = PyUnicode_Join (sep, seq);
+		Py_XDECREF (seq);
+		Py_XDECREF (sep);
 		return retval;
 	}
 	
@@ -2023,7 +1985,7 @@ write_dict (JSONEncoder *encoder, PyObject *dict, PyObject *start,
 		if (!(serialized = write_basic (encoder, key)))
 			return FALSE;
 		
-		status = encoder_append_chunks (encoder, serialized);
+		status = encoder_append_string (encoder, serialized);
 		Py_DECREF (serialized);
 		if (!status)
 			return FALSE;
@@ -2081,7 +2043,7 @@ write_mapping_impl (JSONEncoder *encoder, PyObject *items,
 			return FALSE;
 		}
 		
-		status = encoder_append_chunks (encoder, serialized);
+		status = encoder_append_string (encoder, serialized);
 		Py_DECREF (serialized);
 		if (!status)
 		{
@@ -2324,7 +2286,7 @@ write_object_pieces (JSONEncoder *encoder, PyObject *object,
 			                 " an array or object.");
 			return retval;
 		}
-		retval = encoder_append_chunks (encoder, pieces);
+		retval = encoder_append_string (encoder, pieces);
 		Py_DECREF (pieces);
 		return retval;
 	}
