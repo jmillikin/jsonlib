@@ -61,7 +61,7 @@ typedef struct _JSONDecoder {
 	Py_UNICODE *stringparse_buffer;
 	Py_ssize_t stringparse_buffer_size;
 	
-	int got_root: 1;
+	unsigned int got_root: 1;
 } JSONDecoder;
 
 typedef enum
