@@ -961,6 +961,17 @@ class StreamingSerializerTests (SerializerTestCase):
 		value = jsonlib.dump ([], io, encoding = 'utf-16-le')
 		self.assertEqual (io.getvalue (), '[\x00]\x00')
 		
+	def test_no_encoding (self):
+		io = StringIO ()
+		value = jsonlib.dump ([u"\u24CA"], io, encoding = None)
+		self.assertEqual (io.getvalue (), u'["\\u24ca"]')
+		self.assertEqual (type (io.getvalue ()), unicode)
+		
+	def test_no_encoding_full_unicode (self):
+		io = StringIO ()
+		value = jsonlib.dump ([u"\u24CA"], io, encoding = None, ascii_only = False)
+		self.assertEqual (io.getvalue (), u'["\u24ca"]')
+		self.assertEqual (type (io.getvalue ()), unicode)
 # }}}
 
 if __name__ == '__main__':
