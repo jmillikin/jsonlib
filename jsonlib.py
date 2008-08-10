@@ -365,8 +365,6 @@ def read_unichars (atom):
 	assert string[0] == '"'
 	assert string[-1] == '"'
 	
-	illegal = set (map (unichr, range (0x20)))
-	
 	index = 1
 	escaped = False
 	while True:
@@ -376,7 +374,7 @@ def read_unichars (atom):
 				escaped = True
 			elif char == '"':
 				return
-			elif char in illegal:
+			elif ord (char) < 0x20:
 				error = format_error (
 					atom.full_string, atom.offset + index,
 					"Unexpected U+%04X." % ord (char),
