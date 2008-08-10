@@ -424,6 +424,9 @@ class ReadObjectTests (ParserTestCase):
 		self.r ('{"a": 1, "b": {"c": "2"}}',
 		        {"a": 1L, "b": {"c": "2"}})
 		
+	def test_empty_key (self):
+		self.r ('{"": 1}', {"": 1L})
+		
 	def test_failure_no_colon (self):
 		self.re ('{"a"}', 1, 5, 4, "Unexpected U+007D while looking for colon.")
 		

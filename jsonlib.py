@@ -448,7 +448,7 @@ def parse_atom (atom):
 	# String
 	if atom.value.startswith ('"'):
 		assert atom.value.endswith ('"')
-		return ''.join (read_unichars (atom))
+		return u''.join (read_unichars (atom))
 		
 	if atom.value[0] in ('-1234567890'):
 		number_match = NUMBER_SPLITTER.match (atom.value)
