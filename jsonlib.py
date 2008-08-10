@@ -958,7 +958,9 @@ def dump (value, fp, sort_keys = False, indent = None, ascii_only = True,
 	def _write (text):
 		if not isinstance (text, unicode):
 			text = unicode (text, 'ascii')
-		fp.write (text.encode (encoding))
+		if encoding is not None:
+			text = text.encode (encoding)
+		fp.write (text)
 		
 	_py_write (value, _write, sort_keys, indent, ascii_only, coerce_keys,
 	           on_unknown, (), 0)
