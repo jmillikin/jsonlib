@@ -166,31 +166,27 @@ def error_unexpected (s, idx, looking_for = None):
 		desc = "Unexpected %s while looking for %s." % (char_ord, looking_for)
 	raise ReadError (s, idx, desc)
 	
-def _w (s, idx):
+def _w (s, idx, start = None, err = None):
 	s_len = len (s)
 	ws = '\x09\x20\x0a\x0d'
 	while idx < s_len and s[idx] in ws:
 		idx += 1
+	if idx >= s_len and (start is not None) and (err is not None):
+		raise ReadError (s, start, err)
 	return idx
 	
 def read_object (s, idx):
 	retval = {}
 	start = idx
-	idx = _w (s, idx + 1)
-	if idx >= len (s):
-		raise ReadError (s, start, "Unterminated object.")
+	idx = _w (s, idx + 1, start, "Unterminated object.")
 	if s[idx] == '}':
 		return retval, idx + 1
 	while True:
-		idx = _w (s, idx)
-		if idx >= len (s):
-			raise ReadError (s, start, "Unterminated object.")
+		idx = _w (s, idx, start, "Unterminated object.")
 		if s[idx] != '"':
 			error_unexpected (s, idx, "property name")
 		key, idx = read_raw (s, idx)
-		idx = _w (s, idx)
-		if idx >= len (s):
-			raise ReadError (s, start, "Unterminated object.")
+		idx = _w (s, idx, start, "Unterminated object.")
 		if s[idx] != ':':
 			error_unexpected (s, idx, "colon")
 		idx += 1
@@ -199,9 +195,7 @@ def read_object (s, idx):
 			
 		value, idx = read_raw (s, idx)
 		retval[key] = value
-		idx = _w (s, idx)
-		if idx >= len (s):
-			raise ReadError (s, start, "Unterminated object.")
+		idx = _w (s, idx, start, "Unterminated object.")
 		if s[idx] == '}':
 			return retval, idx + 1
 		if s[idx] != ',':
@@ -211,9 +205,7 @@ def read_object (s, idx):
 def read_array (s, idx):
 	retval = []
 	start = idx
-	idx = _w (s, idx + 1)
-	if idx >= len (s):
-		raise ReadError (s, start, "Unterminated array.")
+	idx = _w (s, idx + 1, start, "Unterminated array.")
 	if s[idx] == ']':
 		return retval, idx + 1
 	while True:
@@ -221,9 +213,7 @@ def read_array (s, idx):
 			raise ReadError (s, start, "Unterminated array.")
 		value, idx = read_raw (s, idx)
 		retval.append (value)
-		idx = _w (s, idx)
-		if idx >= len (s):
-			raise ReadError (s, start, "Unterminated array.")
+		idx = _w (s, idx, start, "Unterminated array.")
 		if s[idx] == ']':
 			return retval, idx + 1
 		if s[idx] != ',':
