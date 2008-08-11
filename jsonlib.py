@@ -44,8 +44,18 @@ from UserString import UserString
 # Exception classes {{{
 class ReadError (ValueError):
 	"""Exception raised if there is an error parsing a JSON expression."""
-	pass
-	
+	def __init__ (self, string, offset, description):
+		line = string.count ('\n', 0, offset) + 1
+		if line == 1:
+			column = offset + 1
+		else:
+			column = offset - string.rindex ('\n', 0, offset)
+			
+		template = ("JSON parsing error at line %d, column %d"
+		            " (position %d): %s")
+		error = template % (line, column, offset, description)
+		super (ReadError, self).__init__ (error)
+		
 class WriteError (ValueError):
 	"""Exception raised if there is an error generating a JSON expression."""
 	pass
@@ -135,16 +145,6 @@ for __char_ord in range (0, 0x20):
 # }}}
 
 # Parser {{{
-def format_error (string, offset, description):
-	line = string.count ('\n', 0, offset) + 1
-	if line == 1:
-		column = offset + 1
-	else:
-		column = offset - string.rindex ('\n', 0, offset)
-		
-	error = "JSON parsing error at line %d, column %d (position %d): %s"
-	return error % (line, column, offset, description)
-	
 def next_char_ord (string, index):
 	value = ord (string[index])
 	if (0xD800 <= value <= 0xDBFF) and len (string) >= 2:
@@ -158,13 +158,13 @@ def next_char_ord (string, index):
 		return "U+%08X" % value
 	return "U+%04X" % value
 	
-def read_unexpected (s, idx, looking_for = None):
+def error_unexpected (s, idx, looking_for = None):
 	char_ord = next_char_ord (s, idx)
 	if looking_for is None:
 		desc = "Unexpected %s." % (char_ord,)
 	else:
 		desc = "Unexpected %s while looking for %s." % (char_ord, looking_for)
-	raise ReadError (format_error (s, idx, desc))
+	raise ReadError (s, idx, desc)
 	
 def _w (s, idx):
 	s_len = len (s)
@@ -178,34 +178,34 @@ def read_object (s, idx):
 	start = idx
 	idx = _w (s, idx + 1)
 	if idx >= len (s):
-		raise ReadError (format_error (s, start, "Unterminated object."))
+		raise ReadError (s, start, "Unterminated object.")
 	if s[idx] == '}':
 		return retval, idx + 1
 	while True:
 		idx = _w (s, idx)
 		if idx >= len (s):
-			raise ReadError (format_error (s, start, "Unterminated object."))
+			raise ReadError (s, start, "Unterminated object.")
 		if s[idx] != '"':
-			read_unexpected (s, idx, "property name")
+			error_unexpected (s, idx, "property name")
 		key, idx = read_raw (s, idx)
 		idx = _w (s, idx)
 		if idx >= len (s):
-			raise ReadError (format_error (s, start, "Unterminated object."))
+			raise ReadError (s, start, "Unterminated object.")
 		if s[idx] != ':':
-			read_unexpected (s, idx, "colon")
+			error_unexpected (s, idx, "colon")
 		idx += 1
 		if idx >= len (s):
-			raise ReadError (format_error (s, start, "Unterminated object."))
+			raise ReadError (s, start, "Unterminated object.")
 			
 		value, idx = read_raw (s, idx)
 		retval[key] = value
 		idx = _w (s, idx)
 		if idx >= len (s):
-			raise ReadError (format_error (s, start, "Unterminated object."))
+			raise ReadError (s, start, "Unterminated object.")
 		if s[idx] == '}':
 			return retval, idx + 1
 		if s[idx] != ',':
-			read_unexpected (s, idx, "comma")
+			error_unexpected (s, idx, "comma")
 		idx += 1
 		
 def read_array (s, idx):
@@ -213,21 +213,21 @@ def read_array (s, idx):
 	start = idx
 	idx = _w (s, idx + 1)
 	if idx >= len (s):
-		raise ReadError (format_error (s, start, "Unterminated array."))
+		raise ReadError (s, start, "Unterminated array.")
 	if s[idx] == ']':
 		return retval, idx + 1
 	while True:
 		if idx >= len (s):
-			raise ReadError (format_error (s, start, "Unterminated array."))
+			raise ReadError (s, start, "Unterminated array.")
 		value, idx = read_raw (s, idx)
 		retval.append (value)
 		idx = _w (s, idx)
 		if idx >= len (s):
-			raise ReadError (format_error (s, start, "Unterminated array."))
+			raise ReadError (s, start, "Unterminated array.")
 		if s[idx] == ']':
 			return retval, idx + 1
 		if s[idx] != ',':
-			read_unexpected (s, idx, "comma")
+			error_unexpected (s, idx, "comma")
 		idx += 1
 		
 def read_unicode_escape (s, index):
@@ -245,18 +245,13 @@ def read_unicode_escape (s, index):
 	"""
 	first_hex_str = s[index+1:index+5]
 	if len (first_hex_str) < 4 or '"' in first_hex_str:
-		error = format_error (s, index - 1,
-		                      "Unterminated unicode escape.")
-		raise ReadError (error)
+		raise ReadError (s, index - 1, "Unterminated unicode escape.")
 	first_hex = int (first_hex_str, 16)
 	
 	# Some code points are reserved for indicating surrogate pairs
 	if 0xDC00 <= first_hex <= 0xDFFF:
-		error = format_error (
-			s, index - 1,
-			"U+%04X is a reserved code point." % first_hex
-		)
-		raise ReadError (error)
+		raise ReadError (s, index - 1,
+			"U+%04X is a reserved code point." % first_hex)
 		
 	# Check if it's a UTF-16 surrogate pair
 	if not (0xD800 <= first_hex <= 0xDBFF):
@@ -266,9 +261,7 @@ def read_unicode_escape (s, index):
 	if (not (len (second_hex_str) >= 6
 	        and second_hex_str.startswith ('\\u'))
 	    or '"' in second_hex_str):
-		error = format_error (s, index + 5,
-		                      "Missing surrogate pair half.")
-		raise ReadError (error)
+		raise ReadError (s, index + 5, "Missing surrogate pair half.")
 		
 	second_hex = int (second_hex_str[2:], 16)
 	if sys.maxunicode <= 65535:
@@ -296,7 +289,7 @@ def read_string (s, idx):
 			elif c == '"':
 				return u''.join (chunks), idx + 1
 			elif ord (c) < 0x20:
-				read_unexpected (s, idx)
+				error_unexpected (s, idx)
 			else:
 				chunks.append (c)
 			idx += 1
@@ -309,9 +302,8 @@ def read_string (s, idx):
 			elif c in READ_ESCAPES:
 				chunks.append (READ_ESCAPES[c])
 			else:
-				raise ReadError (format_error (s, idx - 1,
-					"Unknown escape code: \\%s." % c
-				))
+				raise ReadError (s, idx - 1,
+					"Unknown escape code: \\%s." % c)
 			idx += 1
 			escaped = False
 			
@@ -320,7 +312,7 @@ def read_keyword (s, idx):
 		end = idx + len (text)
 		if s[idx:end] == text:
 			return value, end
-	read_unexpected (s, idx)
+	error_unexpected (s, idx)
 	
 def read_number (s, idx):
 	allowed = '0123456789-+.eE'
@@ -332,7 +324,7 @@ def read_number (s, idx):
 		pass
 	match = NUMBER_SPLITTER.match (s[idx:end])
 	if not match:
-		raise ReadError (format_error (s, idx, "Invalid number."))
+		raise ReadError (s, idx, "Invalid number.")
 		
 	int_part = int (match.group ('int'), 10)
 	if match.group ('frac') or match.group ('exp'):
@@ -349,14 +341,14 @@ def read_raw (s, idx, root = False):
 	if c == '[':
 		return read_array (s, idx)
 	if root:
-		read_unexpected (s, idx)
+		error_unexpected (s, idx)
 	if c == '"':
 		return read_string (s, idx)
 	if c in 'tfn':
 		return read_keyword (s, idx)
 	if c in '-0123456789':
 		return read_number (s, idx)
-	read_unexpected (s, idx)
+	error_unexpected (s, idx)
 	
 def read (string):
 	"""Parse a JSON expression into a Python value.
@@ -368,12 +360,12 @@ def read (string):
 	string = unicode_autodetect_encoding (string)
 	start = _w (string, 0)
 	if not string or start == len (string):
-		raise ReadError (format_error (string, 0, "No expression found."))
+		raise ReadError (string, 0, "No expression found.")
 	value, end = read_raw (string, 0, True)
 	end = _w (string, end)
 	if end != len (string):
-		raise ReadError (format_error (string, end,
-			"Extra data after JSON expression."))
+		raise ReadError (string, end,
+			"Extra data after JSON expression.")
 		raise ValueError ()
 	return value
 	
