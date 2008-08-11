@@ -25,6 +25,7 @@ Deserialization
 To deserialize a JSON expression, call the ``jsonlib.read`` function with
 an instance of ``str`` or ``unicode``. ::
 
+	>>> import jsonlib
 	>>> jsonlib.read ('["Hello world!"]')
 	[u'Hello world!']
 
@@ -34,6 +35,7 @@ Serialization
 Serialization has more options, but they are set to reasonable defaults.
 The simplest use is to call ``jsonlib.write`` with a Python value. ::
 
+	>>> import jsonlib
 	>>> jsonlib.write (['Hello world!'])
 	'["Hello world!"]'
 
@@ -42,9 +44,9 @@ Pretty-Printing
 
 To "pretty-print" the output, pass a value for the ``indent`` parameter. ::
 
-	>>> print jsonlib.write (['Hello world!'], indent = '\t')
+	>>> print jsonlib.write (['Hello world!'], indent = '    ')
 	[
-		"Hello world!"
+	    "Hello world!"
 	]
 	>>> 
 	
@@ -78,10 +80,10 @@ encoding. ::
 By default, non-ASCII codepoints are forbidden in the output. To include
 higher codepoints in the output, set ``ascii_only`` to ``False``. ::
 
-	>>> jsonlib.write ([u'Hello \u266A'], encoding = None)
-	u'["Hello \\u266A"]'
-	>>> jsonlib.write ([u'Hello \u266A'], encoding = None, ascii_only = False)
-	u'["Hello \u266A"]'
+	>>> jsonlib.write ([u'Hello \u266a'], encoding = None)
+	u'["Hello \\u266a"]'
+	>>> jsonlib.write ([u'Hello \u266a'], encoding = None, ascii_only = False)
+	u'["Hello \u266a"]'
 
 Mapping Key Coercion
 ~~~~~~~~~~~~~~~~~~~~
@@ -92,7 +94,7 @@ mapping keys to strings, so the ``coerce_keys`` parameter is available. ::
 
 	>>> jsonlib.write ({True: 1})
 	Traceback (most recent call last):
-	jsonlib.errors.WriteError: Only strings may be used as object keys.
+	WriteError: Only strings may be used as object keys.
 	>>> jsonlib.write ({True: 1}, coerce_keys = True)
 	'{"true":1}'
 
@@ -118,6 +120,18 @@ to ``write``::
 	>>> jsonlib.write ([date (2000, 1, 1)], on_unknown = unknown_handler)
 	'["2000-01-01"]'
 
+Streaming Serializer
+~~~~~~~~~~~~~~~~~~~~
+
+When serializing large objects, the use of an in-memory buffer may cause
+too much memory to be used. For these situations, use the ``dump`` function
+to write objects to a file-like object::
+
+	>>> import sys
+	>>> jsonlib.dump (["Written to stdout"], sys.stdout)
+	["Written to stdout"]
+	>>> 
+
 Exceptions
 -----------
 
@@ -133,8 +147,8 @@ that caused the error.
 WriteError
 ~~~~~~~~~~
 
-Raised by ``write`` if an error was encountered serializing the passed
-value.
+Raised by ``write`` or ``dump`` if an error was encountered serializing
+the passed value.
 
 UnknownSerializerError
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -142,32 +156,18 @@ UnknownSerializerError
 A subclass of ``WriteError`` that is raised when a value cannot be
 serialized. See the ``on_unknown`` parameter to ``write``.
 
-Other JSON Libraries
-====================
-
-`demjson <http://pypi.python.org/pypi/demjson>`_ is a powerful and compliant
-library, which supports encoding autodetection, UTF-32, and surrogate pair
-handling. This is a very good library to use when extension modules cannot
-be installed. I advise always using "strict mode".
-
-`simplejson <http://pypi.python.org/pypi/simplejson>`_ is likely the most
-popular JSON library for Python, used by many web frameworks such as Django.
-Recent versions have improved in their support for Unicode, although it
-(as of 2008-03-28) still does not support encoding autodetection. I like
-demjson better.
-
-`python-cjson <http://pypi.python.org/pypi/python-cjson>`_ is designed for
-speed, but uses bytestrings internally and has poor support for Unicode. I
-advise against its use, unless you will only use ASCII text and need the
-performance.
-
-`python-json <http://pypi.python.org/pypi/python-json>`_ is one of the first
-JSON libraries for Python. It is no longer maintained and has numerous
-issues, especially regarding Unicode. I advise against using this library
-for any reason.
-
 Change Log
 ==========
+
+1.3.6
+-----
+* If an unterminated object or array is encountered, report its start
+  location properly.
+* Improved reporting of unknown escape codes.
+* Raise an exception when parsing a root value that is not an array
+  or object.
+* Allow instances of ``UserString`` to be used as object keys.
+* Implemented the ``dump()`` function.
 
 1.3.5
 -----
