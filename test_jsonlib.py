@@ -134,7 +134,7 @@ class ReadMiscTests (ParserTestCase):
 		self.re (u'[\U0001d11e]', 1, 2, 1, "Unexpected U+0001D11E.")
 		
 	def test_no_unwrapped_values (self):
-		self.re (u'1', 1, 1, 0, "Expecting an array or object.")
+		self.re (u'1', 1, 1, 0, "Unexpected U+0031.")
 		
 	def test_parse_atom_before_unwrapped_check (self):
 		self.re (u'n', 1, 1, 0, "Unexpected U+006E.")
@@ -465,7 +465,7 @@ class ReadObjectTests (ParserTestCase):
 	def test_unexpected_array_end (self):
 		self.re ('{]',       1, 2, 1, "Unexpected U+005D while looking for property name.")
 		self.re ('{"a"]',    1, 5, 4, "Unexpected U+005D while looking for colon.")
-		self.re ('{"a":]',   1, 6, 5, "Unexpected U+005D while looking for property value.")
+		self.re ('{"a":]',   1, 6, 5, "Unexpected U+005D.")
 		self.re ('{"a":1]',  1, 7, 6, "Unexpected U+005D while looking for comma.")
 		self.re ('{"a":1,]', 1, 8, 7, "Unexpected U+005D while looking for property name.")
 		
@@ -476,16 +476,16 @@ class ReadObjectTests (ParserTestCase):
 		self.re ('{"a":1,{', 1, 8, 7, "Unexpected U+007B while looking for property name.")
 		
 	def test_unexpected_object_end (self):
-		self.re ('{"a":}', 1, 6, 5, "Unexpected U+007D while looking for property value.")
+		self.re ('{"a":}', 1, 6, 5, "Unexpected U+007D.")
 		
 	def test_unexpected_comma (self):
 		self.re ('{"a",}',    1, 5, 4, "Unexpected U+002C while looking for colon.")
-		self.re ('{"a":,}',   1, 6, 5, "Unexpected U+002C while looking for property value.")
+		self.re ('{"a":,}',   1, 6, 5, "Unexpected U+002C.")
 		self.re ('{"a":1,,}', 1, 8, 7, "Unexpected U+002C while looking for property name.")
 		
 	def test_unexpected_colon (self):
 		self.re ('{:',        1, 2, 1, "Unexpected U+003A while looking for property name.")
-		self.re ('{"a"::}',   1, 6, 5, "Unexpected U+003A while looking for property value.")
+		self.re ('{"a"::}',   1, 6, 5, "Unexpected U+003A.")
 		self.re ('{"a":1:}',  1, 7, 6, "Unexpected U+003A while looking for comma.")
 		self.re ('{"a":1,:}', 1, 8, 7, "Unexpected U+003A while looking for property name.")
 		
