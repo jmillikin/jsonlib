@@ -117,21 +117,21 @@ class ReadMiscTests (ParserTestCase):
 		self.re (' ', 1, 1, 0, "No expression found.")
 		
 	def test_fail_on_invalid_whitespace (self):
-		self.re (u'[\u000C]', 1, 2, 1, "Unexpected U+000C while looking for array value.")
-		self.re (u'[\u000E]', 1, 2, 1, "Unexpected U+000E while looking for array value.")
-		self.re (u'[\u00A0]', 1, 2, 1, "Unexpected U+00A0 while looking for array value.")
-		self.re (u'[\u2002]', 1, 2, 1, "Unexpected U+2002 while looking for array value.")
-		self.re (u'[\u2028]', 1, 2, 1, "Unexpected U+2028 while looking for array value.")
-		self.re (u'[\u2029]', 1, 2, 1, "Unexpected U+2029 while looking for array value.")
+		self.re (u'[\u000C]', 1, 2, 1, "Unexpected U+000C.")
+		self.re (u'[\u000E]', 1, 2, 1, "Unexpected U+000E.")
+		self.re (u'[\u00A0]', 1, 2, 1, "Unexpected U+00A0.")
+		self.re (u'[\u2002]', 1, 2, 1, "Unexpected U+2002.")
+		self.re (u'[\u2028]', 1, 2, 1, "Unexpected U+2028.")
+		self.re (u'[\u2029]', 1, 2, 1, "Unexpected U+2029.")
 		
 	def test_with_two_lines (self):
-		self.re (u'\n[\u000B]', 2, 2, 2, "Unexpected U+000B while looking for array value.")
+		self.re (u'\n[\u000B]', 2, 2, 2, "Unexpected U+000B.")
 		
 	def test_unexpected_character (self):
-		self.re (u'[+]', 1, 2, 1, "Unexpected U+002B while looking for array value.")
+		self.re (u'[+]', 1, 2, 1, "Unexpected U+002B.")
 		
 	def test_unexpected_character_astral (self):
-		self.re (u'[\U0001d11e]', 1, 2, 1, "Unexpected U+0001D11E while looking for array value.")
+		self.re (u'[\U0001d11e]', 1, 2, 1, "Unexpected U+0001D11E.")
 		
 	def test_no_unwrapped_values (self):
 		self.re (u'1', 1, 1, 0, "Expecting an array or object.")
@@ -197,9 +197,9 @@ class ReadKeywordTests (ParserTestCase):
 		self.r ('[false]', [False])
 		
 	def test_invalid_keyword (self):
-		self.re ('[n]', 1, 2, 1, "Unexpected U+006E while looking for array value.")
-		self.re ('[t]', 1, 2, 1, "Unexpected U+0074 while looking for array value.")
-		self.re ('[f]', 1, 2, 1, "Unexpected U+0066 while looking for array value.")
+		self.re ('[n]', 1, 2, 1, "Unexpected U+006E.")
+		self.re ('[t]', 1, 2, 1, "Unexpected U+0074.")
+		self.re ('[f]', 1, 2, 1, "Unexpected U+0066.")
 		
 class ReadNumberTests (ParserTestCase):
 	def test_zero (self):
@@ -253,10 +253,12 @@ class ReadNumberTests (ParserTestCase):
 	def test_preserve_negative_decimal_zero (self):
 		# Don't use self.r, because Decimal ('0.0') == Decimal ('-0.0')
 		value = read ('[0.0]')
+		self.assertEqual (len (value), 1)
 		self.assertEqual (type (value[0]), Decimal)
 		self.assertEqual (repr (value[0]), 'Decimal("0.0")')
 		
 		value = read ('[-0.0]')
+		self.assertEqual (len (value), 1)
 		self.assertEqual (type (value[0]), Decimal)
 		self.assertEqual (repr (value[0]), 'Decimal("-0.0")')
 		
@@ -267,10 +269,10 @@ class ReadNumberTests (ParserTestCase):
 		self.re ('[0.]', 1, 2, 1, "Invalid number.")
 		
 	def test_no_plus_sign (self):
-		self.re ('[+1]', 1, 2, 1, "Unexpected U+002B while looking for array value.")
+		self.re ('[+1]', 1, 2, 1, "Unexpected U+002B.")
 		
 	def test_non_ascii_number (self):
-		self.re (u'[\u0661]', 1, 2, 1, "Unexpected U+0661 while looking for array value.")
+		self.re (u'[\u0661]', 1, 2, 1, "Unexpected U+0661.")
 		
 class ReadStringTests (ParserTestCase):
 	def test_empty_string (self):
@@ -387,24 +389,24 @@ class ReadArrayTests (ParserTestCase):
 		self.re ('[1[',  1, 3, 2, "Unexpected U+005B while looking for comma.")
 		
 	def test_unexpected_array_end (self):
-		self.re ('[1,]', 1, 4, 3, "Unexpected U+005D while looking for array value.")
+		self.re ('[1,]', 1, 4, 3, "Unexpected U+005D.")
 		
 	def test_unexpected_object_start (self):
 		self.re ('[1{',  1, 3, 2, "Unexpected U+007B while looking for comma.")
 		
 	def test_unexpected_object_end (self):
-		self.re ('[}',   1, 2, 1, "Unexpected U+007D while looking for array value.")
+		self.re ('[}',   1, 2, 1, "Unexpected U+007D.")
 		self.re ('[1}',  1, 3, 2, "Unexpected U+007D while looking for comma.")
-		self.re ('[1,}', 1, 4, 3, "Unexpected U+007D while looking for array value.")
+		self.re ('[1,}', 1, 4, 3, "Unexpected U+007D.")
 		
 	def test_unexpected_comma (self):
-		self.re ('[,',   1, 2, 1, "Unexpected U+002C while looking for array value.")
-		self.re ('[1,,', 1, 4, 3, "Unexpected U+002C while looking for array value.")
+		self.re ('[,',   1, 2, 1, "Unexpected U+002C.")
+		self.re ('[1,,', 1, 4, 3, "Unexpected U+002C.")
 		
 	def test_unexpected_colon (self):
-		self.re ('[:',   1, 2, 1, "Unexpected U+003A while looking for array value.")
+		self.re ('[:',   1, 2, 1, "Unexpected U+003A.")
 		self.re ('[1:',  1, 3, 2, "Unexpected U+003A while looking for comma.")
-		self.re ('[1,:', 1, 4, 3, "Unexpected U+003A while looking for array value.")
+		self.re ('[1,:', 1, 4, 3, "Unexpected U+003A.")
 		
 class ReadObjectTests (ParserTestCase):
 	def test_empty_object (self):
