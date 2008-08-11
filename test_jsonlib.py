@@ -209,14 +209,14 @@ class ReadNumberTests (ParserTestCase):
 		self.r ('[-0]', [0L])
 		
 	def test_two_zeroes_error (self):
-		self.re ('[00]', 1, 2, 1, "Number with leading zero.")
-		self.re ('[01]', 1, 2, 1, "Number with leading zero.")
-		self.re ('[00.1]', 1, 2, 1, "Number with leading zero.")
+		self.re ('[00]', 1, 2, 1, "Invalid number.")
+		self.re ('[01]', 1, 2, 1, "Invalid number.")
+		self.re ('[00.1]', 1, 2, 1, "Invalid number.")
 		
 	def test_negative_two_zeroes_error (self):
-		self.re ('[-00]', 1, 2, 1, "Number with leading zero.")
-		self.re ('[-01]', 1, 2, 1, "Number with leading zero.")
-		self.re ('[-00.1]', 1, 2, 1, "Number with leading zero.")
+		self.re ('[-00]', 1, 2, 1, "Invalid number.")
+		self.re ('[-01]', 1, 2, 1, "Invalid number.")
+		self.re ('[-00.1]', 1, 2, 1, "Invalid number.")
 		
 	def test_int (self):
 		for ii in range (10):
