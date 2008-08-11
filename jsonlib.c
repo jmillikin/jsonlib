@@ -725,7 +725,7 @@ read_number (JSONDecoder *decoder)
 			else if (leading_zero && !is_float)
 			{
 				set_error_simple (decoder, decoder->index,
-				                  "Number with leading zero.");
+				                  "Invalid number.");
 				return NULL;
 			}
 			got_digit = TRUE;
@@ -742,7 +742,7 @@ read_number (JSONDecoder *decoder)
 			if (leading_zero && !is_float)
 			{
 				set_error_simple (decoder, decoder->index,
-				                  "Number with leading zero.");
+				                  "Invalid number.");
 				return NULL;
 			}
 			got_digit = TRUE;
@@ -845,7 +845,7 @@ read_array_impl (PyObject *list, JSONDecoder *decoder)
 					break;
 				}
 				
-				set_error_unexpected (decoder, decoder->index, "array value");
+				set_error_unexpected (decoder, decoder->index, NULL);
 				return FALSE;
 				
 			case ARRAY_GOT_VALUE:
@@ -956,7 +956,7 @@ read_object_impl (PyObject *object, JSONDecoder *decoder)
 					break;
 				}
 				
-				set_error_unexpected (decoder, decoder->index, "property value");
+				set_error_unexpected (decoder, decoder->index, NULL);
 				return FALSE;
 			}
 			case OBJECT_GOT_VALUE:
@@ -1186,8 +1186,7 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	
 	if (result && !decoder.got_root)
 	{
-		set_error_simple (&decoder, decoder.start,
-		                  "Expecting an array or object.");
+		set_error_unexpected (&decoder, decoder.start, NULL);
 		result = NULL;
 	}
 	
