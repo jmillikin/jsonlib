@@ -2576,7 +2576,7 @@ PyMODINIT_FUNC
 initjsonlib (void)
 {
 	PyObject *module;
-	PyObject *version;
+	PyObject *version, *read, *write;
 	
 	if (!(module = Py_InitModule3 ("jsonlib", module_methods,
 	                               module_doc)))
@@ -2600,6 +2600,15 @@ initjsonlib (void)
 	Py_INCREF (UnknownSerializerError);
 	PyModule_AddObject(module, "UnknownSerializerError",
 	                   UnknownSerializerError);
+	
+	/* Aliases */
+	read = PyObject_GetAttrString (module, "read");
+	write = PyObject_GetAttrString (module, "write");
+	if (!(read && write))
+		return;
+	
+	PyModule_AddObject (module, "loads", read);
+	PyModule_AddObject (module, "dumps", write);
 	
 	/* If you change the version here, also change it in setup.py and
 	 * jsonlib.py.

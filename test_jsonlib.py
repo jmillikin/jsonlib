@@ -139,6 +139,9 @@ class ReadMiscTests (ParserTestCase):
 	def test_parse_atom_before_unwrapped_check (self):
 		self.re (u'n', 1, 1, 0, "Unexpected U+006E.")
 		
+	def test_loads_alias (self):
+		self.assert_ (jsonlib.read is jsonlib.loads)
+		
 class ReadExtraDataTests (ParserTestCase):
 	def test_array_start (self):
 		self.re ('[][', 1, 3, 2, "Extra data after JSON expression.")
@@ -644,6 +647,9 @@ class WriteMiscTests (SerializerTestCase):
 		class MyInt (int):
 			pass
 		self.w ([MyInt (10)], u'[10]')
+		
+	def test_dumps_alias (self):
+		self.assert_ (jsonlib.write is jsonlib.dumps)
 		
 class WriteKeywordTests (SerializerTestCase):
 	def test_null (self):

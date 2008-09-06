@@ -31,7 +31,7 @@ OTHER DEALINGS IN THE SOFTWARE.
 """
 
 __all__ = [
-	'read', 'write',
+	'loads', 'dumps', 'read', 'write',
 	'ReadError', 'WriteError', 'UnknownSerializerError',
 ]
 
@@ -359,6 +359,8 @@ def read (string):
 		raise ValueError ()
 	return value
 	
+loads = read
+
 def unicode_autodetect_encoding (bytestring):
 	"""Intelligently convert a byte string to Unicode.
 	
@@ -725,5 +727,5 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		return u_string
 	return u_string.encode (encoding)
 	
+dumps = write
 # }}}
-
