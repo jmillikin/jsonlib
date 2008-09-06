@@ -54,7 +54,7 @@ class ReadError (ValueError):
 		template = ("JSON parsing error at line %d, column %d"
 		            " (position %d): %s")
 		error = template % (line, column, offset, description)
-		super (ReadError, self).__init__ (error)
+		ValueError.__init__ (self, error)
 		
 class WriteError (ValueError):
 	"""Exception raised if there is an error generating a JSON expression."""
@@ -67,13 +67,9 @@ class UnknownSerializerError (WriteError):
 	"""
 	
 	def __init__ (self, value):
-		err = "No known serializer for object: %r" % (value,)
-		if isinstance (UnknownSerializerError, type):
-			parent = super (UnknownSerializerError, self)
-			parent.__init__ (err)
-		else:
-			WriteError.__init__ (self, err)
-			
+		error = "No known serializer for object: %r" % (value,)
+		WriteError.__init__ (self, error)
+		
 class UnknownAtomError (ValueError):
 	"""For internal use, not raised by any external functions."""
 	pass
