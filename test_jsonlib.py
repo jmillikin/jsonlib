@@ -353,10 +353,10 @@ class ReadStringTests (ParserTestCase):
 		self.r (u'["\U0001d11e"]'.encode ('utf-8'), [u'\U0001d11e'])
 		
 	def test_invalid_characters (self):
-		self.re (u'["\u0001"]', 1, 3, 2, "Unexpected U+0001.")
-		self.re (u'["\u0002"]', 1, 3, 2, "Unexpected U+0002.")
-		self.re (u'["\u001F"]', 1, 3, 2, "Unexpected U+001F.")
-		
+		for ordinal in range (0x01, 0x20):
+			ustring = u'["' + unichr (ordinal) + u'"]'
+			self.re (ustring, 1, 3, 2, "Unexpected U+%04X." % ordinal)
+			
 	def test_error_reporting_after_unicode_escape (self):
 		self.re (u'["\\u0020\\v"]', 1, 9, 8, "Unknown escape code: \\v.")
 		

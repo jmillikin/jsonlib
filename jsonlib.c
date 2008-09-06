@@ -319,17 +319,23 @@ count_row_column (Py_UNICODE *start, Py_UNICODE *pos, unsigned long *offset,
 	*offset = (pos - start);
 	*row = 1;
 	
-	/* Count newlines in chars <= pos */
-	for (ptr = start; ptr && ptr <= pos; ptr++)
+	/* Count newlines in chars < pos */
+	for (ptr = start; ptr < pos; ptr++)
 	{
 		if (*ptr == '\n') (*row)++;
 	}
-	ptr--;
 	
-	/* Loop backwards to find the column */
-	while (ptr > start && *ptr != '\n') ptr--;
-	*column = (pos - ptr);
-	if (*row == 1) (*column)++;
+	if (*row == 1)
+	{
+		*column = *offset + 1;
+	}
+	else
+	{
+		ptr--;
+		/* Loop backwards to find the column */
+		while (ptr > start && *ptr != '\n') ptr--;
+		*column = (pos - ptr);
+	}
 }
 
 static void
