@@ -606,8 +606,16 @@ class UnicodeEncodingDetectionTests (ParserTestCase):
 
 # Tests for the serializer {{{
 class WriteMiscTests (SerializerTestCase):
+	class UnknownObject (object):
+		def __str__ (self):
+			return 'str (%s)' % (object.__repr__ (self))
+		def __unicode__ (self):
+			return u'unicode (%s)' % (object.__repr__ (self))
+		def __repr__ (self):
+			return 'repr (%s)' % (object.__repr__ (self))
+			
 	def test_fail_on_unknown (self):
-		obj = object ()
+		obj = self.UnknownObject ()
 		self.we ([obj], "No known serializer for object: %r" % obj)
 		
 	def test_fail_on_unwrapped_atom (self):
@@ -634,7 +642,7 @@ class WriteMiscTests (SerializerTestCase):
 		self.w ([obj], u'["%r"]' % obj, on_unknown = repr)
 		
 	def test_on_unknown_invalid (self):
-		obj = object ()
+		obj = self.UnknownObject ()
 		self.we ([obj], "No known serializer for object: %r" % obj,
 		         on_unknown = lambda v: v)
 		
