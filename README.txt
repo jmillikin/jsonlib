@@ -19,6 +19,11 @@ jsonlib has two functions of interest, ``read`` and ``write``. It also
 defines some exception: ``ReadError``, ``WriteError``, and
 ``UnknownSerializerError``.
 
+For compatibility with the standard library, ``read`` is aliased to
+``loads`` and ``write`` is aliased to ``dumps``. They do not have the
+same set of advanced parameters, but may be used interchangeably for
+simple invocations.
+
 Deserialization
 ---------------
 
@@ -158,6 +163,17 @@ serialized. See the ``on_unknown`` parameter to ``write``.
 
 Change Log
 ==========
+
+1.3.7
+-----
+* Fixed error reporting positions of syntax errors that occur immediately
+  after a newline.
+* Add ``loads()`` and ``dumps()`` as aliases to ``read()`` and ``write()``,
+  respectively, for compatibility with the new ``json`` standard library
+  module.
+* Small fixes to the test suite to clear spurious errors caused by
+  differences between the behavior of ``repr()`` on instances of
+  ``decimal.Decimal`` and ``UnicodeDecodeError``.
 
 1.3.6
 -----
