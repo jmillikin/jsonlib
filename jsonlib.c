@@ -576,6 +576,13 @@ read_string (JSONDecoder *decoder)
 	/* Start at 1 to skip first double quote. */
 	start = decoder->index + 1;
 	
+	/* Fast case for empty string */
+	if (start[0] == '"')
+	{
+		decoder->index = start + 1;
+		return PyUnicode_FromUnicode (NULL, 0);
+	}
+	
 	/* Scan through for maximum character count, and to ensure the string
 	 * is terminated.
 	**/
