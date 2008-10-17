@@ -163,9 +163,6 @@ encoder_stream_append_unicode (JSONEncoder *encoder,
                                const size_t len);
 
 static int
-encoder_append_const (JSONEncoder *encoder, const char text[]);
-
-static int
 encoder_append_string (JSONEncoder *encoder, PyObject *text);
 
 static int
@@ -1291,15 +1288,10 @@ encoder_stream_append_unicode (JSONEncoder *base_encoder,
 }
 
 static int
-encoder_append_const (JSONEncoder *encoder, const char text[])
-{
-	return encoder->append_ascii (encoder, text, strlen (text));
-}
-
-static int
 encoder_append_string (JSONEncoder *encoder, PyObject *text)
 {
 	size_t len;
+	
 	if (PyUnicode_CheckExact (text))
 	{
 		Py_UNICODE *raw = PyUnicode_AS_UNICODE (text);
@@ -1832,7 +1824,7 @@ write_iterable (JSONEncoder *encoder, PyObject *iter, int indent_level)
 	{
 		Py_DECREF (sequence);
 		Py_ReprLeave (iter);
-		return encoder_append_const (encoder, "[]");
+		return encoder->append_ascii (encoder, "[]", 2);
 	}
 	
 	/* Build separator strings */
@@ -2052,7 +2044,7 @@ write_mapping (JSONEncoder *encoder, PyObject *mapping, int indent_level)
 	PyObject *start, *end, *pre_value, *post_value;
 	
 	if (PyMapping_Size (mapping) == 0)
-		return encoder_append_const (encoder, "{}");
+		return encoder->append_ascii (encoder, "{}", 2);
 	
 	has_parents = Py_ReprEnter (mapping);
 	if (has_parents != 0)
