@@ -2143,23 +2143,6 @@ write_basic (JSONEncoder *encoder, PyObject *value)
 		return write_unicode (encoder, value);
 	if (PyInt_Check (value) || PyLong_Check (value))
 		return PyObject_Str (value);
-	if (PyComplex_Check (value))
-	{
-		Py_complex complex = PyComplex_AsCComplex (value);
-		if (complex.imag == 0)
-		{
-			PyObject *real, *serialized;
-			if (!(real = PyFloat_FromDouble (complex.real)))
-				return NULL;
-			serialized = PyObject_Repr (real);
-			Py_DECREF (real);
-			return serialized;
-		}
-		PyErr_SetString (WriteError,
-		                 "Cannot serialize complex numbers with"
-		                 " imaginary components.");
-		return NULL;
-	}
 	
 	if (PyFloat_Check (value))
 	{
@@ -2184,6 +2167,24 @@ write_basic (JSONEncoder *encoder, PyObject *value)
 		}
 		
 		return PyObject_Repr (value);
+	}
+	
+	if (PyComplex_Check (value))
+	{
+		Py_complex complex = PyComplex_AsCComplex (value);
+		if (complex.imag == 0)
+		{
+			PyObject *real, *serialized;
+			if (!(real = PyFloat_FromDouble (complex.real)))
+				return NULL;
+			serialized = PyObject_Repr (real);
+			Py_DECREF (real);
+			return serialized;
+		}
+		PyErr_SetString (WriteError,
+		                 "Cannot serialize complex numbers with"
+		                 " imaginary components.");
+		return NULL;
 	}
 	
 	if (PyObject_IsInstance (value, encoder->Decimal))
