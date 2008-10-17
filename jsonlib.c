@@ -171,7 +171,7 @@ encoder_buffer_resize (JSONBufferEncoder *encoder, size_t delta);
 
 
 static PyObject *
-unicode_from_ascii (const char *value);
+ascii_constant (const char *value, int len);
 
 static int
 write_object (JSONEncoder *encoder, PyObject *object, int indent_level,
@@ -1356,13 +1356,11 @@ set_unknown_serializer (PyObject *value)
 }
 
 static PyObject *
-unicode_from_ascii (const char *value)
+ascii_constant (const char *value, int len)
 {
-	PyObject *str, *retval;
-	str = PyString_FromString (value);
-	retval = PyUnicode_FromEncodedObject (str, "ascii", "strict");
-	Py_DECREF (str);
-	return retval;
+	if (len < 0)
+		len = strlen (value);
+	return PyUnicode_DecodeASCII (value, len, "strict");
 }
 
 static PyObject *
@@ -1389,10 +1387,10 @@ get_separators (PyObject *indent_string, int indent_level,
 {
 	if (indent_string == Py_None)
 	{
-		(*start_ptr) = PyString_FromStringAndSize (&start, 1);
+		(*start_ptr) = ascii_constant (&start, 1);
 		(*pre_value_ptr) = NULL;
-		(*post_value_ptr) = PyString_FromStringAndSize (",", 1);
-		(*end_ptr) = PyString_FromStringAndSize (&end, 1);
+		(*post_value_ptr) = ascii_constant (",", 1);
+		(*end_ptr) = ascii_constant (&end, 1);
 	}
 	else
 	{
@@ -1400,8 +1398,8 @@ get_separators (PyObject *indent_string, int indent_level,
 		char start_str[] = {0, '\n'};
 		start_str[0] = start;
 		
-		(*start_ptr) = PyString_FromStringAndSize (start_str, 2);
-		(*post_value_ptr) = PyString_FromStringAndSize (",\n", 2);
+		(*start_ptr) = ascii_constant (start_str, 2);
+		(*post_value_ptr) = ascii_constant (",\n", 2);
 		
 		indent = PySequence_Repeat (indent_string, indent_level + 1);
 		(*pre_value_ptr) = indent;
@@ -2347,20 +2345,20 @@ serializer_init_and_run_common (JSONEncoder *encoder, PyObject *value)
 	}
 	
 	if (encoder->indent_string == Py_None)
-		encoder->colon = PyString_FromString (":");
+		encoder->colon = ascii_constant (":", -1);
 	else
-		encoder->colon = PyString_FromString (": ");
+		encoder->colon = ascii_constant (": ", -1);
 	if (!encoder->colon) return FALSE;
 	
 	if ((encoder->Decimal = jsonlib_import ("decimal", "Decimal")) &&
 	    (encoder->UserString = jsonlib_import ("UserString", "UserString")) &&
-	    (encoder->true_str = unicode_from_ascii ("true")) &&
-	    (encoder->false_str = unicode_from_ascii ("false")) &&
-	    (encoder->null_str = unicode_from_ascii ("null")) &&
-	    (encoder->inf_str = unicode_from_ascii ("Infinity")) &&
-	    (encoder->neg_inf_str = unicode_from_ascii ("-Infinity")) &&
-	    (encoder->nan_str = unicode_from_ascii ("NaN")) &&
-	    (encoder->quote = unicode_from_ascii ("\"")))
+	    (encoder->true_str = ascii_constant ("true", -1)) &&
+	    (encoder->false_str = ascii_constant ("false", -1)) &&
+	    (encoder->null_str = ascii_constant ("null", -1)) &&
+	    (encoder->inf_str = ascii_constant ("Infinity", -1)) &&
+	    (encoder->neg_inf_str = ascii_constant ("-Infinity", -1)) &&
+	    (encoder->nan_str = ascii_constant ("NaN", -1)) &&
+	    (encoder->quote = ascii_constant ("\"", -1)))
 	{
 		succeeded = write_object (encoder, value, 0, FALSE);
 	}
