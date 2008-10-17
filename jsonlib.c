@@ -1721,15 +1721,16 @@ write_unicode (JSONEncoder *encoder, PyObject *unicode)
 	
 	if (safe)
 	{
-		PyObject *seq = NULL, *sep = NULL;
-		seq = Py_BuildValue ("(OOO)",
-		                     encoder->quote,
-		                     unicode,
-		                     encoder->quote);
-		sep = PyUnicode_FromUnicode (NULL, 0);
-		retval = PyUnicode_Join (sep, seq);
-		Py_XDECREF (seq);
-		Py_XDECREF (sep);
+		PyUnicodeObject *u_retval;
+		
+		if (!(retval = PyUnicode_FromUnicode (NULL, str_len + 2)))
+			return NULL;
+			
+		u_retval = (PyUnicodeObject*) retval;
+		Py_UNICODE_COPY (u_retval->str + 1, buffer, str_len);
+		u_retval->str[0] = '"';
+		u_retval->str[str_len + 1] = '"';
+		
 		return retval;
 	}
 	
