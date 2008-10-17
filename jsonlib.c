@@ -566,59 +566,14 @@ read_unicode_escape (JSONDecoder *decoder, Py_UNICODE *string_start,
 }
 
 static PyObject *
-read_string (JSONDecoder *decoder)
+read_string_full (JSONDecoder *decoder, Py_UNICODE *start, size_t max_char_count)
 {
 	PyObject *unicode;
 	int escaped = FALSE;
-	Py_UNICODE c, *buffer, *start;
-	size_t ii, max_char_count, buffer_idx;
-	
-	/* Start at 1 to skip first double quote. */
-	start = decoder->index + 1;
-	
-	/* Fast case for empty string */
-	if (start[0] == '"')
-	{
-		decoder->index = start + 1;
-		return PyUnicode_FromUnicode (NULL, 0);
-	}
-	
-	/* Scan through for maximum character count, and to ensure the string
-	 * is terminated.
-	**/
-	for (ii = 0;; ii++)
-	{
-		c = start[ii];
-		if (c == 0)
-		{
-			set_error_simple (decoder, decoder->index,
-			                  "Unterminated string.");
-			return NULL;
-		}
-		
-		/* Check for illegal characters */
-		if (c < 0x20)
-		{
-			set_error_unexpected (decoder, start + ii, NULL);
-			return NULL;
-		}
-		
-		if (escaped)
-		{
-			/* Invalid escape codes will be caught
-			 * later.
-			**/
-			escaped = FALSE;
-		}
-		
-		else
-		{	if (c == '\\') escaped = TRUE;
-			else if (c == '"') break;
-		}
-	}
+	Py_UNICODE c, *buffer;
+	size_t ii, buffer_idx;
 	
 	/* Allocate enough to hold the worst case */
-	max_char_count = ii;
 	buffer = decoder->stringparse_buffer;
 	if (max_char_count > decoder->stringparse_buffer_size)
 	{
@@ -711,6 +666,76 @@ read_string (JSONDecoder *decoder)
 		decoder->index = start + max_char_count + 1;
 	}
 	
+	return unicode;
+}
+
+static PyObject *
+read_string (JSONDecoder *decoder)
+{
+	PyObject *unicode;
+	int escaped = FALSE, fancy = FALSE;
+	Py_UNICODE c, *start;
+	size_t ii;
+	
+	/* Start at 1 to skip first double quote. */
+	start = decoder->index + 1;
+	
+	/* Fast case for empty string */
+	if (start[0] == '"')
+	{
+		decoder->index = start + 1;
+		return PyUnicode_FromUnicode (NULL, 0);
+	}
+	
+	/* Scan through for maximum character count, and to ensure the string
+	 * is terminated.
+	**/
+	for (ii = 0;; ii++)
+	{
+		c = start[ii];
+		if (c == 0)
+		{
+			set_error_simple (decoder, decoder->index,
+			                  "Unterminated string.");
+			return NULL;
+		}
+		
+		/* Check for illegal characters */
+		if (c < 0x20)
+		{
+			set_error_unexpected (decoder, start + ii, NULL);
+			return NULL;
+		}
+		
+		if (escaped)
+		{
+			/* Invalid escape codes will be caught
+			 * later.
+			**/
+			escaped = FALSE;
+		}
+		
+		else
+		{	if (c == '\\')
+			{
+				fancy = TRUE;
+				escaped = TRUE;
+			}
+			else if (c == '"') break;
+		}
+	}
+	
+	if (fancy)
+	{
+		return read_string_full (decoder, start, ii);
+	}
+	
+	/* No fancy features, return the string directly */
+	unicode = PyUnicode_FromUnicode (start, ii);
+	if (unicode)
+	{
+		decoder->index = start + ii + 1;
+	}
 	return unicode;
 }
 
