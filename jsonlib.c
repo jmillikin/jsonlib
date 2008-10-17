@@ -1345,6 +1345,12 @@ static int
 encoder_buffer_resize (JSONBufferEncoder *encoder, size_t delta)
 {
 	size_t new_size;
+	Py_UNICODE *new_buf;
+	
+	new_size = encoder->buffer_size + delta;
+	if (encoder->buffer_max_size >= new_size)
+		return TRUE;
+		
 	if (!encoder->buffer)
 	{
 		new_size = (delta > INITIAL_BUFFER_SIZE? delta : INITIAL_BUFFER_SIZE);
@@ -1354,22 +1360,16 @@ encoder_buffer_resize (JSONBufferEncoder *encoder, size_t delta)
 		return TRUE;
 	}
 	
-	new_size = encoder->buffer_size + delta;
-	if (encoder->buffer_max_size < new_size)
+	new_size = next_power_2 (encoder->buffer_max_size, new_size);
+	new_buf = PyMem_Realloc (encoder->buffer,
+	                         sizeof (Py_UNICODE) * new_size);
+	if (!new_buf)
 	{
-		Py_UNICODE *new_buf;
-		new_size = next_power_2 (encoder->buffer_max_size, new_size);
-		new_buf = PyMem_Realloc (encoder->buffer,
-		                         sizeof (Py_UNICODE) * new_size);
-		if (!new_buf)
-		{
-			PyMem_Free (encoder->buffer);
-			return FALSE;
-		}
-		encoder->buffer = new_buf;
-		encoder->buffer_max_size = new_size;
-		return TRUE;
+		PyMem_Free (encoder->buffer);
+		return FALSE;
 	}
+	encoder->buffer = new_buf;
+	encoder->buffer_max_size = new_size;
 	return TRUE;
 }
 
