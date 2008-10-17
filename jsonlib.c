@@ -2142,6 +2142,32 @@ check_valid_number (JSONEncoder *encoder, PyObject *serialized)
 }
 
 static PyObject *
+write_float (JSONEncoder *encoder, PyObject *value)
+{
+	double val = PyFloat_AS_DOUBLE (value);
+	if (Py_IS_NAN (val))
+	{
+		PyErr_SetString (WriteError,
+				 "Cannot serialize NaN.");
+		return NULL;
+	}
+	
+	if (Py_IS_INFINITY (val))
+	{
+		const char *msg;
+		if (val > 0)
+			msg = "Cannot serialize Infinity.";
+		else
+			msg = "Cannot serialize -Infinity.";
+		
+		PyErr_SetString (WriteError, msg);
+		return NULL;
+	}
+	
+	return PyObject_Repr (value);
+}
+
+static PyObject *
 write_basic (JSONEncoder *encoder, PyObject *value)
 {
 	if (value == Py_True)
@@ -2160,37 +2186,25 @@ write_basic (JSONEncoder *encoder, PyObject *value)
 		return encoder->null_str;
 	}
 	
+	/* Fast, exact type checks */
+	if (PyString_CheckExact (value))
+		return write_string (encoder, value);
+	if (PyUnicode_CheckExact (value))
+		return write_unicode (encoder, value);
+	if (PyInt_CheckExact (value) || PyLong_CheckExact (value))
+		return PyObject_Str (value);
+	if (PyFloat_CheckExact (value))
+		return write_float (encoder, value);
+	
+	/* Slow, full type checks */
 	if (PyString_Check (value))
 		return write_string (encoder, value);
 	if (PyUnicode_Check (value))
 		return write_unicode (encoder, value);
 	if (PyInt_Check (value) || PyLong_Check (value))
 		return PyObject_Str (value);
-	
 	if (PyFloat_Check (value))
-	{
-		double val = PyFloat_AS_DOUBLE (value);
-		if (Py_IS_NAN (val))
-		{
-			PyErr_SetString (WriteError,
-			                 "Cannot serialize NaN.");
-			return NULL;
-		}
-		
-		if (Py_IS_INFINITY (val))
-		{
-			const char *msg;
-			if (val > 0)
-				msg = "Cannot serialize Infinity.";
-			else
-				msg = "Cannot serialize -Infinity.";
-			
-			PyErr_SetString (WriteError, msg);
-			return NULL;
-		}
-		
-		return PyObject_Repr (value);
-	}
+		return write_float (encoder, value);
 	
 	if (PyComplex_Check (value))
 	{
