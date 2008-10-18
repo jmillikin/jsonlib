@@ -1269,14 +1269,12 @@ encoder_buffer_append_unicode (JSONEncoder *base_encoder,
                                const size_t len)
 {
 	JSONBufferEncoder *encoder = (JSONBufferEncoder *) (base_encoder);
-	size_t ii;
 	
 	if (!encoder_buffer_resize (encoder, len))
 		return FALSE;
-	for (ii = 0; ii < len; ii++)
-	{
-		encoder->buffer[encoder->buffer_size++] = text[ii];
-	}
+	memcpy (encoder->buffer + encoder->buffer_size, text,
+	        len * sizeof (Py_UNICODE));
+	encoder->buffer_size += len;
 	return TRUE;
 }
 
