@@ -52,7 +52,7 @@ enum
 #define BOM_UTF32_LE "\xff\xfe\x00\x00"
 #define BOM_UTF32_BE "\x00\x00\xfe\xff"
 
-typedef struct _JSONDecoder {
+typedef struct _Decoder {
 	Py_UNICODE *start;
 	Py_UNICODE *end;
 	Py_UNICODE *index;
@@ -62,7 +62,7 @@ typedef struct _JSONDecoder {
 	size_t stringparse_buffer_size;
 	
 	unsigned int got_root: 1;
-} JSONDecoder;
+} Decoder;
 
 typedef enum
 {
@@ -82,16 +82,16 @@ typedef enum
 
 static PyObject *ReadError;
 
-static PyObject *read_string (JSONDecoder *decoder);
-static PyObject *read_number (JSONDecoder *decoder);
-static PyObject *read_array (JSONDecoder *decoder);
-static PyObject *read_object (JSONDecoder *decoder);
-static PyObject *json_read (JSONDecoder *decoder);
+static PyObject *read_string (Decoder *decoder);
+static PyObject *read_number (Decoder *decoder);
+static PyObject *read_array (Decoder *decoder);
+static PyObject *read_object (Decoder *decoder);
+static PyObject *json_read (Decoder *decoder);
 /* }}} */
 
 /* serializer declarations {{{ */
-typedef struct _JSONEncoder JSONEncoder;
-struct _JSONEncoder
+typedef struct _Encoder Encoder;
+struct _Encoder
 {
 	/* Pulled from the current interpreter to avoid errors when used
 	 * with sub-interpreters.
@@ -106,8 +106,8 @@ struct _JSONEncoder
 	int coerce_keys;
 	PyObject *on_unknown;
 	
-	int (*append_ascii) (JSONEncoder *, const char *, const size_t);
-	int (*append_unicode) (JSONEncoder *, const Py_UNICODE *, const size_t);
+	int (*append_ascii) (Encoder *, const char *, const size_t);
+	int (*append_unicode) (Encoder *, const Py_UNICODE *, const size_t);
 	
 	/* Constants, saved to avoid lookup later */
 	PyObject *true_str;
@@ -120,20 +120,20 @@ struct _JSONEncoder
 	PyObject *colon;
 };
 
-typedef struct _JSONBufferEncoder
+typedef struct _BufferEncoder
 {
-	JSONEncoder encoder;
+	Encoder encoder;
 	Py_UNICODE *buffer;
 	size_t buffer_size;
 	size_t buffer_max_size;
-} JSONBufferEncoder;
+} BufferEncoder;
 
-typedef struct _JSONStreamEncoder
+typedef struct _StreamEncoder
 {
-	JSONEncoder encoder;
+	Encoder encoder;
 	PyObject *stream;
 	char *encoding;
-} JSONStreamEncoder;
+} StreamEncoder;
 
 static const char *hexdigit = "0123456789abcdef";
 #define INITIAL_BUFFER_SIZE 32
@@ -143,30 +143,30 @@ static PyObject *UnknownSerializerError;
 
 /* Functions for writing actual bytes to a buffer or stream {{{ */
 static int
-encoder_buffer_append_ascii (JSONEncoder *encoder,
+buffer_encoder_append_ascii (Encoder *encoder,
                              const char *text,
                              const size_t len);
 
 static int
-encoder_buffer_append_unicode (JSONEncoder *encoder,
+buffer_encoder_append_unicode (Encoder *encoder,
                                const Py_UNICODE *text,
                                const size_t len);
 
 static int
-encoder_stream_append_ascii (JSONEncoder *encoder,
+stream_encoder_append_ascii (Encoder *encoder,
                              const char *text,
                              const size_t len);
 
 static int
-encoder_stream_append_unicode (JSONEncoder *encoder,
+stream_encoder_append_unicode (Encoder *encoder,
                                const Py_UNICODE *text,
                                const size_t len);
 
 static int
-encoder_append_string (JSONEncoder *encoder, PyObject *text);
+encoder_append_string (Encoder *encoder, PyObject *text);
 
 static int
-encoder_buffer_resize (JSONBufferEncoder *encoder, size_t delta);
+buffer_encoder_resize (BufferEncoder *encoder, size_t delta);
 /* }}} */
 
 
@@ -174,23 +174,23 @@ static PyObject *
 ascii_constant (const char *value, int len);
 
 static int
-write_object (JSONEncoder *encoder, PyObject *object, int indent_level,
+write_object (Encoder *encoder, PyObject *object, int indent_level,
               int in_unknown_hook);
 
 static int
-write_iterable (JSONEncoder *encoder, PyObject *iterable, int indent_level);
+write_iterable (Encoder *encoder, PyObject *iterable, int indent_level);
 
 static int
-write_mapping (JSONEncoder *encoder, PyObject *mapping, int indent_level);
+write_mapping (Encoder *encoder, PyObject *mapping, int indent_level);
 
 static PyObject *
-write_basic (JSONEncoder *encoder, PyObject *value);
+write_basic (Encoder *encoder, PyObject *value);
 
 static PyObject *
-write_string (JSONEncoder *encoder, PyObject *string);
+write_string (Encoder *encoder, PyObject *string);
 
 static PyObject *
-write_unicode (JSONEncoder *encoder, PyObject *unicode);
+write_unicode (Encoder *encoder, PyObject *unicode);
 
 static PyObject *
 unicode_to_unicode (PyObject *unicode);
@@ -235,7 +235,7 @@ next_power_2 (size_t start, size_t min)
 
 /* parser {{{ */
 static void
-skip_spaces (JSONDecoder *decoder)
+skip_spaces (Decoder *decoder)
 {
 	/* Don't use Py_UNICODE_ISSPACE, because it returns TRUE for
 	 * codepoints that are not valid JSON whitespace.
@@ -251,7 +251,7 @@ skip_spaces (JSONDecoder *decoder)
 }
 
 static int
-parser_find_next_value (JSONDecoder *decoder)
+parser_find_next_value (Decoder *decoder)
 {
 	/* Return codes:
 	 * 
@@ -336,7 +336,7 @@ count_row_column (Py_UNICODE *start, Py_UNICODE *pos, unsigned long *offset,
 }
 
 static void
-set_error (JSONDecoder *decoder, Py_UNICODE *position, PyObject *description,
+set_error (Decoder *decoder, Py_UNICODE *position, PyObject *description,
            PyObject *description_args)
 {
 	const char *tmpl = "JSON parsing error at line %d, column %d"
@@ -379,7 +379,7 @@ set_error (JSONDecoder *decoder, Py_UNICODE *position, PyObject *description,
 }
 
 static void
-set_error_simple (JSONDecoder *decoder, Py_UNICODE *position,
+set_error_simple (Decoder *decoder, Py_UNICODE *position,
                   const char *description)
 {
 	PyObject *desc_obj;
@@ -392,7 +392,7 @@ set_error_simple (JSONDecoder *decoder, Py_UNICODE *position,
 }
 
 static void
-set_error_unexpected (JSONDecoder *decoder, Py_UNICODE *position,
+set_error_unexpected (Decoder *decoder, Py_UNICODE *position,
                       const char *wanted)
 {
 	PyObject *err_str, *err_format_args;
@@ -430,7 +430,7 @@ set_error_unexpected (JSONDecoder *decoder, Py_UNICODE *position,
 
 /* Helper function to create a new decimal.Decimal object */
 static PyObject *
-make_Decimal (JSONDecoder *decoder, PyObject *string)
+make_Decimal (Decoder *decoder, PyObject *string)
 {
 	PyObject *args, *retval = NULL;
 	
@@ -443,7 +443,7 @@ make_Decimal (JSONDecoder *decoder, PyObject *string)
 }
 
 static PyObject *
-keyword_compare (JSONDecoder *decoder, const char *expected, size_t len,
+keyword_compare (Decoder *decoder, const char *expected, size_t len,
                  PyObject *retval)
 {
 	size_t ii, left;
@@ -477,7 +477,7 @@ read_4hex (Py_UNICODE *start, Py_UNICODE *retval_ptr)
 }
 
 static int
-read_unicode_escape (JSONDecoder *decoder, Py_UNICODE *string_start,
+read_unicode_escape (Decoder *decoder, Py_UNICODE *string_start,
                      Py_UNICODE *buffer, size_t *buffer_idx,
                      size_t *index_ptr, size_t max_char_count)
 {
@@ -566,7 +566,7 @@ read_unicode_escape (JSONDecoder *decoder, Py_UNICODE *string_start,
 }
 
 static PyObject *
-read_string_full (JSONDecoder *decoder, Py_UNICODE *start, size_t max_char_count)
+read_string_full (Decoder *decoder, Py_UNICODE *start, size_t max_char_count)
 {
 	PyObject *unicode;
 	int escaped = FALSE;
@@ -670,7 +670,7 @@ read_string_full (JSONDecoder *decoder, Py_UNICODE *start, size_t max_char_count
 }
 
 static PyObject *
-read_string (JSONDecoder *decoder)
+read_string (Decoder *decoder)
 {
 	PyObject *unicode;
 	int escaped = FALSE, fancy = FALSE;
@@ -740,7 +740,7 @@ read_string (JSONDecoder *decoder)
 }
 
 static PyObject *
-read_number (JSONDecoder *decoder)
+read_number (Decoder *decoder)
 {
 	PyObject *object = NULL;
 	int is_float = FALSE, should_stop = FALSE, got_digit = FALSE,
@@ -835,7 +835,7 @@ read_number (JSONDecoder *decoder)
 }
 
 static int
-read_array_impl (PyObject *list, JSONDecoder *decoder)
+read_array_impl (PyObject *list, Decoder *decoder)
 {
 	Py_UNICODE *start, c;
 	ParseArrayState array_state = ARRAY_EMPTY;
@@ -902,7 +902,7 @@ read_array_impl (PyObject *list, JSONDecoder *decoder)
 }
 
 static PyObject *
-read_array (JSONDecoder *decoder)
+read_array (Decoder *decoder)
 {
 	PyObject *object = PyList_New (0);
 	
@@ -916,7 +916,7 @@ read_array (JSONDecoder *decoder)
 }
 
 static int
-read_object_impl (PyObject *object, JSONDecoder *decoder)
+read_object_impl (PyObject *object, Decoder *decoder)
 {
 	Py_UNICODE *start, c;
 	ParseObjectState object_state = OBJECT_EMPTY;
@@ -1015,7 +1015,7 @@ read_object_impl (PyObject *object, JSONDecoder *decoder)
 }
 
 static PyObject *
-read_object (JSONDecoder *decoder)
+read_object (Decoder *decoder)
 {
 	PyObject *object = PyDict_New ();
 	
@@ -1029,7 +1029,7 @@ read_object (JSONDecoder *decoder)
 }
 
 static PyObject *
-json_read (JSONDecoder *decoder)
+json_read (Decoder *decoder)
 {
 	skip_spaces (decoder);
 	switch (*decoder->index)
@@ -1203,7 +1203,7 @@ static PyObject*
 _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 {
 	PyObject *result = NULL, *unicode;
-	JSONDecoder decoder = {NULL};
+	Decoder decoder = {NULL};
 	
 	if (!parse_unicode_arg (args, kwargs, &unicode))
 		return NULL;
@@ -1247,14 +1247,14 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 
 /* serializer {{{ */
 static int
-encoder_buffer_append_ascii (JSONEncoder *base_encoder,
+buffer_encoder_append_ascii (Encoder *base_encoder,
                              const char *text,
                              const size_t len)
 {
-	JSONBufferEncoder *encoder = (JSONBufferEncoder *) (base_encoder);
+	BufferEncoder *encoder = (BufferEncoder *) (base_encoder);
 	size_t ii;
 	
-	if (!encoder_buffer_resize (encoder, len))
+	if (!buffer_encoder_resize (encoder, len))
 		return FALSE;
 	for (ii = 0; ii < len; ii++)
 	{
@@ -1264,13 +1264,13 @@ encoder_buffer_append_ascii (JSONEncoder *base_encoder,
 }
 
 static int
-encoder_buffer_append_unicode (JSONEncoder *base_encoder,
+buffer_encoder_append_unicode (Encoder *base_encoder,
                                const Py_UNICODE *text,
                                const size_t len)
 {
-	JSONBufferEncoder *encoder = (JSONBufferEncoder *) (base_encoder);
+	BufferEncoder *encoder = (BufferEncoder *) (base_encoder);
 	
-	if (!encoder_buffer_resize (encoder, len))
+	if (!buffer_encoder_resize (encoder, len))
 		return FALSE;
 	memcpy (encoder->buffer + encoder->buffer_size, text,
 	        len * sizeof (Py_UNICODE));
@@ -1279,7 +1279,7 @@ encoder_buffer_append_unicode (JSONEncoder *base_encoder,
 }
 
 static int
-encoder_stream_append_common (JSONStreamEncoder *encoder, PyObject *encoded)
+stream_encoder_append_common (StreamEncoder *encoder, PyObject *encoded)
 {
 	int result;
 	if (!encoded)
@@ -1290,35 +1290,35 @@ encoder_stream_append_common (JSONStreamEncoder *encoder, PyObject *encoded)
 }
 
 static int
-encoder_stream_append_ascii (JSONEncoder *base_encoder,
+stream_encoder_append_ascii (Encoder *base_encoder,
                              const char *text,
                              const size_t len)
 {
-	JSONStreamEncoder *encoder = (JSONStreamEncoder *) (base_encoder);
+	StreamEncoder *encoder = (StreamEncoder *) (base_encoder);
 	PyObject *encoded;
 	if (encoder->encoding)
 		encoded = PyString_Encode (text, len, encoder->encoding, "strict");
 	else
 		encoded = PyUnicode_Decode (text, len, "ascii", "strict");
-	return encoder_stream_append_common (encoder, encoded);
+	return stream_encoder_append_common (encoder, encoded);
 }
 
 static int
-encoder_stream_append_unicode (JSONEncoder *base_encoder,
+stream_encoder_append_unicode (Encoder *base_encoder,
                                const Py_UNICODE *text,
                                const size_t len)
 {
-	JSONStreamEncoder *encoder = (JSONStreamEncoder *) (base_encoder);
+	StreamEncoder *encoder = (StreamEncoder *) (base_encoder);
 	PyObject *encoded;
 	if (encoder->encoding)
 		encoded = PyUnicode_Encode (text, len, encoder->encoding, "strict");
 	else
 		encoded = PyUnicode_FromUnicode (text, len);
-	return encoder_stream_append_common (encoder, encoded);
+	return stream_encoder_append_common (encoder, encoded);
 }
 
 static int
-encoder_append_string (JSONEncoder *encoder, PyObject *text)
+encoder_append_string (Encoder *encoder, PyObject *text)
 {
 	size_t len;
 	
@@ -1340,7 +1340,7 @@ encoder_append_string (JSONEncoder *encoder, PyObject *text)
 }
 
 static int
-encoder_buffer_resize (JSONBufferEncoder *encoder, size_t delta)
+buffer_encoder_resize (BufferEncoder *encoder, size_t delta)
 {
 	size_t new_size;
 	Py_UNICODE *new_buf;
@@ -1444,7 +1444,7 @@ get_separators (PyObject *indent_string, int indent_level,
 }
 
 static PyObject *
-write_string (JSONEncoder *encoder, PyObject *string)
+write_string (Encoder *encoder, PyObject *string)
 {
 	PyObject *unicode, *retval;
 	int safe = TRUE;
@@ -1707,7 +1707,7 @@ unicode_to_ascii (PyObject *unicode)
 }
 
 static PyObject *
-write_unicode (JSONEncoder *encoder, PyObject *unicode)
+write_unicode (Encoder *encoder, PyObject *unicode)
 {
 	PyObject *retval;
 	int safe = TRUE;
@@ -1786,7 +1786,7 @@ write_unicode (JSONEncoder *encoder, PyObject *unicode)
 }
 
 static int
-write_sequence_impl (JSONEncoder *encoder, PyObject *seq,
+write_sequence_impl (Encoder *encoder, PyObject *seq,
                      PyObject *start, PyObject *end,
                      PyObject *pre_value, PyObject *post_value,
                      int indent_level)
@@ -1821,7 +1821,7 @@ write_sequence_impl (JSONEncoder *encoder, PyObject *seq,
 }
 
 static int
-write_iterable (JSONEncoder *encoder, PyObject *iter, int indent_level)
+write_iterable (Encoder *encoder, PyObject *iter, int indent_level)
 {
 	PyObject *sequence;
 	PyObject *start, *end, *pre, *post;
@@ -1866,7 +1866,7 @@ write_iterable (JSONEncoder *encoder, PyObject *iter, int indent_level)
 }
 
 static int
-mapping_process_key (JSONEncoder *encoder, PyObject *key, PyObject **key_ptr)
+mapping_process_key (Encoder *encoder, PyObject *key, PyObject **key_ptr)
 {
 	(*key_ptr) = NULL;
 	
@@ -1911,7 +1911,7 @@ mapping_process_key (JSONEncoder *encoder, PyObject *key, PyObject **key_ptr)
 }
 
 static int
-mapping_get_key_and_value_from_item (JSONEncoder *encoder, PyObject *item,
+mapping_get_key_and_value_from_item (Encoder *encoder, PyObject *item,
                                      PyObject **key_ptr, PyObject **value_ptr)
 {
 	PyObject *key = NULL, *value = NULL;
@@ -1939,7 +1939,7 @@ mapping_get_key_and_value_from_item (JSONEncoder *encoder, PyObject *item,
 
 /* Special case for dictionaries */
 static int
-write_dict (JSONEncoder *encoder, PyObject *dict, PyObject *start,
+write_dict (Encoder *encoder, PyObject *dict, PyObject *start,
             PyObject *end, PyObject *pre_value, PyObject *post_value,
             int indent_level)
 {
@@ -1992,7 +1992,7 @@ write_dict (JSONEncoder *encoder, PyObject *dict, PyObject *start,
 }
 
 static int
-write_mapping_impl (JSONEncoder *encoder, PyObject *items,
+write_mapping_impl (Encoder *encoder, PyObject *items,
                     PyObject *start, PyObject *end, PyObject *pre_value,
                     PyObject *post_value, int indent_level)
 {
@@ -2057,7 +2057,7 @@ write_mapping_impl (JSONEncoder *encoder, PyObject *items,
 }
 
 static int
-write_mapping (JSONEncoder *encoder, PyObject *mapping, int indent_level)
+write_mapping (Encoder *encoder, PyObject *mapping, int indent_level)
 {
 	int has_parents, succeeded;
 	PyObject *items;
@@ -2115,7 +2115,7 @@ write_mapping (JSONEncoder *encoder, PyObject *mapping, int indent_level)
 }
 
 static int
-check_valid_number (JSONEncoder *encoder, PyObject *serialized)
+check_valid_number (Encoder *encoder, PyObject *serialized)
 {
 	int invalid;
 	
@@ -2132,7 +2132,7 @@ check_valid_number (JSONEncoder *encoder, PyObject *serialized)
 }
 
 static PyObject *
-write_float (JSONEncoder *encoder, PyObject *value)
+write_float (Encoder *encoder, PyObject *value)
 {
 	double val = PyFloat_AS_DOUBLE (value);
 	if (Py_IS_NAN (val))
@@ -2158,7 +2158,7 @@ write_float (JSONEncoder *encoder, PyObject *value)
 }
 
 static PyObject *
-write_basic (JSONEncoder *encoder, PyObject *value)
+write_basic (Encoder *encoder, PyObject *value)
 {
 	if (value == Py_True)
 	{
@@ -2256,7 +2256,7 @@ write_basic (JSONEncoder *encoder, PyObject *value)
 }
 
 static int
-write_object (JSONEncoder *encoder, PyObject *object,
+write_object (Encoder *encoder, PyObject *object,
               int indent_level, int in_unknown_hook)
 {
 	PyObject *pieces, *iter, *on_unknown_args;
@@ -2359,7 +2359,7 @@ valid_json_whitespace (PyObject *string)
 }
 
 static int
-serializer_init_and_run_common (JSONEncoder *encoder, PyObject *value)
+serializer_init_and_run_common (Encoder *encoder, PyObject *value)
 {
 	int indent_is_valid, succeeded = FALSE;
 	
@@ -2417,8 +2417,8 @@ static PyObject*
 _write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 {
 	PyObject *value;
-	JSONBufferEncoder encoder = {{NULL}, NULL};
-	JSONEncoder *encoder_base = (JSONEncoder*) &encoder;
+	BufferEncoder encoder = {{NULL}, NULL};
+	Encoder *encoder_base = (Encoder*) &encoder;
 	char *encoding;
 	
 	static char *kwlist[] = {"value", "sort_keys", "indent",
@@ -2444,8 +2444,8 @@ _write_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	                                  &encoder_base->on_unknown))
 		return NULL;
 	
-	encoder_base->append_ascii = encoder_buffer_append_ascii;
-	encoder_base->append_unicode = encoder_buffer_append_unicode;
+	encoder_base->append_ascii = buffer_encoder_append_ascii;
+	encoder_base->append_unicode = buffer_encoder_append_unicode;
 	if (serializer_init_and_run_common (encoder_base, value))
 	{
 		PyObject *retval;
@@ -2480,8 +2480,8 @@ static PyObject *
 _dump_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 {
 	PyObject *value;
-	JSONStreamEncoder encoder = {{NULL}, NULL};
-	JSONEncoder *encoder_base = (JSONEncoder *) &encoder;
+	StreamEncoder encoder = {{NULL}, NULL};
+	Encoder *encoder_base = (Encoder *) &encoder;
 	
 	static char *kwlist[] = {"value", "fp", "sort_keys", "indent",
 	                         "ascii_only", "coerce_keys", "encoding",
@@ -2507,8 +2507,8 @@ _dump_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 	                                  &encoder_base->on_unknown))
 		return NULL;
 	
-	encoder_base->append_ascii = encoder_stream_append_ascii;
-	encoder_base->append_unicode = encoder_stream_append_unicode;
+	encoder_base->append_ascii = stream_encoder_append_ascii;
+	encoder_base->append_unicode = stream_encoder_append_unicode;
 	if (serializer_init_and_run_common (encoder_base, value))
 	{
 		Py_INCREF (Py_None);
