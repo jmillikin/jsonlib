@@ -1579,6 +1579,58 @@ unicode_to_unicode (PyObject *unicode)
 	return retval;
 }
 
+static char *
+escape_unichar (Py_UNICODE c, char *p)
+{
+	*p++ = '\\';
+	switch (c)
+	{
+		case 0x08: *p++ = 'b'; return p;
+		case 0x09: *p++ = 't'; return p;
+		case 0x0A: *p++ = 'n'; return p;
+		case 0x0C: *p++ = 'f'; return p;
+		case 0x0D: *p++ = 'r'; return p;
+		case 0x22: *p++ = '"'; return p;
+		case 0x2F: *p++ = '/'; return p;
+		case 0x5C: *p++ = '\\'; return p;
+		default: break;
+	}
+#ifdef Py_UNICODE_WIDE
+	if (c > 0xFFFF)
+	{
+		/* Separate into upper and lower surrogate pair */
+		Py_UNICODE reduced, upper, lower;
+		
+		reduced = c - 0x10000;
+		lower = (reduced & 0x3FF);
+		upper = (reduced >> 10);
+		
+		upper += 0xD800;
+		lower += 0xDC00;
+		
+		*p++ = 'u';
+		*p++ = hexdigit[(upper >> 12) & 0x0000000F];
+		*p++ = hexdigit[(upper >> 8) & 0x0000000F];
+		*p++ = hexdigit[(upper >> 4) & 0x0000000F];
+		*p++ = hexdigit[upper & 0x0000000F];
+		
+		*p++ = '\\';
+		*p++ = 'u';
+		*p++ = hexdigit[(lower >> 12) & 0x0000000F];
+		*p++ = hexdigit[(lower >> 8) & 0x0000000F];
+		*p++ = hexdigit[(lower >> 4) & 0x0000000F];
+		*p++ = hexdigit[lower & 0x0000000F];
+		return p;
+	}
+#endif
+	*p++ = 'u';
+	*p++ = hexdigit[(c >> 12) & 0x000F];
+	*p++ = hexdigit[(c >> 8) & 0x000F];
+	*p++ = hexdigit[(c >> 4) & 0x000F];
+	*p++ = hexdigit[c & 0x000F];
+	return p;
+}
+
 static PyObject *
 unicode_to_ascii (PyObject *unicode)
 {
@@ -1645,70 +1697,10 @@ unicode_to_ascii (PyObject *unicode)
 	for (ii = 0; ii < old_buffer_size; ii++)
 	{
 		Py_UNICODE c = old_buffer[ii];
-		if (c == 0x08)
-			*p++ = '\\', *p++ = 'b';
-		else if (c == 0x09)
-			*p++ = '\\', *p++ = 't';
-		else if (c == 0x0A)
-			*p++ = '\\', *p++ = 'n';
-		else if (c == 0x0C)
-			*p++ = '\\', *p++ = 'f';
-		else if (c == 0x0D)
-			*p++ = '\\', *p++ = 'r';
-		else if (c == 0x22)
-			*p++ = '\\', *p++ = '"';
-		else if (c == 0x2F)
-			*p++ = '\\', *p++ = '/';
-		else if (c == 0x5C)
-			*p++ = '\\', *p++ = '\\';
-		else if (c <= 0x1F)
-		{
-			*p++ = '\\';
-			*p++ = 'u';
-			*p++ = '0';
-			*p++ = '0';
-			*p++ = hexdigit[(c >> 4) & 0x0000000F];
-			*p++ = hexdigit[c & 0x0000000F];
-		}
-#ifdef Py_UNICODE_WIDE
-		else if (c > 0xFFFF)
-		{
-			/* Separate into upper and lower surrogate pair */
-			Py_UNICODE reduced, upper, lower;
-			
-			reduced = c - 0x10000;
-			lower = (reduced & 0x3FF);
-			upper = (reduced >> 10);
-			
-			upper += 0xD800;
-			lower += 0xDC00;
-			
-			*p++ = '\\';
-			*p++ = 'u';
-			*p++ = hexdigit[(upper >> 12) & 0x0000000F];
-			*p++ = hexdigit[(upper >> 8) & 0x0000000F];
-			*p++ = hexdigit[(upper >> 4) & 0x0000000F];
-			*p++ = hexdigit[upper & 0x0000000F];
-			
-			*p++ = '\\';
-			*p++ = 'u';
-			*p++ = hexdigit[(lower >> 12) & 0x0000000F];
-			*p++ = hexdigit[(lower >> 8) & 0x0000000F];
-			*p++ = hexdigit[(lower >> 4) & 0x0000000F];
-			*p++ = hexdigit[lower & 0x0000000F];
-		}
-#endif
-		else if (c > 0x7E)
-		{
-			*p++ = '\\';
-			*p++ = 'u';
-			*p++ = hexdigit[(c >> 12) & 0x000F];
-			*p++ = hexdigit[(c >> 8) & 0x000F];
-			*p++ = hexdigit[(c >> 4) & 0x000F];
-			*p++ = hexdigit[c & 0x000F];
-		}
-		else
+		if (c > 0x1F && c <= 0x7E && c != '\\' && c != '"' && c != '/')
 			*p++ = (char) (c);
+		else
+			p = escape_unichar (c, p);
 	}
 	*p++ = '"';
 	return retval;
