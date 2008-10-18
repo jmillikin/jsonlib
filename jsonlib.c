@@ -107,7 +107,7 @@ struct _Encoder
 	PyObject *on_unknown;
 	
 	int (*append_ascii) (Encoder *, const char *, const size_t);
-	int (*append_unicode) (Encoder *, const Py_UNICODE *, const size_t);
+	int (*append_unicode) (Encoder *, PyObject *);
 	
 	/* Constants, saved to avoid lookup later */
 	PyObject *true_str;
@@ -149,8 +149,7 @@ buffer_encoder_append_ascii (Encoder *encoder,
 
 static int
 buffer_encoder_append_unicode (Encoder *encoder,
-                               const Py_UNICODE *text,
-                               const size_t len);
+                               PyObject *text);
 
 static int
 stream_encoder_append_ascii (Encoder *encoder,
@@ -159,8 +158,7 @@ stream_encoder_append_ascii (Encoder *encoder,
 
 static int
 stream_encoder_append_unicode (Encoder *encoder,
-                               const Py_UNICODE *text,
-                               const size_t len);
+                               PyObject *text);
 
 static int
 encoder_append_string (Encoder *encoder, PyObject *text);
@@ -1265,14 +1263,18 @@ buffer_encoder_append_ascii (Encoder *base_encoder,
 
 static int
 buffer_encoder_append_unicode (Encoder *base_encoder,
-                               const Py_UNICODE *text,
-                               const size_t len)
+                               PyObject *text)
 {
+	size_t len;
+	Py_UNICODE *raw;
 	BufferEncoder *encoder = (BufferEncoder *) (base_encoder);
+	
+	raw = PyUnicode_AS_UNICODE (text);
+	len = PyUnicode_GET_SIZE (text);
 	
 	if (!buffer_encoder_resize (encoder, len))
 		return FALSE;
-	memcpy (encoder->buffer + encoder->buffer_size, text,
+	memcpy (encoder->buffer + encoder->buffer_size, raw,
 	        len * sizeof (Py_UNICODE));
 	encoder->buffer_size += len;
 	return TRUE;
@@ -1305,15 +1307,17 @@ stream_encoder_append_ascii (Encoder *base_encoder,
 
 static int
 stream_encoder_append_unicode (Encoder *base_encoder,
-                               const Py_UNICODE *text,
-                               const size_t len)
+                               PyObject *text)
 {
 	StreamEncoder *encoder = (StreamEncoder *) (base_encoder);
 	PyObject *encoded;
 	if (encoder->encoding)
-		encoded = PyUnicode_Encode (text, len, encoder->encoding, "strict");
+		encoded = PyUnicode_AsEncodedString (text, encoder->encoding, "strict");
 	else
-		encoded = PyUnicode_FromUnicode (text, len);
+	{
+		encoded = text;
+		Py_INCREF (encoded);
+	}
 	return stream_encoder_append_common (encoder, encoded);
 }
 
@@ -1324,9 +1328,7 @@ encoder_append_string (Encoder *encoder, PyObject *text)
 	
 	if (PyUnicode_CheckExact (text))
 	{
-		Py_UNICODE *raw = PyUnicode_AS_UNICODE (text);
-		len = PyUnicode_GET_SIZE (text);
-		return encoder->append_unicode (encoder, raw, len);
+		return encoder->append_unicode (encoder, text);
 	}
 	if (PyString_CheckExact (text))
 	{
