@@ -1159,11 +1159,12 @@ parse_unicode_arg (PyObject *args, PyObject *kwargs, PyObject **unicode)
 	PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
 	retval = PyArg_ParseTupleAndKeywords (args, kwargs, "S:read",
 	                                      kwlist, &bytestring);
+	PyErr_Restore (exc_type, exc_value, exc_traceback);
 	if (!retval)
 	{
-		PyErr_Restore (exc_type, exc_value, exc_traceback);
 		return retval;
 	}
+	PyErr_Clear ();
 	
 	*unicode = unicode_autodetect (bytestring);
 	if (!(*unicode)) return 0;
@@ -2263,7 +2264,6 @@ write_object (JSONEncoder *encoder, PyObject *object,
 	if (!PyErr_ExceptionMatches (UnknownSerializerError))
 		return FALSE;
 	
-	PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
 	if (PyObject_HasAttrString (object, "items"))
 	{
 		PyErr_Clear ();
@@ -2276,6 +2276,7 @@ write_object (JSONEncoder *encoder, PyObject *object,
 		return write_iterable (encoder, object, indent_level);
 	}
 	
+	PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
 	iter = PyObject_GetIter (object);
 	PyErr_Restore (exc_type, exc_value, exc_traceback);
 	if (iter)
@@ -2287,24 +2288,22 @@ write_object (JSONEncoder *encoder, PyObject *object,
 		return retval;
 	}
 	
-	if (in_unknown_hook) return FALSE;
-	
 	PyErr_Clear ();
-	if (encoder->on_unknown == Py_None)
+	if (encoder->on_unknown == Py_None || in_unknown_hook)
 	{
 		set_unknown_serializer (object);
+		return FALSE;
 	}
-	else
-	{
-		/* Call the on_unknown hook */
-		if (!(on_unknown_args = PyTuple_Pack (1, object)))
-			return FALSE;
-		
-		object = PyObject_CallObject (encoder->on_unknown, on_unknown_args);
-		Py_DECREF (on_unknown_args);
-		if (object)
-			return write_object (encoder, object, indent_level, TRUE);
-	}
+	
+	/* Call the on_unknown hook */
+	if (!(on_unknown_args = PyTuple_Pack (1, object)))
+		return FALSE;
+	
+	object = PyObject_CallObject (encoder->on_unknown, on_unknown_args);
+	Py_DECREF (on_unknown_args);
+	if (object)
+		return write_object (encoder, object, indent_level, TRUE);
+	
 	return FALSE;
 }
 
