@@ -1186,11 +1186,12 @@ parse_unicode_arg (PyObject *args, PyObject *kwargs, PyObject **unicode)
 	PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
 	retval = PyArg_ParseTupleAndKeywords (args, kwargs, "S:read",
 	                                      kwlist, &bytestring);
+	PyErr_Restore (exc_type, exc_value, exc_traceback);
 	if (!retval)
 	{
-		PyErr_Restore (exc_type, exc_value, exc_traceback);
 		return retval;
 	}
+	PyErr_Clear ();
 	
 	*unicode = unicode_autodetect (bytestring);
 	if (!(*unicode)) return 0;
