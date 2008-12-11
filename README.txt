@@ -164,6 +164,12 @@ serialized. See the ``on_unknown`` parameter to ``write``.
 Change Log
 ==========
 
+1.3.8
+-----
+* Fixed memory leak when auto-decoding bytestrings.
+* Fixed potential memory leak when using ``on_unknown`` handlers that
+  return invalid objects.
+
 1.3.7
 -----
 * Fixed error reporting positions of syntax errors that occur immediately
