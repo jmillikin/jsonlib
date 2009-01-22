@@ -709,6 +709,8 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		unrecognized objects will raise an ``UnknownSerializerError``.
 		
 	"""
+	if indent is not None:
+		indent = str (indent)
 	if not (indent is None or len (indent) == 0):
 		if len (indent.strip (u'\u0020\u0009\u000A\u000D')) > 0:
 			raise TypeError ("Only whitespace may be used for indentation.")

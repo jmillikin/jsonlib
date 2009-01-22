@@ -2346,7 +2346,7 @@ valid_json_whitespace (PyObject *string)
 	
 	if (string == Py_None) return TRUE;
 	if (PyString_AsStringAndSize (string, &c_str, &c_str_len) == -1)
-		return -1;
+		return FALSE;
 	for (ii = 0; ii < (size_t)c_str_len; ii++)
 	{
 		char c = c_str[ii];
