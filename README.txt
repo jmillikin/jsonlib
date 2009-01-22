@@ -164,6 +164,11 @@ serialized. See the ``on_unknown`` parameter to ``write``.
 Change Log
 ==========
 
+1.3.9
+-----
+* Fixed a crash on some platforms when passing a non-string object for
+  indentation.
+
 1.3.8
 -----
 * Fixed memory leak when auto-decoding bytestrings.

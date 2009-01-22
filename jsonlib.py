@@ -5,7 +5,7 @@ The main implementation of this module is accessed through calls to
 
 """
 __author__ = "John Millikin <jmillikin@gmail.com>"
-__version__ = (1, 3, 8)
+__version__ = (1, 3, 9)
 __license__ = """Copyright (c) 2008 John Millikin
 
 Permission is hereby granted, free of charge, to any person
