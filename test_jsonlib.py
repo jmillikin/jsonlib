@@ -68,9 +68,10 @@ class ParserTestCase (ContinuableTestCase):
 		                                         expected_error_message))
 		try:
 			read (string)
-			self.fail ("No exception raised.")
 		except ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
+		else:
+			self.fail ("No exception raised.")
 			
 class SerializerTestCase (ContinuableTestCase):
 	@allow_test_continue
@@ -85,9 +86,10 @@ class SerializerTestCase (ContinuableTestCase):
 			error_type = WriteError
 		try:
 			write (value, **kwargs)
-			self.fail ("No exception raised.")
 		except error_type, error:
 			self.assertEqual (unicode (error), expected_error_message)
+		else:
+			self.fail ("No exception raised.")
 			
 def _load_tests (base_class):
 	loader = unittest.TestLoader ()
