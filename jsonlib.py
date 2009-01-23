@@ -171,7 +171,7 @@ def _w (s, idx, start = None, err = None):
 		raise ReadError (s, start, err)
 	return idx
 	
-def read_object (s, idx):
+def read_object (s, idx, use_float):
 	retval = {}
 	start = idx
 	idx = _w (s, idx + 1, start, "Unterminated object.")
@@ -181,7 +181,7 @@ def read_object (s, idx):
 		idx = _w (s, idx, start, "Unterminated object.")
 		if s[idx] != '"':
 			error_unexpected (s, idx, "property name")
-		key, idx = read_raw (s, idx)
+		key, idx = read_raw (s, idx, use_float)
 		idx = _w (s, idx, start, "Unterminated object.")
 		if s[idx] != ':':
 			error_unexpected (s, idx, "colon")
@@ -189,7 +189,7 @@ def read_object (s, idx):
 		if idx >= len (s):
 			raise ReadError (s, start, "Unterminated object.")
 			
-		value, idx = read_raw (s, idx)
+		value, idx = read_raw (s, idx, use_float)
 		retval[key] = value
 		idx = _w (s, idx, start, "Unterminated object.")
 		if s[idx] == '}':
@@ -198,7 +198,7 @@ def read_object (s, idx):
 			error_unexpected (s, idx, "comma")
 		idx += 1
 		
-def read_array (s, idx):
+def read_array (s, idx, use_float):
 	retval = []
 	start = idx
 	idx = _w (s, idx + 1, start, "Unterminated array.")
@@ -207,7 +207,7 @@ def read_array (s, idx):
 	while True:
 		if idx >= len (s):
 			raise ReadError (s, start, "Unterminated array.")
-		value, idx = read_raw (s, idx)
+		value, idx = read_raw (s, idx, use_float)
 		retval.append (value)
 		idx = _w (s, idx, start, "Unterminated array.")
 		if s[idx] == ']':
@@ -300,7 +300,7 @@ def read_keyword (s, idx):
 			return value, end
 	error_unexpected (s, idx)
 	
-def read_number (s, idx):
+def read_number (s, idx, use_float):
 	allowed = '0123456789-+.eE'
 	end = idx
 	try:
@@ -314,18 +314,20 @@ def read_number (s, idx):
 		
 	int_part = int (match.group ('int'), 10)
 	if match.group ('frac') or match.group ('exp'):
+		if use_float:
+			return float (match.group (0)), end
 		return Decimal (match.group (0)), end
 	if match.group ('minus'):
 		return -int_part, end
 	return int_part, end
 	
-def read_raw (s, idx, root = False):
+def read_raw (s, idx, use_float, root = False):
 	idx = _w (s, idx)
 	c = s[idx]
 	if c == '{':
-		return read_object (s, idx)
+		return read_object (s, idx, use_float)
 	if c == '[':
-		return read_array (s, idx)
+		return read_array (s, idx, use_float)
 	if root:
 		error_unexpected (s, idx)
 	if c == '"':
@@ -333,10 +335,10 @@ def read_raw (s, idx, root = False):
 	if c in 'tfn':
 		return read_keyword (s, idx)
 	if c in '-0123456789':
-		return read_number (s, idx)
+		return read_number (s, idx, use_float)
 	error_unexpected (s, idx)
 	
-def read (string):
+def read (string, use_float = False):
 	"""Parse a JSON expression into a Python value.
 	
 	If string is a byte string, it will be converted to Unicode
@@ -347,7 +349,7 @@ def read (string):
 	start = _w (string, 0)
 	if not string or start == len (string):
 		raise ReadError (string, 0, "No expression found.")
-	value, end = read_raw (string, 0, True)
+	value, end = read_raw (string, 0, use_float, True)
 	end = _w (string, end)
 	if end != len (string):
 		raise ReadError (string, end,
