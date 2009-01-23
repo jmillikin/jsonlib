@@ -34,6 +34,21 @@ an instance of ``str`` or ``unicode``. ::
 	>>> jsonlib.read ('["Hello world!"]')
 	[u'Hello world!']
 
+Floating-point values
+~~~~~~~~~~~~~~~~~~~~~
+
+By default, ``jsonlib`` will parse values such as "1.1" into an instance of
+``decimal.Decimal``. To use the built-in value type ``float`` instead, set
+the ``use_float`` parameter to ``True``. Please note that this may cause a
+loss of precision when parsing some values. ::
+
+	>>> jsonlib.read ('[1.5]', use_float = True)
+	[1.5]
+	>>> jsonlib.read ('[1.1]', use_float = True)
+	[1.1000000000000001]
+	>>> jsonlib.read ('[3.14159265358979323846]', use_float = True)
+	[3.1415926535897931]
+
 Serialization
 -------------
 
