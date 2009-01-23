@@ -55,8 +55,8 @@ def allow_test_continue (func):
 	
 class ParserTestCase (ContinuableTestCase):
 	@allow_test_continue
-	def r (self, string, expected):
-		value = read (string)
+	def r (self, string, expected, **kwargs):
+		value = read (string, **kwargs)
 		self.assertEqual (value, expected)
 		self.assertEqual (type (value), type (expected))
 		
@@ -68,9 +68,10 @@ class ParserTestCase (ContinuableTestCase):
 		                                         expected_error_message))
 		try:
 			read (string)
-			self.fail ("No exception raised.")
 		except ReadError, error:
 			self.assertEqual (unicode (error), full_expected)
+		else:
+			self.fail ("No exception raised.")
 			
 class SerializerTestCase (ContinuableTestCase):
 	@allow_test_continue
@@ -85,9 +86,10 @@ class SerializerTestCase (ContinuableTestCase):
 			error_type = WriteError
 		try:
 			write (value, **kwargs)
-			self.fail ("No exception raised.")
 		except error_type, error:
 			self.assertEqual (unicode (error), expected_error_message)
+		else:
+			self.fail ("No exception raised.")
 			
 def _load_tests (base_class):
 	loader = unittest.TestLoader ()
@@ -267,6 +269,48 @@ class ReadNumberTests (ParserTestCase):
 		self.assertEqual (len (value), 1)
 		self.assertEqual (type (value[0]), Decimal)
 		self.assertEqual (repr (value[0]), repr (Decimal("-0.0")))
+		
+	def test_decimal_fp (self):
+		self.r ('[1.2345]', [1.2345], use_float = True)
+		
+	def test_negative_decimal_fp (self):
+		self.r ('[-1.2345]', [-1.2345], use_float = True)
+		
+	def test_zero_after_decimal_fp (self):
+		self.r ('[0.01]', [0.01], use_float = True)
+		
+	def test_exponent_fp (self):
+		self.r ('[1e2]', [100.0], use_float = True)
+		self.r ('[10e2]', [1000.0], use_float = True)
+		
+	def test_capital_exponent_fp (self):
+		self.r ('[1E2]', [100.0], use_float = True)
+		
+	def test_exponent_plus_fp (self):
+		self.r ('[1e+2]', [100.0], use_float = True)
+		self.r ('[10e+2]', [1000.0], use_float = True)
+		
+	def test_negative_exponent_fp (self):
+		self.r ('[1e-2]', [0.01], use_float = True)
+		self.r ('[10e-2]', [0.1], use_float = True)
+		
+	def test_decimal_exponent_fp (self):
+		self.r ('[10.5e2]', [1050.0], use_float = True)
+		
+	def test_negative_decimal_exponent_fp (self):
+		self.r ('[10.5e-2]', [0.105], use_float = True)
+		
+	def test_preserve_negative_decimal_zero_fp (self):
+		# Don't use self.r, because 0.0 == -0.0
+		value = read ('[0.0]', use_float = True)
+		self.assertEqual (len (value), 1)
+		self.assertEqual (type (value[0]), float)
+		self.assertEqual (repr (value[0]), repr (0.0))
+		
+		value = read ('[-0.0]', use_float = True)
+		self.assertEqual (len (value), 1)
+		self.assertEqual (type (value[0]), float)
+		self.assertEqual (repr (value[0]), repr (-0.0))
 		
 	def test_invalid_number (self):
 		self.re ('[-.]', 1, 2, 1, "Invalid number.")
