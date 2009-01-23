@@ -179,6 +179,10 @@ serialized. See the ``on_unknown`` parameter to ``write``.
 Change Log
 ==========
 
+1.3.10
+------
+* Implemented the ``use_float`` parameter to ``read()``.
+
 1.3.9
 -----
 * Fixed a crash on some platforms when passing a non-string object for
