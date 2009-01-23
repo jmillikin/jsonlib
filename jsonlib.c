@@ -61,6 +61,7 @@ typedef struct _Decoder {
 	Py_UNICODE *stringparse_buffer;
 	size_t stringparse_buffer_size;
 	
+	unsigned int use_float: 1;
 	unsigned int got_root: 1;
 } Decoder;
 
@@ -811,7 +812,10 @@ read_number (Decoder *decoder)
 			str = PyUnicode_AsUTF8String (unicode);
 			Py_DECREF (unicode);
 			if (!str) return NULL;
-			object = make_Decimal (decoder, str);
+			if (decoder->use_float)
+				object = PyFloat_FromString (str, NULL);
+			else
+				object = make_Decimal (decoder, str);
 			Py_DECREF (str);
 		}
 		
@@ -1165,17 +1169,18 @@ unicode_autodetect (PyObject *bytestring)
  * a UTF-* encoded bytestring to unicode if needed.
 **/
 static int
-parse_unicode_arg (PyObject *args, PyObject *kwargs, PyObject **unicode)
+parse_unicode_arg (PyObject *args, PyObject *kwargs, PyObject **unicode,
+                   unsigned int *use_float)
 {
 	int retval;
 	PyObject *bytestring;
 	PyObject *exc_type, *exc_value, *exc_traceback;
 	
-	static char *kwlist[] = {"string", NULL};
+	static char *kwlist[] = {"string", "use_float", NULL};
 	
 	/* Try for the common case of a direct unicode string. */
-	retval = PyArg_ParseTupleAndKeywords (args, kwargs, "U:read",
-	                                      kwlist, unicode);
+	retval = PyArg_ParseTupleAndKeywords (args, kwargs, "U|b:read",
+	                                      kwlist, unicode, use_float);
 	if (retval)
 	{
 		Py_INCREF (*unicode);
@@ -1184,8 +1189,8 @@ parse_unicode_arg (PyObject *args, PyObject *kwargs, PyObject **unicode)
 	
 	/* Might have been passed a string. Try to autodecode it. */
 	PyErr_Fetch (&exc_type, &exc_value, &exc_traceback);
-	retval = PyArg_ParseTupleAndKeywords (args, kwargs, "S:read",
-	                                      kwlist, &bytestring);
+	retval = PyArg_ParseTupleAndKeywords (args, kwargs, "S|b:read",
+	                                      kwlist, &bytestring, use_float);
 	PyErr_Restore (exc_type, exc_value, exc_traceback);
 	if (!retval)
 	{
@@ -1203,13 +1208,15 @@ _read_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 {
 	PyObject *result = NULL, *unicode;
 	Decoder decoder = {NULL};
+	unsigned int use_float = FALSE;
 	
-	if (!parse_unicode_arg (args, kwargs, &unicode))
+	if (!parse_unicode_arg (args, kwargs, &unicode, &use_float))
 		return NULL;
 	
 	decoder.start = PyUnicode_AsUnicode (unicode);
 	decoder.end = decoder.start + PyUnicode_GetSize (unicode);
 	decoder.index = decoder.start;
+	decoder.use_float = use_float;
 	
 	if ((decoder.Decimal = jsonlib_import ("decimal", "Decimal")))
 	{
@@ -2523,12 +2530,18 @@ _dump_entry (PyObject *self, PyObject *args, PyObject *kwargs)
 static PyMethodDef module_methods[] = {
 	{"read", (PyCFunction) (_read_entry), METH_VARARGS|METH_KEYWORDS,
 	PyDoc_STR (
-	"read (string)\n"
+	"read (string[, use_float])\n"
 	"\n"
 	"Parse a JSON expression into a Python value.\n"
 	"\n"
 	"If ``string`` is a byte string, it will be converted to Unicode\n"
 	"before parsing.\n"
+	"\n"
+	"use_float\n"
+	"	If True, fractional and exponential numbers will be returned\n"
+	"	as instances of ``float``, rather than ``decimal.Decimal``.\n"
+	"	This may result in loss of precision, or unusual values\n"
+	"	when serializing the resulting object.\n"
 	)},
 	
 	{"dump", (PyCFunction) (_dump_entry), METH_VARARGS | METH_KEYWORDS,
