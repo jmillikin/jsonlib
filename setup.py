@@ -5,7 +5,7 @@ except ImportError:
 	from distutils.core import setup, Extension
 	
 # If you change the version here, also change it in jsonlib.c and .py.
-version = '1.3.10'
+version = '1.4'
 
 setup (
 	name = 'jsonlib',
@@ -27,7 +27,7 @@ setup (
 		"Topic :: Software Development :: Libraries :: Python Modules",
 	],
 	keywords = ["json"],
-	ext_modules = [
-		Extension ('jsonlib', ['jsonlib.c']),
-	],
+	#ext_modules = [
+	#	Extension ('jsonlib', ['jsonlib.c']),
+	#],
 )

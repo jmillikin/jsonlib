@@ -2665,7 +2665,7 @@ initjsonlib (void)
 	/* If you change the version here, also change it in setup.py and
 	 * jsonlib.py.
 	**/
-	version = Py_BuildValue ("(iii)", 1, 3, 10);
+	version = Py_BuildValue ("(iii)", 1, 4);
 	PyModule_AddObject (module, "__version__", version);
 }
 /* }}} */
