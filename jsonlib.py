@@ -153,7 +153,7 @@ def unicode_autodetect_encoding (bytestring):
 			
 	# Autodetect UTF-* encodings using the algorithm in the RFC
 	# Don't use inline if..else for Python 2.4
-	header = tuple ((1 if ord (b) else 0) for b in bytestring[:4])
+	header = tuple ((1 if b else 0) for b in bytestring[:4])
 	for utf_header, encoding in UTF_HEADERS:
 		if header == utf_header:
 			return bytestring.decode (encoding)
@@ -162,14 +162,236 @@ def unicode_autodetect_encoding (bytestring):
 	return bytestring.decode ('utf-8')
 	
 class Parser:
-	def __init__ (self, use_float):
+	def __init__ (self, text, use_float):
+		self.text = text
+		self.index = 0
 		self.use_float = use_float
-	pass
-	
+		
+	def parse (self):
+		value = self.parse_raw (True)
+		self.skip_whitespace ()
+		if self.index != len (self.text):
+			raise ReadError (self.text, self.index, "Extra data after JSON expression.")
+		return value
+		
+	def parse_raw (self, root = False):
+		self.skip_whitespace ()
+		if self.index == len (self.text):
+			raise ReadError (self.text, 0, "No expression found.")
+		c = self.text[self.index]
+		if c == '{':
+			return self.read_object ()
+		if c == '[':
+			return self.read_array ()
+		if root:
+			self.raise_unexpected ()
+		if c == '"':
+			return self.read_string ()
+		if c in 'tfn':
+			return self.read_keyword ()
+		if c in '-0123456789':
+			return self.read_number ()
+		self.raise_unexpected ()
+		
+	def read_object (self):
+		retval = {}
+		start = self.index
+		skip = lambda: self.skip_whitespace (start, "Unterminated object.")
+		c = lambda: self.text[self.index]
+		
+		self.skip ('{', "object start")
+		skip ()
+		if c () == '}':
+			self.skip ('}', "object start")
+			return retval
+		while True:
+			skip ()
+			if c () != '"':
+				self.raise_unexpected ("property name")
+			key = self.parse_raw ()
+			skip ()
+			self.skip (':', "colon")
+			skip ()
+			value = self.parse_raw ()
+			retval[key] = value
+			skip ()
+			if c () == '}':
+				self.skip ('}', "object start")
+				return retval
+			self.skip (',', "comma")
+			
+	def read_array (self):
+		retval = []
+		start = self.index
+		skip = lambda: self.skip_whitespace (start, "Unterminated array.")
+		c = lambda: self.text[self.index]
+		
+		self.skip ('[', "array start")
+		skip ()
+		if c () == ']':
+			self.skip (']', "array start")
+			return retval
+		while True:
+			skip ()
+			value = self.parse_raw ()
+			retval.append (value)
+			skip ()
+			if c () == ']':
+				self.skip (']', "array start")
+				return retval
+			self.skip (',', "comma")
+			
+		
+	def read_string (self):
+		start = self.index
+		escaped = False
+		chunks = []
+		
+		self.skip ('"', "string start")
+		while True:
+			while not escaped:
+				c = self.text[self.index]
+				if c == '\\':
+					escaped = True
+				elif c == '"':
+					self.skip ('"', "string end")
+					return ''.join (chunks)
+				elif ord (c) < 0x20:
+					self.raise_unexpected ()
+				else:
+					chunks.append (c)
+				self.index += 1
+				
+			while escaped:
+				c = self.text[self.index]
+				if c == 'u':
+					unescaped = self.read_unicode_escape ()
+					chunks.append (unescaped)
+				elif c in READ_ESCAPES:
+					chunks.append (READ_ESCAPES[c])
+				else:
+					raise ReadError (self.text, self.index - 1,
+						"Unknown escape code: \\%s." % c)
+				self.index += 1
+				escaped = False
+				
+	def read_unicode_escape (self):
+		"""Read a JSON-style Unicode escape.
+		
+		Unicode escapes may take one of two forms:
+		
+		* \\uUUUU, where UUUU is a series of four hexadecimal digits that
+		indicate a code point in the Basic Multi-lingual Plane.
+		
+		* \\uUUUU\\uUUUU, where the two points encode a UTF-16 surrogate pair.
+		  In builds of Python without wide character support, these are
+		  returned as a surrogate pair.
+		
+		"""
+		first_hex_str = self.text[self.index+1:self.index+5]
+		if len (first_hex_str) < 4 or '"' in first_hex_str:
+			raise ReadError (self.text, self.index - 1, "Unterminated unicode escape.")
+		first_hex = int (first_hex_str, 16)
+		
+		# Some code points are reserved for indicating surrogate pairs
+		if 0xDC00 <= first_hex <= 0xDFFF:
+			raise ReadError (self.text, self.index - 1,
+				"U+%04X is a reserved code point." % first_hex)
+			
+		# Check if it's a UTF-16 surrogate pair
+		if not (0xD800 <= first_hex <= 0xDBFF):
+			self.index += 4
+			return chr (first_hex)
+			
+		second_hex_str = self.text[self.index+5:self.index+11]
+		if (not (len (second_hex_str) >= 6
+			and second_hex_str.startswith ('\\u'))
+		    or '"' in second_hex_str):
+			raise ReadError (self.text, self.index + 5, "Missing surrogate pair half.")
+			
+		second_hex = int (second_hex_str[2:], 16)
+		if sys.maxunicode <= 65535:
+			retval = chr (first_hex) + chr (second_hex)
+		else:
+			# Convert to 10-bit halves of the 20-bit character
+			first_hex -= 0xD800
+			second_hex -= 0xDC00
+			
+			# Merge into 20-bit character
+			retval = chr ((first_hex << 10) + second_hex + 0x10000)
+		self.index += 10
+		return retval
+		
+	def read_keyword (self):
+		for text, value in KEYWORDS:
+			end = self.index + len (text)
+			if self.text[self.index:end] == text:
+				self.index = end
+				return value
+		self.raise_unexpected ()
+		
+	def read_number (self):
+		allowed = '0123456789-+.eE'
+		end = self.index
+		try:
+			while self.text[end] in allowed:
+				end += 1
+		except IndexError:
+			pass
+		match = NUMBER_SPLITTER.match (self.text[self.index:end])
+		if not match:
+			raise ReadError (self.text, self.index, "Invalid number.")
+			
+		self.index = end
+		int_part = int (match.group ('int'), 10)
+		if match.group ('frac') or match.group ('exp'):
+			if self.use_float:
+				return float (match.group (0))
+			return Decimal (match.group (0))
+		if match.group ('minus'):
+			return -int_part
+		return int_part
+		
+	def skip (self, text, error):
+		new_index = self.index + len (text)
+		skipped = self.text[self.index:new_index]
+		if skipped != text:
+			self.raise_unexpected (error)
+		self.index = new_index
+		
+	def skip_whitespace (self, start = None, err = None):
+		text_len = len (self.text)
+		ws = '\x09\x20\x0a\x0d'
+		while self.index < text_len and self.text[self.index] in ws:
+			self.index += 1
+		if self.index >= text_len and (start is not None) and (err is not None):
+			raise ReadError (self.text, start, err)
+			
+	def next_char_ord (self):
+		value = ord (self.text[self.index])
+		if (0xD800 <= value <= 0xDBFF) and len (self.text) >= 2:
+			upper = value
+			lower = ord (self.text[self.index + 1])
+			upper -= 0xD800
+			lower -= 0xDC00
+			value = ((upper << 10) + lower) + 0x10000
+			
+		if value > 0xffff:
+			return "U+%08X" % value
+		return "U+%04X" % value
+		
+	def raise_unexpected (self, looking_for = None):
+		char_ord = self.next_char_ord ()
+		if looking_for is None:
+			desc = "Unexpected %s." % (char_ord,)
+		else:
+			desc = "Unexpected %s while looking for %s." % (char_ord, looking_for)
+		raise ReadError (self.text, self.index, desc)
+		
 def read (bytestring, use_float = False):
-	parser = Parser (use_float)
-	string = unicode_autodetect_encoding (bytestring)
-	return parser.parse (string)
+	text = unicode_autodetect_encoding (bytestring)
+	parser = Parser (text, use_float)
+	return parser.parse ()
 	
 loads = read
 # }}}
