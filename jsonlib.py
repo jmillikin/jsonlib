@@ -570,10 +570,12 @@ class StreamEncoder(Encoder):
 		self.fp = fp
 		
 	def append (self, value):
+		if self.encoding is not None:
+			value = value.encode (self.encoding)
 		self.fp.write (value)
 		
 	def encode (self, value):
-		raise NotImplementedError
+		self.encode_object (value, [])
 		
 class BufferEncoder(Encoder):
 	def __init__ (self, sort_keys, indent, ascii_only,

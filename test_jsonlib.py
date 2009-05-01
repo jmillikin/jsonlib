@@ -988,12 +988,12 @@ class StreamingSerializerTests (SerializerTestCase):
 	def test_serialize_to_stream (self):
 		fp = io.BytesIO ()
 		jsonlib.dump ([], fp)
-		self.assertEqual (fp.getvalue (), '[]')
+		self.assertEqual (fp.getvalue (), b'[]')
 		
 	def test_serialize_complex_to_stream (self):
 		fp = io.BytesIO ()
 		jsonlib.dump (["a", "b", "c \U0001D11E \u24Ca", {"a": "b"}], fp)
-		self.assertEqual (fp.getvalue (), '["a","b","c \\ud834\\udd1e \\u24ca",{"a":"b"}]')
+		self.assertEqual (fp.getvalue (), b'["a","b","c \\ud834\\udd1e \\u24ca",{"a":"b"}]')
 		
 	def test_partial_serialization_on_error (self):
 		fp = io.BytesIO ()
@@ -1001,23 +1001,23 @@ class StreamingSerializerTests (SerializerTestCase):
 			jsonlib.dump ([object ()], fp)
 		except UnknownSerializerError:
 			pass
-		self.assertEqual (fp.getvalue (), '[')
+		self.assertEqual (fp.getvalue (), b'[')
 		
 	def test_encode_utf16_specialcased (self):
 		# Test that special cases that return pure ASCII are still
 		# re-encoded if needed.
 		fp = io.BytesIO ()
 		value = jsonlib.dump ([], fp, encoding = 'utf-16-le')
-		self.assertEqual (fp.getvalue (), '[\x00]\x00')
+		self.assertEqual (fp.getvalue (), b'[\x00]\x00')
 		
 	def test_no_encoding (self):
-		fp = io.BytesIO ()
+		fp = io.StringIO ()
 		value = jsonlib.dump (["\u24CA"], fp, encoding = None)
 		self.assertEqual (fp.getvalue (), '["\\u24ca"]')
 		self.assertEqual (type (fp.getvalue ()), str)
 		
 	def test_no_encoding_full_unicode (self):
-		fp = io.BytesIO ()
+		fp = io.StringIO ()
 		value = jsonlib.dump (["\u24CA"], fp, encoding = None, ascii_only = False)
 		self.assertEqual (fp.getvalue (), '["\u24ca"]')
 		self.assertEqual (type (fp.getvalue ()), str)
