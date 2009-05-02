@@ -854,7 +854,7 @@ class WriteObjectTests (SerializerTestCase):
 		
 	def test_coerce_invalid_key (self):
 		self.w ({1: True}, '{"1":true}', coerce_keys = True)
-		self.w ({True: 1}, '{"true":1}', coerce_keys = True)
+		self.w ({True: 1}, '{"True":1}', coerce_keys = True)
 		self.w ({(): 1}, '{"()":1}', coerce_keys = True)
 		
 	if hasattr (collections, 'defaultdict'):
