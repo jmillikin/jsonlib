@@ -955,14 +955,6 @@ class WriteStringTests (SerializerTestCase):
 		# Should break into two UTF-16 codepoints
 		self.w (['\U0001D11E'], '["\\ud834\\udd1e"]')
 		
-	def test_fail_nonascii_bytestring (self):
-		# Test that that ASCII is the default codec
-		try:
-			write (['Fail\xa2'])
-			self.fail ("No exception raised")
-		except UnicodeDecodeError as exc:
-			self.assertEqual (exc.encoding, 'ascii')
-			
 class WriteEncodingTests (SerializerTestCase):
 	# Don't use self.w in these, because it sets the encoding to
 	# None.
