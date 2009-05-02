@@ -426,6 +426,8 @@ class Encoder (metaclass = abc.ABCMeta):
 		raise NotImplementedError
 		
 	def encode_object (self, value, parent_ids, in_unknown_hook = False):
+		if isinstance (value, collections.UserString):
+			value = value.data
 		if isinstance (value, JSONAtom):
 			if not parent_ids:
 				raise WriteError ("The outermost container must be an array or object.")
@@ -463,6 +465,8 @@ class Encoder (metaclass = abc.ABCMeta):
 		
 		a ('{')
 		for key, item in items:
+			if isinstance (key, collections.UserString):
+				key = key.data
 			if not isinstance (key, str):
 				if self.coerce_keys:
 					key = str (key)

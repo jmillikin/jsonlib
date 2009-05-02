@@ -877,6 +877,12 @@ class WriteObjectTests (SerializerTestCase):
 		self.w ({'a': 1, 'b': 2, 'c': 3},
 		        '{"a":1,"c":3,"b":2}')
 		
+	def test_userstring_key (self):
+		self.w ({collections.UserString ('a'): 'b'}, '{"a":"b"}')
+		
+	def test_userstring_coerce (self):
+		self.w ({collections.UserString ('a'): 'b'}, '{"a":"b"}', coerce_keys = True)
+		
 class WriteStringTests (SerializerTestCase):
 	def test_empty_string (self):
 		self.w ([''], '[""]', ascii_only = True)
@@ -954,6 +960,9 @@ class WriteStringTests (SerializerTestCase):
 	def test_escape_long_unicode (self):
 		# Should break into two UTF-16 codepoints
 		self.w (['\U0001D11E'], '["\\ud834\\udd1e"]')
+		
+	def test_userstring (self):
+		self.w ([collections.UserString ('test')], '["test"]')
 		
 class WriteEncodingTests (SerializerTestCase):
 	# Don't use self.w in these, because it sets the encoding to
