@@ -397,6 +397,16 @@ loads = read
 # }}}
 
 # Encoder {{{
+class JSONAtom (metaclass = abc.ABCMeta):
+	pass
+	
+JSONAtom.register (type (None))
+JSONAtom.register (int)
+JSONAtom.register (float)
+JSONAtom.register (complex)
+JSONAtom.register (Decimal)
+JSONAtom.register (str)
+
 class Encoder (metaclass = abc.ABCMeta):
 	def __init__ (self, sort_keys, indent, ascii_only,
 	              coerce_keys, encoding, on_unknown):
@@ -416,22 +426,19 @@ class Encoder (metaclass = abc.ABCMeta):
 		raise NotImplementedError
 		
 	def encode_object (self, value, parent_ids, in_unknown_hook = False):
-		if isinstance (value, str):
-			self.encode_string (value)
+		if isinstance (value, JSONAtom):
+			if not parent_ids:
+				raise WriteError ("The outermost container must be an array or object.")
+			self.encode_atom (value)
 		elif isinstance (value, collections.Mapping):
 			self.encode_mapping (value, parent_ids)
 		elif isinstance (value, collections.Iterable):
 			self.encode_iterable (value, parent_ids)
-		else:
-			try:
-				self.encode_basic (value)
-			except UnknownSerializerError:
-				if in_unknown_hook:
-					raise
-			else:
-				return
+		elif not in_unknown_hook:
 			new_value = self.on_unknown (value)
-			return self.encode_object (new_value, parent_ids, True)
+			self.encode_object (new_value, parent_ids, True)
+		else:
+			raise UnknownSerializerError (value)
 			
 	def get_separators (self, indent_level):
 		if self.indent is None:
@@ -496,19 +503,21 @@ class Encoder (metaclass = abc.ABCMeta):
 		a (post_indent)
 		a (']')
 		
-	def encode_basic (self, value):
+	def encode_atom (self, value):
 		for keyword, kw_value in KEYWORDS:
 			if value is kw_value:
 				return self.append (keyword)
 				
-		if isinstance (value, int):
+		if isinstance (value, str):
+			self.encode_string (value)
+		elif isinstance (value, int):
 			self.append (str (value))
 		elif isinstance (value, float):
-			return self.encode_float (value)
+			self.encode_float (value)
 		elif isinstance (value, complex):
-			return self.encode_complex (value)
+			self.encode_complex (value)
 		elif isinstance (value, Decimal):
-			return self.encode_decimal (value)
+			self.encode_decimal (value)
 		else:
 			raise UnknownSerializerError (value)
 			
