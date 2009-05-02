@@ -667,7 +667,7 @@ class WriteMiscTests (SerializerTestCase):
 		self.we ("1", "The outermost container must be an array or object.")
 		
 	def test_whitespace_indent (self):
-		self.w ([], '[]', indent = '\u0020\u0009\u000A\u000D')
+		self.w ([], '[\n]', indent = '\u0020\u0009\u000A\u000D')
 		
 	def test_fail_on_non_whitespace_indent (self):
 		self.we ([], "Only whitespace may be used for indentation.",
@@ -787,7 +787,7 @@ class WriteArrayTests (SerializerTestCase):
 		self.w ([True, True], '[true,true]')
 		
 	def test_indent_empty (self):
-		self.w ([], '[]', indent = '')
+		self.w ([], '[\n]', indent = '')
 		
 	def test_empty_indent (self):
 		self.w ([True, True], '[\ntrue,\ntrue\n]', indent = '')
@@ -834,7 +834,7 @@ class WriteObjectTests (SerializerTestCase):
 		        sort_keys = True)
 		
 	def test_indent_empty (self):
-		self.w ({}, '{}', indent = '')
+		self.w ({}, '{\n}', indent = '')
 		
 	def test_empty_indent (self):
 		self.w ({'a': True, 'b': True}, '{\n"a": true,\n"b": true\n}',

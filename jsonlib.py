@@ -433,17 +433,28 @@ class Encoder (metaclass = abc.ABCMeta):
 			new_value = self.on_unknown (value)
 			return self.encode_object (new_value, parent_ids, True)
 			
+	def get_separators (self, indent_level):
+		if self.indent is None:
+			return '', ''
+		else:
+			indent = '\n' + (self.indent * (indent_level + 1))
+			post_indent = '\n' + (self.indent * indent_level)
+			return indent, post_indent
+			
 	def encode_mapping (self, value, parent_ids):
 		v_id = id (value)
 		if v_id in parent_ids:
 			raise WriteError ("Cannot serialize self-referential values.")
 			
 		a = self.append
-		a ('{')
 		first = True
 		items = value.items ()
 		if self.sort_keys:
 			items = sorted (items)
+			
+		indent, post_indent = self.get_separators (len (parent_ids))
+		
+		a ('{')
 		for key, item in items:
 			if not isinstance (key, str):
 				if self.coerce_keys:
@@ -454,9 +465,14 @@ class Encoder (metaclass = abc.ABCMeta):
 				first = False
 			else:
 				a (',')
+			a (indent)
 			self.encode_object (key, parent_ids + [v_id])
-			a (':')
+			if self.indent is None:
+				a (':')
+			else:
+				a (': ')
 			self.encode_object (item, parent_ids + [v_id])
+		a (post_indent)
 		a ('}')
 		
 	def encode_iterable (self, value, parent_ids):
@@ -465,6 +481,9 @@ class Encoder (metaclass = abc.ABCMeta):
 			raise WriteError ("Cannot serialize self-referential values.")
 			
 		a = self.append
+		
+		indent, post_indent = self.get_separators (len (parent_ids))
+		
 		a ('[')
 		first = True
 		for item in value:
@@ -472,7 +491,9 @@ class Encoder (metaclass = abc.ABCMeta):
 				first = False
 			else:
 				a (',')
+			a (indent)
 			self.encode_object (item, parent_ids + [v_id])
+		a (post_indent)
 		a (']')
 		
 	def encode_basic (self, value):
