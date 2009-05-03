@@ -786,3 +786,5 @@ def validate_on_unknown (f):
 		raise TypeError ("The on_unknown object must be callable.")
 	return f
 # }}}
+
+from _jsonlib import read_impl
