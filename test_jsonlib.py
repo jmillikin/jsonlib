@@ -67,13 +67,15 @@ class ParserTestCase (ContinuableTestCase):
 		                 " (position %d): %s" % (line, column,
 		                                         position,
 		                                         expected_error_message))
+		error_str = None
 		try:
 			read (string)
 		except ReadError as error:
-			self.assertEqual (str (error), full_expected)
+			error_str = str (error)
 		else:
 			self.fail ("No exception raised.")
-			
+		self.assertEqual (error_str, full_expected)
+		
 class SerializerTestCase (ContinuableTestCase):
 	@allow_test_continue
 	def w (self, value, expected, **kwargs):
@@ -85,13 +87,15 @@ class SerializerTestCase (ContinuableTestCase):
 	def we (self, value, expected_error_message, error_type = None, **kwargs):
 		if error_type is None:
 			error_type = WriteError
+		error_str = None
 		try:
 			write (value, **kwargs)
 		except error_type as error:
-			self.assertEqual (str (error), expected_error_message)
+			error_str = str (error)
 		else:
 			self.fail ("No exception raised.")
-			
+		self.assertEqual (error_str, expected_error_message)
+		
 def _load_tests (base_class):
 	loader = unittest.TestLoader ()
 	suite = unittest.TestSuite ()
