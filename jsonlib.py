@@ -103,18 +103,8 @@ ALLOWED_WHITESPACE = '\u0020\u0009\u000A\u000D'
 # Exception classes {{{
 class ReadError (ValueError):
 	"""Exception raised if there is an error parsing a JSON expression."""
-	def __init__ (self, string, offset, description):
-		line = string.count ('\n', 0, offset) + 1
-		if line == 1:
-			column = offset + 1
-		else:
-			column = offset - string.rindex ('\n', 0, offset)
-			
-		template = ("JSON parsing error at line %d, column %d"
-		            " (position %d): %s")
-		error = template % (line, column, offset, description)
-		ValueError.__init__ (self, error)
-		
+	pass
+	
 class WriteError (ValueError):
 	"""Exception raised if there is an error generating a JSON expression."""
 	pass
@@ -124,15 +114,7 @@ class UnknownSerializerError (WriteError):
 	value to a JSON expression.
 	
 	"""
-	
-	def __init__ (self, value):
-		error = "No known serializer for object: %r" % (value,)
-		WriteError.__init__ (self, error)
-		
-class UnknownAtomError (ValueError):
-	"""For internal use, not raised by any external functions."""
 	pass
-	
 # }}}
 
 # Parser {{{
@@ -161,23 +143,83 @@ def unicode_autodetect_encoding (bytestring):
 	# Default to UTF-8
 	return bytestring.decode ('utf-8')
 	
+class ParseErrorHelper:
+	"""Small class to provide a collection of error-formatting routines
+	shared between the Python and C implementation.
+	
+	"""
+	def next_char_ord (self, text, offset):
+		value = ord (text[offset])
+		if (0xD800 <= value <= 0xDBFF) and len (text) >= 2:
+			upper = value
+			lower = ord (text[offset + 1])
+			upper -= 0xD800
+			lower -= 0xDC00
+			value = ((upper << 10) + lower) + 0x10000
+			
+		if value > 0xffff:
+			return "U+%08X" % value
+		return "U+%04X" % value
+		
+	def generic (self, text, offset, message):
+		line = text.count ('\n', 0, offset) + 1
+		if line == 1:
+			column = offset + 1
+		else:
+			column = offset - text.rindex ('\n', 0, offset)
+			
+		template = ("JSON parsing error at line %d, column %d"
+		            " (position %d): %s")
+		error = template % (line, column, offset, message)
+		raise ReadError (error)
+		
+	def unexpected (self, text, offset, looking_for):
+		char_ord = self.next_char_ord (text, offset)
+		if looking_for is None:
+			desc = "Unexpected %s." % (char_ord,)
+		else:
+			desc = "Unexpected %s while looking for %s." % (char_ord, looking_for)
+		self.generic (text, offset, desc)
+		
+	def extra_data (self, text, offset):
+		self.generic (text, offset, "Extra data after JSON expression.")
+		
+	def no_expression (self, text, offset):
+		self.generic (text, offset, "No expression found.")
+		
+	def unknown_escape (self, text, offset, escape):
+		self.generic (text, offset, "Unknown escape code: \\%s." % escape)
+		
+	def unterminated_unicode (self, text, offset):
+		self.generic (text, offset, "Unterminated unicode escape.")
+		
+	def reserved_code_point (self, text, offset, ord):
+		self.generic (text, offset, "U+%04X is a reserved code point." % ord)
+		
+	def missing_surrogate (self, text, offset):
+		self.generic (text, offset, "Missing surrogate pair half.")
+		
+	def invalid_number (self, text, offset):
+		self.generic (text, offset, "Invalid number.")
+		
 class Parser:
-	def __init__ (self, text, use_float):
+	def __init__ (self, text, use_float, error_helper):
 		self.text = text
 		self.index = 0
 		self.use_float = use_float
+		self.raise_ = error_helper
 		
 	def parse (self):
 		value = self.parse_raw (True)
 		self.skip_whitespace ()
 		if self.index != len (self.text):
-			raise ReadError (self.text, self.index, "Extra data after JSON expression.")
+			self.raise_.extra_data (self.text, self.index)
 		return value
 		
 	def parse_raw (self, root = False):
 		self.skip_whitespace ()
 		if self.index == len (self.text):
-			raise ReadError (self.text, 0, "No expression found.")
+			self.raise_.no_expression (self.text, 0)
 		c = self.text[self.index]
 		if c == '{':
 			return self.read_object ()
@@ -202,7 +244,7 @@ class Parser:
 		self.skip ('{', "object start")
 		skip ()
 		if c () == '}':
-			self.skip ('}', "object start")
+			self.skip ('}', "object end")
 			return retval
 		while True:
 			skip ()
@@ -216,7 +258,7 @@ class Parser:
 			retval[key] = value
 			skip ()
 			if c () == '}':
-				self.skip ('}', "object start")
+				self.skip ('}', "object end")
 				return retval
 			self.skip (',', "comma")
 			
@@ -229,7 +271,7 @@ class Parser:
 		self.skip ('[', "array start")
 		skip ()
 		if c () == ']':
-			self.skip (']', "array start")
+			self.skip (']', "array end")
 			return retval
 		while True:
 			skip ()
@@ -237,7 +279,7 @@ class Parser:
 			retval.append (value)
 			skip ()
 			if c () == ']':
-				self.skip (']', "array start")
+				self.skip (']', "array end")
 				return retval
 			self.skip (',', "comma")
 			
@@ -270,8 +312,7 @@ class Parser:
 				elif c in READ_ESCAPES:
 					chunks.append (READ_ESCAPES[c])
 				else:
-					raise ReadError (self.text, self.index - 1,
-						"Unknown escape code: \\%s." % c)
+					self.raise_.unknown_escape (self.text, self.index - 1, c)
 				self.index += 1
 				escaped = False
 				
@@ -290,13 +331,12 @@ class Parser:
 		"""
 		first_hex_str = self.text[self.index+1:self.index+5]
 		if len (first_hex_str) < 4 or '"' in first_hex_str:
-			raise ReadError (self.text, self.index - 1, "Unterminated unicode escape.")
+			self.raise_.unterminated_unicode (self.text, self.index - 1)
 		first_hex = int (first_hex_str, 16)
 		
 		# Some code points are reserved for indicating surrogate pairs
 		if 0xDC00 <= first_hex <= 0xDFFF:
-			raise ReadError (self.text, self.index - 1,
-				"U+%04X is a reserved code point." % first_hex)
+			self.raise_.reserved_code_point (self.text, self.index - 1, first_hex)
 			
 		# Check if it's a UTF-16 surrogate pair
 		if not (0xD800 <= first_hex <= 0xDBFF):
@@ -307,7 +347,7 @@ class Parser:
 		if (not (len (second_hex_str) >= 6
 			and second_hex_str.startswith ('\\u'))
 		    or '"' in second_hex_str):
-			raise ReadError (self.text, self.index + 5, "Missing surrogate pair half.")
+			self.raise_.missing_surrogate (self.text, self.index + 5)
 			
 		second_hex = int (second_hex_str[2:], 16)
 		if sys.maxunicode <= 65535:
@@ -340,7 +380,7 @@ class Parser:
 			pass
 		match = NUMBER_SPLITTER.match (self.text[self.index:end])
 		if not match:
-			raise ReadError (self.text, self.index, "Invalid number.")
+			self.raise_.invalid_number (self.text, self.index)
 			
 		self.index = end
 		int_part = int (match.group ('int'), 10)
@@ -365,29 +405,15 @@ class Parser:
 		while self.index < text_len and self.text[self.index] in ws:
 			self.index += 1
 		if self.index >= text_len and (start is not None) and (err is not None):
-			raise ReadError (self.text, start, err)
+			self.raise_.generic (self.text, start, err)
 			
-	def next_char_ord (self):
-		value = ord (self.text[self.index])
-		if (0xD800 <= value <= 0xDBFF) and len (self.text) >= 2:
-			upper = value
-			lower = ord (self.text[self.index + 1])
-			upper -= 0xD800
-			lower -= 0xDC00
-			value = ((upper << 10) + lower) + 0x10000
-			
-		if value > 0xffff:
-			return "U+%08X" % value
-		return "U+%04X" % value
+	def raise_unexpected (self, message = None):
+		self.raise_.unexpected (self.text, self.index, message)
 		
-	def raise_unexpected (self, looking_for = None):
-		char_ord = self.next_char_ord ()
-		if looking_for is None:
-			desc = "Unexpected %s." % (char_ord,)
-		else:
-			desc = "Unexpected %s while looking for %s." % (char_ord, looking_for)
-		raise ReadError (self.text, self.index, desc)
-		
+def read_impl (text, use_float, error_helper):
+	parser = Parser (text, use_float, error_helper)
+	return parser.parse ()
+	
 def read (bytestring, use_float = False):
 	"""Parse a JSON expression into a Python value.
 	
@@ -396,8 +422,7 @@ def read (bytestring, use_float = False):
 	
 	"""
 	text = unicode_autodetect_encoding (bytestring)
-	parser = Parser (text, use_float)
-	return parser.parse ()
+	return read_impl (text, use_float, ParseErrorHelper ())
 	
 loads = read
 # }}}
@@ -413,6 +438,41 @@ JSONAtom.register (complex)
 JSONAtom.register (Decimal)
 JSONAtom.register (str)
 
+class EncoderErrorHelper:
+	def invalid_root (self):
+		raise WriteError ("The outermost container must be an array or object.")
+		
+	def unknown_serializer (self, value):
+		raise UnknownSerializerError ("No known serializer for object: %r" % (value,))
+		
+	def self_referential (self):
+		raise WriteError ("Cannot serialize self-referential values.")
+		
+	def invalid_object_key (self):
+		raise WriteError ("Only strings may be used as object keys.")
+		
+	def incomplete_surrogate (self):
+		raise WriteError ("Cannot serialize incomplete surrogate pair.")
+		
+	def invalid_surrogate (self):
+		raise WriteError ("Cannot serialize invalid surrogate pair.")
+		
+	def reserved_code_point (self, ord):
+		raise WriteError ("Cannot serialize reserved code point U+%04X." % ord)
+		
+	def no_nan (self):
+		raise WriteError ("Cannot serialize NaN.")
+		
+	def no_infinity (self):
+		raise WriteError ("Cannot serialize Infinity.")
+		
+	def no_neg_infinity (self):
+		raise WriteError ("Cannot serialize -Infinity.")
+		
+	def no_imaginary (self):
+		raise WriteError ("Cannot serialize complex numbers with"
+		                  " imaginary components.")
+		
 class Encoder (metaclass = abc.ABCMeta):
 	def __init__ (self, sort_keys, indent, ascii_only,
 	              coerce_keys, encoding, on_unknown):
@@ -422,6 +482,7 @@ class Encoder (metaclass = abc.ABCMeta):
 		self.coerce_keys = coerce_keys
 		self.encoding = encoding
 		self.on_unknown = validate_on_unknown (on_unknown)
+		self.raise_ = EncoderErrorHelper ()
 		
 	@abc.abstractmethod
 	def append (self, value):
@@ -436,7 +497,7 @@ class Encoder (metaclass = abc.ABCMeta):
 			value = value.data
 		if isinstance (value, JSONAtom):
 			if not parent_ids:
-				raise WriteError ("The outermost container must be an array or object.")
+				self.raise_.invalid_root ()
 			self.encode_atom (value)
 		elif isinstance (value, collections.Mapping):
 			self.encode_mapping (value, parent_ids)
@@ -446,7 +507,7 @@ class Encoder (metaclass = abc.ABCMeta):
 			new_value = self.on_unknown (value)
 			self.encode_object (new_value, parent_ids, True)
 		else:
-			raise UnknownSerializerError (value)
+			self.raise_.unknown_serializer (value)
 			
 	def get_separators (self, indent_level):
 		if self.indent is None:
@@ -459,7 +520,7 @@ class Encoder (metaclass = abc.ABCMeta):
 	def encode_mapping (self, value, parent_ids):
 		v_id = id (value)
 		if v_id in parent_ids:
-			raise WriteError ("Cannot serialize self-referential values.")
+			self.raise_.self_referential ()
 			
 		a = self.append
 		first = True
@@ -477,7 +538,7 @@ class Encoder (metaclass = abc.ABCMeta):
 				if self.coerce_keys:
 					key = str (key)
 				else:
-					raise WriteError ("Only strings may be used as object keys.")
+					self.raise_.invalid_object_key ()
 			if first:
 				first = False
 			else:
@@ -495,7 +556,7 @@ class Encoder (metaclass = abc.ABCMeta):
 	def encode_iterable (self, value, parent_ids):
 		v_id = id (value)
 		if v_id in parent_ids:
-			raise WriteError ("Cannot serialize self-referential values.")
+			self.raise_.self_referential ()
 			
 		a = self.append
 		
@@ -529,7 +590,7 @@ class Encoder (metaclass = abc.ABCMeta):
 		elif isinstance (value, Decimal):
 			self.encode_decimal (value)
 		else:
-			raise UnknownSerializerError (value)
+			self.raise_.unknown_serializer (value)
 			
 	def encode_string (self, value):
 		a = self.append
@@ -546,17 +607,17 @@ class Encoder (metaclass = abc.ABCMeta):
 					try:
 						nextc = next (stream)
 					except StopIteration:
-						raise WriteError ("Cannot serialize incomplete surrogate pair.")
+						self.raise_.incomplete_surrogate ()
 					onext = ord (nextc)
 					if not (0xDC00 <= onext <= 0xDFFF):
-						raise WriteError ("Cannot serialize invalid surrogate pair.")
+						self.raise_.invalid_surrogate ()
 					if self.ascii_only:
 						a ('\\u%04x\\u%04x' % (ochar, onext))
 					else:
 						a (char)
 						a (nextc)
 				elif 0xDC00 <= ochar <= 0xDFFF:
-					raise WriteError ("Cannot serialize reserved code point U+%04X." % ochar)
+					self.raise_.reserved_code_point (ochar)
 				elif self.ascii_only:
 					if ochar > 0xFFFF:
 						unicode_value = ord (char)
@@ -579,10 +640,13 @@ class Encoder (metaclass = abc.ABCMeta):
 		
 	def encode_float (self, value):
 		if value != value:
+			self.raise_.no_nan ()
 			raise WriteError ("Cannot serialize NaN.")
 		if value == INFINITY:
+			self.raise_.no_infinity ()
 			raise WriteError ("Cannot serialize Infinity.")
 		if value == -INFINITY:
+			self.raise_.no_neg_infinity ()
 			raise WriteError ("Cannot serialize -Infinity.")
 		self.append (repr (value))
 		
@@ -590,15 +654,17 @@ class Encoder (metaclass = abc.ABCMeta):
 		if value.imag == 0.0:
 			self.append (repr (value.real))
 		else:
-			raise WriteError ("Cannot serialize complex numbers with"
-			                  " imaginary components.")
+			self.raise_.no_imaginary ()
 			
 	def encode_decimal (self, value):
 		if value != value:
+			self.raise_.no_nan ()
 			raise WriteError ("Cannot serialize NaN.")
 		s_value = str (value)
-		if s_value in ('Infinity', '-Infinity'):
-			raise WriteError ("Cannot serialize %s." % s_value)
+		if s_value == 'Infinity':
+			self.raise_.no_infinity ()
+		elif s_value == '-Infinity':
+			self.raise_.no_neg_infinity ()
 		self.append (s_value)
 		
 class StreamEncoder(Encoder):
