@@ -416,6 +416,9 @@ class ReadArrayTests (ParserTestCase):
 	def test_empty_array (self):
 		self.r ('[]', [])
 		
+	def test_ignore_whitespace (self):
+		self.r ('[ 1 , 2 , 3 ]', [1, 2, 3])
+		
 	def test_integer_array (self):
 		self.r ('[1, 2, 3]', [1, 2, 3])
 		
@@ -468,7 +471,7 @@ class ReadObjectTests (ParserTestCase):
 		self.r ('{}', {})
 		
 	def test_ignore_whitespace (self):
-		self.r ('{ "a": true }', {"a": True})
+		self.r ('{ "a" : true }', {"a": True})
 		
 	def test_integer_object (self):
 		self.r ('{"a": 1, "b": 2}', {"a": 1, "b": 2})
