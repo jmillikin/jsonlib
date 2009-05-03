@@ -412,6 +412,9 @@ class ReadStringTests (ParserTestCase):
 	def test_error_reporting_after_unicode_escape (self):
 		self.re ('["\\u0020\\v"]', 1, 9, 8, "Unknown escape code: \\v.")
 		
+	def test_error_unterminated (self):
+		self.re ('["', 1, 2, 1, "Unterminated string.")
+		
 class ReadArrayTests (ParserTestCase):
 	def test_empty_array (self):
 		self.r ('[]', [])

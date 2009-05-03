@@ -193,6 +193,9 @@ class ParseErrorHelper:
 	def unterminated_unicode (self, text, offset):
 		self.generic (text, offset, "Unterminated unicode escape.")
 		
+	def unterminated_string (self, text, offset):
+		self.generic (text, offset, "Unterminated string.")
+		
 	def reserved_code_point (self, text, offset, ord):
 		self.generic (text, offset, "U+%04X is a reserved code point." % ord)
 		
@@ -285,6 +288,7 @@ class Parser:
 			
 		
 	def read_string (self):
+		text_len = len (self.text)
 		start = self.index
 		escaped = False
 		chunks = []
@@ -292,6 +296,9 @@ class Parser:
 		self.skip ('"', "string start")
 		while True:
 			while not escaped:
+				if self.index >= text_len:
+					self.raise_.unterminated_string (self.text, start)
+					
 				c = self.text[self.index]
 				if c == '\\':
 					escaped = True
@@ -305,6 +312,9 @@ class Parser:
 				self.index += 1
 				
 			while escaped:
+				if self.index >= text_len:
+					self.raise_.unterminated_string (self.text, start)
+					
 				c = self.text[self.index]
 				if c == 'u':
 					unescaped = self.read_unicode_escape ()
