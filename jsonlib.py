@@ -389,6 +389,12 @@ class Parser:
 		raise ReadError (self.text, self.index, desc)
 		
 def read (bytestring, use_float = False):
+	"""Parse a JSON expression into a Python value.
+	
+	If string is a byte string, it will be converted to Unicode
+	before parsing (see unicode_autodetect_encoding).
+	
+	"""
 	text = unicode_autodetect_encoding (bytestring)
 	parser = Parser (text, use_float)
 	return parser.parse ()
@@ -631,12 +637,66 @@ class BufferEncoder(Encoder):
 		
 def dump (value, fp, sort_keys = False, indent = None, ascii_only = True,
           coerce_keys = False, encoding = 'utf-8', on_unknown = None):
+	"""Serialize a Python value to a JSON-formatted byte string.
+	
+	Rather than being returned as a string, the output is written to
+	a file-like object.
+	
+	"""
 	encoder = StreamEncoder (fp, sort_keys, indent, ascii_only,
 	                         coerce_keys, encoding, on_unknown)
 	encoder.encode (value)
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False, encoding = 'utf-8', on_unknown = None):
+	"""Serialize a Python value to a JSON-formatted byte string.
+	
+	.. describe:: value
+		
+		The Python object to serialize.
+		
+	.. describe:: sort_keys
+		
+		Whether object keys should be kept sorted. Useful
+		for tests, or other cases that check against a
+		constant string value.
+		
+	.. describe:: indent
+		
+		A string to be used for indenting arrays and objects.
+		If this is non-None, pretty-printing mode is activated.
+		
+	.. describe:: ascii_only
+		
+		Whether the output should consist of only ASCII
+		characters. If this is True, any non-ASCII code points
+		are escaped even if their inclusion would be legal.
+	
+	.. describe:: coerce_keys
+		
+		Whether to coerce invalid object keys to strings. If
+		this is False, an exception will be raised when an
+		invalid key is specified.
+	
+	.. describe:: encoding
+		
+		The output encoding to use. This must be the name of an
+		encoding supported by Python's codec mechanism. If
+		None, a Unicode string will be returned rather than an
+		encoded bytestring.
+		
+		If a non-UTF encoding is specified, the resulting
+		bytestring might not be readable by many JSON libraries,
+		including jsonlib.
+		
+		The default encoding is UTF-8.
+	.. describe:: on_unknown
+		
+		A callable to be used for converting objects of an
+		unrecognized type into a JSON expression. If ``None``,
+		unrecognized objects will raise an ``UnknownSerializerError``.
+		
+	"""
 	encoder = BufferEncoder (sort_keys, indent, ascii_only, coerce_keys,
 	                         encoding, on_unknown)
 	return encoder.encode (value)
