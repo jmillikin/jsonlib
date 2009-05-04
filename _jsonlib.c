@@ -59,7 +59,8 @@ static PyObject *
 parse_string_full (Parser *, Py_UNICODE *, size_t);
 
 static int
-parse_unicode_escape (Parser *);
+parse_unicode_escape (Parser *, Py_UNICODE *, Py_UNICODE *,
+                      size_t *, size_t *, size_t);
 
 static PyObject *
 parse_keyword (Parser *);
@@ -72,9 +73,6 @@ skip_whitespace (Parser *, Py_UNICODE *, const char *);
 
 static unsigned char
 skip_char (Parser *, Py_UNICODE, const char *);
-
-static Py_UCS4
-next_char_ord (Py_UNICODE *);
 
 static PyObject *
 parser_raise (Parser *, const char *);
@@ -445,9 +443,15 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 		case 'r': buffer[buffer_idx++] = 0x0D; break;
 		case 't': buffer[buffer_idx++] = 0x09; break;
 		case 'u':
-			/* TODO */
-			buffer[buffer_idx++] = 'u';
-			break;
+			if (parse_unicode_escape (
+				parser, start, buffer, &buffer_idx, &ii,
+				max_char_count))
+			{
+				ii--;
+				buffer_idx++;
+				break;
+			}
+			else { return NULL; }
 		default:
 			return PyObject_CallMethod (
 				parser->error_helper,
@@ -458,6 +462,104 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 		}
 		ii++;
 	}
+}
+
+static int
+read_4hex (Py_UNICODE *start, Py_UNICODE *retval_ptr)
+{
+	PyObject *py_long;
+	
+	py_long = PyLong_FromUnicode (start, 4, 16);
+	if (!py_long) { return 0; }
+	
+	(*retval_ptr) = (Py_UNICODE) (PyLong_AsUnsignedLong (py_long));
+	Py_DECREF (py_long);
+	return 1;
+}
+
+static int
+parse_unicode_escape (Parser *parser, Py_UNICODE *string_start, Py_UNICODE *buffer,
+                      size_t *buffer_idx, size_t *index_ptr, size_t max_char_count)
+{
+	size_t remaining;
+	size_t offset = *index_ptr;
+	Py_UNICODE value;
+	
+	offset++;
+	
+	remaining = max_char_count - offset;
+	if (remaining < 4)
+	{
+		PyObject_CallMethod (parser->error_helper,
+			"unterminated_unicode", "uk",
+			parser->start,
+			(parser->index + offset - 2) - parser->start);
+		return 0;
+	}
+	
+	if (!read_4hex (string_start + offset, &value))
+	{ return 0; }
+	
+	offset += 4;
+	
+	/* Check for surrogate pair */
+	if (0xD800 <= value && value <= 0xDBFF)
+	{
+		Py_UNICODE upper = value, lower;
+		
+		if (remaining < 10)
+		{
+			PyObject_CallMethod (parser->error_helper,
+				"missing_surrogate", "uk",
+				parser->start,
+				(parser->index + offset) - parser->start);
+			return 0;
+		}
+		
+		if (string_start[offset] != '\\' ||
+		    string_start[offset + 1] != 'u')
+		{
+			PyObject_CallMethod (parser->error_helper,
+				"missing_surrogate", "uk",
+				parser->start,
+				(parser->index + offset) - parser->start);
+			return 0;
+		}
+		offset += 2;
+		
+		if (!read_4hex (string_start + offset, &lower))
+		{ return 0; }
+			
+		offset += 4;
+		
+#		ifdef Py_UNICODE_WIDE
+			upper -= 0xD800;
+			lower -= 0xDC00;
+			
+			/* Merge upper and lower components */
+			value = ((upper << 10) + lower) + 0x10000;
+			buffer[*buffer_idx] = value;
+#		else
+			/* No wide character support, return surrogate pairs */
+			buffer[(*buffer_idx)++] = upper;
+			buffer[*buffer_idx] = lower;
+#		endif
+	}
+	else if (0xDC00 <= value && value <= 0xDFFF)
+	{
+		PyObject_CallMethod (parser->error_helper,
+			"reserved_code_point", "ukk",
+			parser->start,
+			(parser->index + offset - 6) - parser->start,
+			value);
+		return 0;
+	}
+	else
+	{
+		buffer[*buffer_idx] = value;
+	}
+	*index_ptr = offset;
+	return 1;
 }
 
 static PyObject *
@@ -637,7 +739,7 @@ skip_char (Parser *parser, Py_UNICODE c, const char *message)
 static PyObject *
 parser_raise (Parser *parser, const char *error_key)
 {
-	return PyObject_CallMethod (parser->error_helper, error_key, "uk",
+	return PyObject_CallMethod (parser->error_helper, (char*)error_key, "uk",
 		parser->start, (parser->index - parser->start));
 }
 
