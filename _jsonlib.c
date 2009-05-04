@@ -56,6 +56,9 @@ static PyObject *
 parse_string (Parser *);
 
 static PyObject *
+parse_string_full (Parser *, Py_UNICODE *, size_t);
+
+static int
 parse_unicode_escape (Parser *);
 
 static PyObject *
@@ -78,6 +81,12 @@ parser_raise (Parser *, const char *);
 
 static PyObject *
 parser_raise_unexpected (Parser *, const char *);
+
+static PyObject *
+parser_raise_unterminated_string (Parser *, Py_UNICODE *);
+
+static size_t
+next_power_2 (size_t start, size_t min);
 
 static PyObject *
 jsonlib_read (PyObject *self, PyObject *args)
@@ -142,26 +151,26 @@ parse_raw (Parser *parser)
 	
 	switch (c)
 	{
-		case '"':
-			return parse_string (parser);
-		case 't':
-		case 'f':
-		case 'n':
-			return parse_keyword (parser);
-		case '-':
-		case '0':
-		case '1':
-		case '2':
-		case '3':
-		case '4':
-		case '5':
-		case '6':
-		case '7':
-		case '8':
-		case '9':
-			return parse_number (parser);
-		default:
-			break;
+	case '"':
+		return parse_string (parser);
+	case 't':
+	case 'f':
+	case 'n':
+		return parse_keyword (parser);
+	case '-':
+	case '0':
+	case '1':
+	case '2':
+	case '3':
+	case '4':
+	case '5':
+	case '6':
+	case '7':
+	case '8':
+	case '9':
+		return parse_number (parser);
+	default:
+		break;
 	}
 	return parser_raise_unexpected (parser, NULL);
 }
@@ -315,26 +324,28 @@ parse_string (Parser *parser)
 	Py_UNICODE c, *start;
 	size_t ii;
 	
-	/* Start at 1 to skip first double quote. */
-	start = parser->index + 1;
+	start = parser->index;
 	
 	/* Fast case for empty string */
-	if (start[0] == '"')
+	if (start[1] == '"')
 	{
-		parser->index = start + 1;
+		parser->index = start + 2;
 		return PyUnicode_FromUnicode (NULL, 0);
 	}
 	
 	/* Scan through for maximum character count, and to ensure the string
 	 * is terminated.
 	**/
-	for (ii = 0; start + ii < parser->end; ii++)
+	for (ii = 1; start + ii < parser->end; ii++)
 	{
 		c = start[ii];
 		
 		/* Check for illegal characters */
 		if (c < 0x20)
-		{ return parser_raise_unexpected (parser, NULL); }
+		{
+			parser->index = start + ii;
+			return parser_raise_unexpected (parser, NULL);
+		}
 		
 		/* Invalid escape codes will be caught later. */
 		if (escaped)
@@ -352,20 +363,101 @@ parse_string (Parser *parser)
 		}
 	}
 	
+	if (start + ii >= parser->end)
+	{ return parser_raise_unterminated_string (parser, start); }
+	
 	if (fancy)
 	{
-		/*return read_string_full (parser, start, ii);*/
-		parser->index = start + ii + 1;
-		Py_RETURN_NONE;
+		return parse_string_full (parser, start, ii);
 	}
 	
 	/* No fancy features, return the string directly */
-	unicode = PyUnicode_FromUnicode (start, ii);
+	unicode = PyUnicode_FromUnicode (start + 1, ii - 1);
 	if (unicode)
 	{
 		parser->index = start + ii + 1;
 	}
 	return unicode;
+}
+
+static PyObject *
+parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
+{
+	PyObject *unicode;
+	int escaped = 0;
+	Py_UNICODE c, *buffer;
+	size_t ii = 1, buffer_idx;
+	
+	/* Allocate enough to hold the worst case */
+	buffer = parser->stringparse_buffer;
+	if (max_char_count > parser->stringparse_buffer_size)
+	{
+		size_t new_size, existing_size;
+		existing_size = parser->stringparse_buffer_size;
+		new_size = next_power_2 (1, max_char_count);
+		parser->stringparse_buffer = PyMem_Resize (buffer, Py_UNICODE, new_size);
+		buffer = parser->stringparse_buffer;
+		parser->stringparse_buffer_size = new_size;
+	}
+	
+	/* Scan through the string, adding values to the buffer as
+	 * appropriate.
+	**/
+	escaped = 0;
+	buffer_idx = 0;
+	
+	while (1)
+	{
+		while (!escaped)
+		{
+			if (start + ii >= parser->end)
+			{ parser_raise_unterminated_string (parser, start); }
+			
+			c = start[ii];
+			if (c == '\\') { escaped = 1; }
+			else if (c == '"')
+			{
+				unicode = PyUnicode_FromUnicode (buffer, buffer_idx);
+				if (unicode)
+				{ parser->index = start + max_char_count + 1; }
+				
+				return unicode;
+			}
+			else { buffer[buffer_idx++] = c; }
+			ii++;
+		}
+		
+		escaped = 0;
+		if (start + ii >= parser->end)
+		{ parser_raise_unterminated_string (parser, start); }
+		
+		c = start[ii];
+		switch (c)
+		{
+		case '\\':
+		case '"':
+		case '/':
+			buffer[buffer_idx++] = c;
+			break;
+		case 'b': buffer[buffer_idx++] = 0x08; break;
+		case 'f': buffer[buffer_idx++] = 0x0C; break;
+		case 'n': buffer[buffer_idx++] = 0x0A; break;
+		case 'r': buffer[buffer_idx++] = 0x0D; break;
+		case 't': buffer[buffer_idx++] = 0x09; break;
+		case 'u':
+			/* TODO */
+			buffer[buffer_idx++] = 'u';
+			break;
+		default:
+			return PyObject_CallMethod (
+				parser->error_helper,
+				"unknown_escape", "uku#",
+				parser->start,
+				(start - parser->start + ii - 1),
+				&c, 1);
+		}
+		ii++;
+	}
 }
 
 static PyObject *
@@ -555,6 +647,20 @@ parser_raise_unexpected (Parser *parser, const char *message)
 	return PyObject_CallMethod (parser->error_helper, "unexpected", "uks",
 		parser->start, (parser->index - parser->start),
 		message);
+}
+
+static PyObject *
+parser_raise_unterminated_string (Parser *parser, Py_UNICODE *start)
+{
+	return PyObject_CallMethod (parser->error_helper, "unterminated_string", "uk",
+		parser->start, (start - parser->start));
+}
+
+static size_t
+next_power_2 (size_t start, size_t min)
+{
+	while (start < min) start <<= 1;
+	return start;
 }
 
 /* }}} */
