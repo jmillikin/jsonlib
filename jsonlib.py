@@ -484,14 +484,15 @@ class EncoderErrorHelper:
 		
 class Encoder (metaclass = abc.ABCMeta):
 	def __init__ (self, sort_keys, indent, ascii_only,
-	              coerce_keys, encoding, on_unknown):
+	              coerce_keys, encoding, on_unknown,
+	              error_helper):
 		self.sort_keys = sort_keys
-		self.indent = validate_indent (indent)
+		self.indent = indent
 		self.ascii_only = ascii_only
 		self.coerce_keys = coerce_keys
 		self.encoding = encoding
-		self.on_unknown = validate_on_unknown (on_unknown)
-		self.raise_ = EncoderErrorHelper ()
+		self.on_unknown = on_unknown
+		self.raise_ = error_helper
 		
 	@abc.abstractmethod
 	def append (self, value):
@@ -677,11 +678,8 @@ class Encoder (metaclass = abc.ABCMeta):
 		self.append (s_value)
 		
 class StreamEncoder(Encoder):
-	def __init__ (self, fp, sort_keys, indent, ascii_only,
-	              coerce_keys, encoding, on_unknown):
-		super (StreamEncoder, self).__init__ (
-			sort_keys, indent, ascii_only, coerce_keys,
-			encoding, on_unknown)
+	def __init__ (self, fp, *args, **kwargs):
+		super (StreamEncoder, self).__init__ (*args, **kwargs)
 		self.fp = fp
 		
 	def append (self, value):
@@ -693,11 +691,8 @@ class StreamEncoder(Encoder):
 		self.encode_object (value, [])
 		
 class BufferEncoder(Encoder):
-	def __init__ (self, sort_keys, indent, ascii_only,
-	              coerce_keys, encoding, on_unknown):
-		super (BufferEncoder, self).__init__ (
-			sort_keys, indent, ascii_only, coerce_keys,
-			encoding, on_unknown)
+	def __init__ (self, *args, **kwargs):
+		super (BufferEncoder, self).__init__ (*args, **kwargs)
 		self.chunks = []
 		
 	def append (self, value):
@@ -710,6 +705,13 @@ class BufferEncoder(Encoder):
 			return str_result
 		return str_result.encode (self.encoding)
 		
+def dump_impl (value, fp, sort_keys, indent, ascii_only,
+               coerce_keys, encoding, on_unknown, error_helper):
+	encoder = StreamEncoder (fp, sort_keys, indent, ascii_only,
+	                         coerce_keys, encoding,
+	                         on_unknown, error_helper)
+	return encoder.encode (value)
+	
 def dump (value, fp, sort_keys = False, indent = None, ascii_only = True,
           coerce_keys = False, encoding = 'utf-8', on_unknown = None):
 	"""Serialize a Python value to a JSON-formatted byte string.
@@ -718,9 +720,18 @@ def dump (value, fp, sort_keys = False, indent = None, ascii_only = True,
 	a file-like object.
 	
 	"""
-	encoder = StreamEncoder (fp, sort_keys, indent, ascii_only,
-	                         coerce_keys, encoding, on_unknown)
-	encoder.encode (value)
+	return dump_impl (value, fp, sort_keys,
+	                  validate_indent (indent), ascii_only,
+	                  coerce_keys, encoding,
+	                  validate_on_unknown (on_unknown),
+	                  EncoderErrorHelper ())
+	
+def write_impl (value, sort_keys, indent, ascii_only,
+                coerce_keys, encoding, on_unknown, error_helper):
+	encoder = BufferEncoder (sort_keys, indent, ascii_only,
+	                         coerce_keys, encoding,
+	                         on_unknown, error_helper)
+	return encoder.encode (value)
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False, encoding = 'utf-8', on_unknown = None):
@@ -772,9 +783,10 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 		unrecognized objects will raise an ``UnknownSerializerError``.
 		
 	"""
-	encoder = BufferEncoder (sort_keys, indent, ascii_only, coerce_keys,
-	                         encoding, on_unknown)
-	return encoder.encode (value)
+	return write_impl (value, sort_keys, validate_indent (indent), ascii_only,
+	                   coerce_keys, encoding,
+	                   validate_on_unknown (on_unknown),
+	                   EncoderErrorHelper ())
 	
 dumps = write
 
@@ -796,4 +808,4 @@ def validate_on_unknown (f):
 	return f
 # }}}
 
-from _jsonlib import read_impl
+from _jsonlib import read_impl, write_impl, dump_impl
