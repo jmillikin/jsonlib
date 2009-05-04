@@ -311,21 +311,20 @@ class Parser:
 					chunks.append (c)
 				self.index += 1
 				
-			while escaped:
-				if self.index >= text_len:
-					self.raise_.unterminated_string (self.text, start)
-					
-				c = self.text[self.index]
-				if c == 'u':
-					unescaped = self.read_unicode_escape ()
-					chunks.append (unescaped)
-				elif c in READ_ESCAPES:
-					chunks.append (READ_ESCAPES[c])
-				else:
-					self.raise_.unknown_escape (self.text, self.index - 1, c)
-				self.index += 1
-				escaped = False
+			escaped = False
+			if self.index >= text_len:
+				self.raise_.unterminated_string (self.text, start)
 				
+			c = self.text[self.index]
+			if c == 'u':
+				unescaped = self.read_unicode_escape ()
+				chunks.append (unescaped)
+			elif c in READ_ESCAPES:
+				chunks.append (READ_ESCAPES[c])
+			else:
+				self.raise_.unknown_escape (self.text, self.index - 1, c)
+			self.index += 1
+			
 	def read_unicode_escape (self):
 		"""Read a JSON-style Unicode escape.
 		
