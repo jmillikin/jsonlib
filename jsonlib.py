@@ -808,4 +808,7 @@ def validate_on_unknown (f):
 	return f
 # }}}
 
-from _jsonlib import read_impl, write_impl, dump_impl
+try:
+	from _jsonlib import read_impl, write_impl, dump_impl
+except ImportError:
+	pass
