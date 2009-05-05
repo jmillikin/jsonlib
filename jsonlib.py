@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-"""JSON serializer/deserializer for Python.
+"""JSON parser/serializer for Python.
 
 The main implementation of this module is accessed through calls to
 ``read()`` and ``write()``. See their documentation for details.
@@ -436,7 +436,7 @@ def read (bytestring, use_float = False):
 loads = read
 # }}}
 
-# Encoder {{{
+# Serializer {{{
 class JSONAtom (metaclass = abc.ABCMeta):
 	pass
 	
@@ -447,7 +447,7 @@ JSONAtom.register (complex)
 JSONAtom.register (Decimal)
 JSONAtom.register (str)
 
-class EncoderErrorHelper:
+class SerializerErrorHelper:
 	def invalid_root (self):
 		raise WriteError ("The outermost container must be an array or object.")
 		
@@ -482,7 +482,7 @@ class EncoderErrorHelper:
 		raise WriteError ("Cannot serialize complex numbers with"
 		                  " imaginary components.")
 		
-class Encoder (metaclass = abc.ABCMeta):
+class Serializer (metaclass = abc.ABCMeta):
 	def __init__ (self, sort_keys, indent, ascii_only,
 	              coerce_keys, encoding, on_unknown,
 	              error_helper):
@@ -499,23 +499,23 @@ class Encoder (metaclass = abc.ABCMeta):
 		raise NotImplementedError
 		
 	@abc.abstractmethod
-	def encode (self, value):
+	def serialize (self, value):
 		raise NotImplementedError
 		
-	def encode_object (self, value, parent_ids, in_unknown_hook = False):
+	def serialize_object (self, value, parent_ids, in_unknown_hook = False):
 		if isinstance (value, collections.UserString):
 			value = value.data
 		if isinstance (value, JSONAtom):
 			if not parent_ids:
 				self.raise_.invalid_root ()
-			self.encode_atom (value)
+			self.serialize_atom (value)
 		elif isinstance (value, collections.Mapping):
-			self.encode_mapping (value, parent_ids)
+			self.serialize_mapping (value, parent_ids)
 		elif isinstance (value, collections.Iterable):
-			self.encode_iterable (value, parent_ids)
+			self.serialize_iterable (value, parent_ids)
 		elif not in_unknown_hook:
 			new_value = self.on_unknown (value)
-			self.encode_object (new_value, parent_ids, True)
+			self.serialize_object (new_value, parent_ids, True)
 		else:
 			self.raise_.unknown_serializer (value)
 			
@@ -527,7 +527,7 @@ class Encoder (metaclass = abc.ABCMeta):
 			post_indent = '\n' + (self.indent * indent_level)
 			return indent, post_indent
 			
-	def encode_mapping (self, value, parent_ids):
+	def serialize_mapping (self, value, parent_ids):
 		v_id = id (value)
 		if v_id in parent_ids:
 			self.raise_.self_referential ()
@@ -554,16 +554,16 @@ class Encoder (metaclass = abc.ABCMeta):
 			else:
 				a (',')
 			a (indent)
-			self.encode_object (key, parent_ids + [v_id])
+			self.serialize_object (key, parent_ids + [v_id])
 			if self.indent is None:
 				a (':')
 			else:
 				a (': ')
-			self.encode_object (item, parent_ids + [v_id])
+			self.serialize_object (item, parent_ids + [v_id])
 		a (post_indent)
 		a ('}')
 		
-	def encode_iterable (self, value, parent_ids):
+	def serialize_iterable (self, value, parent_ids):
 		v_id = id (value)
 		if v_id in parent_ids:
 			self.raise_.self_referential ()
@@ -580,29 +580,29 @@ class Encoder (metaclass = abc.ABCMeta):
 			else:
 				a (',')
 			a (indent)
-			self.encode_object (item, parent_ids + [v_id])
+			self.serialize_object (item, parent_ids + [v_id])
 		a (post_indent)
 		a (']')
 		
-	def encode_atom (self, value):
+	def serialize_atom (self, value):
 		for keyword, kw_value in KEYWORDS:
 			if value is kw_value:
 				return self.append (keyword)
 				
 		if isinstance (value, str):
-			self.encode_string (value)
+			self.serialize_string (value)
 		elif isinstance (value, int):
 			self.append (str (value))
 		elif isinstance (value, float):
-			self.encode_float (value)
+			self.serialize_float (value)
 		elif isinstance (value, complex):
-			self.encode_complex (value)
+			self.serialize_complex (value)
 		elif isinstance (value, Decimal):
-			self.encode_decimal (value)
+			self.serialize_decimal (value)
 		else:
 			self.raise_.unknown_serializer (value)
 			
-	def encode_string (self, value):
+	def serialize_string (self, value):
 		a = self.append
 		stream = iter (value)
 		a ('"')
@@ -612,7 +612,7 @@ class Encoder (metaclass = abc.ABCMeta):
 				a (WRITE_ESCAPES[char])
 			elif ochar > 0x7E:
 				# Prevent invalid surrogate pairs from being
-				# serialized.
+				# encoded.
 				if 0xD800 <= ochar <= 0xDBFF:
 					try:
 						nextc = next (stream)
@@ -648,7 +648,7 @@ class Encoder (metaclass = abc.ABCMeta):
 				
 		a ('"')
 		
-	def encode_float (self, value):
+	def serialize_float (self, value):
 		if value != value:
 			self.raise_.no_nan ()
 			raise WriteError ("Cannot serialize NaN.")
@@ -660,13 +660,13 @@ class Encoder (metaclass = abc.ABCMeta):
 			raise WriteError ("Cannot serialize -Infinity.")
 		self.append (repr (value))
 		
-	def encode_complex (self, value):
+	def serialize_complex (self, value):
 		if value.imag == 0.0:
 			self.append (repr (value.real))
 		else:
 			self.raise_.no_imaginary ()
 			
-	def encode_decimal (self, value):
+	def serialize_decimal (self, value):
 		if value != value:
 			self.raise_.no_nan ()
 			raise WriteError ("Cannot serialize NaN.")
@@ -677,9 +677,9 @@ class Encoder (metaclass = abc.ABCMeta):
 			self.raise_.no_neg_infinity ()
 		self.append (s_value)
 		
-class StreamEncoder(Encoder):
+class StreamSerializer(Serializer):
 	def __init__ (self, fp, *args, **kwargs):
-		super (StreamEncoder, self).__init__ (*args, **kwargs)
+		super (StreamSerializer, self).__init__ (*args, **kwargs)
 		self.fp = fp
 		
 	def append (self, value):
@@ -687,19 +687,19 @@ class StreamEncoder(Encoder):
 			value = value.encode (self.encoding)
 		self.fp.write (value)
 		
-	def encode (self, value):
-		self.encode_object (value, [])
+	def serialize (self, value):
+		self.serialize_object (value, [])
 		
-class BufferEncoder(Encoder):
+class BufferSerializer(Serializer):
 	def __init__ (self, *args, **kwargs):
-		super (BufferEncoder, self).__init__ (*args, **kwargs)
+		super (BufferSerializer, self).__init__ (*args, **kwargs)
 		self.chunks = []
 		
 	def append (self, value):
 		self.chunks.append (value)
 		
-	def encode (self, value):
-		self.encode_object (value, [])
+	def serialize (self, value):
+		self.serialize_object (value, [])
 		str_result = ''.join (self.chunks)
 		if self.encoding is None:
 			return str_result
@@ -707,10 +707,10 @@ class BufferEncoder(Encoder):
 		
 def dump_impl (value, fp, sort_keys, indent, ascii_only,
                coerce_keys, encoding, on_unknown, error_helper):
-	encoder = StreamEncoder (fp, sort_keys, indent, ascii_only,
-	                         coerce_keys, encoding,
-	                         on_unknown, error_helper)
-	return encoder.encode (value)
+	serializer = StreamSerializer (fp, sort_keys, indent, ascii_only,
+	                               coerce_keys, encoding,
+	                               on_unknown, error_helper)
+	return serializer.serialize (value)
 	
 def dump (value, fp, sort_keys = False, indent = None, ascii_only = True,
           coerce_keys = False, encoding = 'utf-8', on_unknown = None):
@@ -724,14 +724,14 @@ def dump (value, fp, sort_keys = False, indent = None, ascii_only = True,
 	                  validate_indent (indent), ascii_only,
 	                  coerce_keys, encoding,
 	                  validate_on_unknown (on_unknown),
-	                  EncoderErrorHelper ())
+	                  SerializerErrorHelper ())
 	
 def write_impl (value, sort_keys, indent, ascii_only,
                 coerce_keys, encoding, on_unknown, error_helper):
-	encoder = BufferEncoder (sort_keys, indent, ascii_only,
-	                         coerce_keys, encoding,
-	                         on_unknown, error_helper)
-	return encoder.encode (value)
+	serializer = BufferSerializer (sort_keys, indent, ascii_only,
+	                               coerce_keys, encoding,
+	                               on_unknown, error_helper)
+	return serializer.serialize (value)
 	
 def write (value, sort_keys = False, indent = None, ascii_only = True,
            coerce_keys = False, encoding = 'utf-8', on_unknown = None):
@@ -786,7 +786,7 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 	return write_impl (value, sort_keys, validate_indent (indent), ascii_only,
 	                   coerce_keys, encoding,
 	                   validate_on_unknown (on_unknown),
-	                   EncoderErrorHelper ())
+	                   SerializerErrorHelper ())
 	
 dumps = write
 
