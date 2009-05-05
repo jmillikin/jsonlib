@@ -186,7 +186,7 @@ parse_raw (Parser *parser)
 static PyObject *
 parse_object (Parser *parser)
 {
-	PyObject *retval = NULL, *key, *value;
+	PyObject *retval = NULL, *key = NULL, *value = NULL;
 	Py_UNICODE *start = parser->index;
 	int result;
 	
@@ -267,7 +267,7 @@ error:
 static PyObject *
 parse_array (Parser *parser)
 {
-	PyObject *retval = NULL, *value;
+	PyObject *retval = NULL, *value = NULL;
 	Py_UNICODE *start = parser->index;
 	int result;
 	
