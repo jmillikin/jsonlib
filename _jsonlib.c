@@ -892,7 +892,7 @@ jsonlib_write (PyObject *self, PyObject *args)
 	              ascii_only = 0,
 	              coerce_keys = 0;
 	
-	if (!PyArg_ParseTuple(args, "OiOiizOO",
+	if (!PyArg_ParseTuple(args, "ObObbzOO",
 		&value,
 		&sort_keys,
 		&base->indent,
