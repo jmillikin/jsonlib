@@ -1120,6 +1120,18 @@ serialize_mapping (Serializer *s, PyObject *mapping,
 	if (!(keys = PyMapping_Items (mapping)))
 	{ goto error; }
 	
+	if (s->sort_keys)
+	{
+		PyObject *old_keys = keys;
+		keys = PySequence_List (old_keys);
+		Py_DECREF (old_keys);
+		if (!keys)
+		{ goto error; }
+		
+		if (PyList_Sort (keys) == -1)
+		{ goto error; }
+	}
+	
 	if (!(iter = PyObject_GetIter (keys)))
 	{ goto error; }
 	
