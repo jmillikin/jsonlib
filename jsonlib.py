@@ -651,13 +651,10 @@ class Serializer (metaclass = abc.ABCMeta):
 	def serialize_float (self, value):
 		if value != value:
 			self.raise_.no_nan ()
-			raise WriteError ("Cannot serialize NaN.")
 		if value == INFINITY:
 			self.raise_.no_infinity ()
-			raise WriteError ("Cannot serialize Infinity.")
 		if value == -INFINITY:
 			self.raise_.no_neg_infinity ()
-			raise WriteError ("Cannot serialize -Infinity.")
 		self.append (repr (value))
 		
 	def serialize_complex (self, value):
@@ -669,7 +666,6 @@ class Serializer (metaclass = abc.ABCMeta):
 	def serialize_decimal (self, value):
 		if value != value:
 			self.raise_.no_nan ()
-			raise WriteError ("Cannot serialize NaN.")
 		s_value = str (value)
 		if s_value == 'Infinity':
 			self.raise_.no_infinity ()
