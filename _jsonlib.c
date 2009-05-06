@@ -859,6 +859,9 @@ static unsigned char
 serializer_raise (Serializer *, const char *);
 
 static unsigned char
+serializer_raise_reserved_cp (Serializer *, Py_UNICODE);
+
+static unsigned char
 buffer_serializer_append_ascii (Serializer *, const char *, size_t);
 
 static unsigned char
@@ -1272,6 +1275,35 @@ serialize_atom (Serializer *s, PyObject *value)
 }
 
 static unsigned char
+serializer_validate_string (Serializer *s, Py_UNICODE *chars,
+                            Py_ssize_t char_count)
+{
+	Py_ssize_t ii;
+	
+	/* Scan through again to check for invalid surrogate pairs */
+	for (ii = 0; ii < char_count; ++ii)
+	{
+		if (0xD800 <= chars[ii] && chars[ii] <= 0xDBFF)
+		{
+			if (++ii == char_count)
+			{
+				return serializer_raise (s, "incomplete_surrogate");
+			}
+			
+			if (!(0xDC00 <= chars[ii] && chars[ii] <= 0xDFFF))
+			{
+				return serializer_raise (s, "invalid_surrogate");
+			}
+		}
+		else if (0xDC00 <= chars[ii] && chars[ii] <= 0xDFFF)
+		{
+			return serializer_raise_reserved_cp (s, chars[ii]);
+		}
+	}
+	return 1;
+}
+
+static unsigned char
 serialize_string (Serializer *s, PyObject *value)
 {
 	unsigned char safe = 1, retval = 1;
@@ -1307,6 +1339,9 @@ serialize_string (Serializer *s, PyObject *value)
 		return 1;
 	}
 	
+	if (!serializer_validate_string (s, chars, char_count))
+	{ goto error; }
+	
 	if (s->ascii_only)
 	{ escaped = escape_string_ascii (s, value); }
 	else
@@ -1322,11 +1357,134 @@ success:
 	return retval;
 }
 
+static Py_UNICODE *
+escape_unichar (Py_UNICODE c, Py_UNICODE *p)
+{
+	*p++ = '\\';
+	switch (c)
+	{
+		case 0x08: *p++ = 'b'; return p;
+		case 0x09: *p++ = 't'; return p;
+		case 0x0A: *p++ = 'n'; return p;
+		case 0x0C: *p++ = 'f'; return p;
+		case 0x0D: *p++ = 'r'; return p;
+		case 0x22: *p++ = '"'; return p;
+		case 0x2F: *p++ = '/'; return p;
+		case 0x5C: *p++ = '\\'; return p;
+		default: break;
+	}
+#ifdef Py_UNICODE_WIDE
+	if (c > 0xFFFF)
+	{
+		/* Separate into upper and lower surrogate pair */
+		Py_UNICODE reduced, upper, lower;
+		
+		reduced = c - 0x10000;
+		lower = (reduced & 0x3FF);
+		upper = (reduced >> 10);
+		
+		upper += 0xD800;
+		lower += 0xDC00;
+		
+		*p++ = 'u';
+		*p++ = hexdigit[(upper >> 12) & 0xF];
+		*p++ = hexdigit[(upper >> 8) & 0xF];
+		*p++ = hexdigit[(upper >> 4) & 0xF];
+		*p++ = hexdigit[upper & 0xF];
+		
+		*p++ = '\\';
+		*p++ = 'u';
+		*p++ = hexdigit[(lower >> 12) & 0xF];
+		*p++ = hexdigit[(lower >> 8) & 0xF];
+		*p++ = hexdigit[(lower >> 4) & 0xF];
+		*p++ = hexdigit[lower & 0xF];
+		return p;
+	}
+#endif
+	*p++ = 'u';
+	*p++ = hexdigit[(c >> 12) & 0xF];
+	*p++ = hexdigit[(c >> 8) & 0xF];
+	*p++ = hexdigit[(c >> 4) & 0xF];
+	*p++ = hexdigit[c & 0xF];
+	return p;
+}
+
 static PyObject *
 escape_string_ascii (Serializer *s, PyObject *value)
 {
-	// TODO
-	return NULL;
+	PyObject *retval;
+	Py_UNICODE *old_buffer, *p, c;
+	size_t ii, old_buffer_size, new_buffer_size;
+	
+	old_buffer = PyUnicode_AS_UNICODE (value);
+	old_buffer_size = PyUnicode_GET_SIZE (value);
+	
+	/*
+	Calculate the size needed to store the final string:
+	
+		* 2 chars for opening and closing quotes
+		* 2 chars each for each of these characters:
+			* U+0008
+			* U+0009
+			* U+000A
+			* U+000C
+			* U+000D
+			* U+0022
+			* U+002F
+			* U+005C
+		* 6 chars for other characters <= U+001F
+		* 12 chars for characters > 0xFFFF
+		* 6 chars for characters > 0x7E
+		* 1 char for other characters.
+	
+	*/
+	new_buffer_size = 2;
+	for (ii = 0; ii < old_buffer_size; ii++)
+	{
+		c = old_buffer[ii];
+		if (c == 0x08 ||
+		    c == 0x09 ||
+		    c == 0x0A ||
+		    c == 0x0C ||
+		    c == 0x0D ||
+		    c == 0x22 ||
+		    c == 0x2F ||
+		    c == 0x5C)
+			new_buffer_size += 2;
+		else if (c <= 0x1F)
+			new_buffer_size += 6;
+			
+#		ifdef Py_UNICODE_WIDE
+			else if (c > 0xFFFF)
+				new_buffer_size += 12;
+#		endif
+		
+		else if (c > 0x7E)
+			new_buffer_size += 6;
+		else
+			new_buffer_size += 1;
+	}
+	
+	retval = PyUnicode_FromUnicode (NULL, new_buffer_size);
+	if (!retval) return NULL;
+	
+	/* Fill the new buffer */
+	p = PyUnicode_AS_UNICODE (retval);
+	*p++ = '"';
+	for (ii = 0; ii < old_buffer_size; ii++)
+	{
+		c = old_buffer[ii];
+		if (c > 0x1F &&
+		    c <= 0x7E &&
+		    c != '\\' &&
+		    c != '"' &&
+		    c != '/')
+		{ *p++ = c; }
+		else
+		{ p = escape_unichar (c, p); }
+	}
+	*p++ = '"';
+	return retval;
 }
 
 static PyObject *
@@ -1497,6 +1655,14 @@ static unsigned char
 serializer_raise (Serializer *s, const char *error_key)
 {
 	PyObject_CallMethod (s->error_helper, (char*)error_key, "");
+	return 0;
+}
+
+static unsigned char
+serializer_raise_reserved_cp (Serializer *s, Py_UNICODE c)
+{
+	PyObject_CallMethod (s->error_helper,
+	                     "reserved_code_point", "k", c);
 	return 0;
 }
 
