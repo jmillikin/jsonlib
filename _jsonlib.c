@@ -30,9 +30,6 @@ typedef struct _ModuleState
 	PyObject *true_str;
 	PyObject *false_str;
 	PyObject *null_str;
-	PyObject *inf_str;
-	PyObject *neg_inf_str;
-	PyObject *nan_str;
 	PyObject *quote;
 } ModuleState;
 
@@ -826,13 +823,13 @@ static unsigned char
 serializer_run (Serializer *, PyObject *);
 
 static unsigned char
-serialize_object (Serializer *, PyObject *, int, unsigned char);
+serialize_object (Serializer *, PyObject *, unsigned int, unsigned char);
 
 static unsigned char
-serialize_mapping (Serializer *, PyObject *, int);
+serialize_mapping (Serializer *, PyObject *, unsigned int);
 
 static unsigned char
-serialize_iterable (Serializer *, PyObject *, int);
+serialize_iterator (Serializer *, PyObject *, PyObject *, unsigned int);
 
 static unsigned char
 serialize_atom (Serializer *, PyObject *);
@@ -851,6 +848,9 @@ serialize_decimal (Serializer *, PyObject *);
 
 static unsigned char
 serializer_is_atomic (Serializer *, PyObject *);
+
+static unsigned char
+serializer_raise (Serializer *, const char *);
 
 static unsigned char
 buffer_serializer_append_ascii (Serializer *, const char *, size_t);
@@ -924,133 +924,335 @@ jsonlib_write (PyObject *self, PyObject *args)
 }
 
 static unsigned char
-serializer_run (Serializer *serializer, PyObject *value)
+serializer_run (Serializer *s, PyObject *value)
 {
 	const char *colon;
 	unsigned char retval;
 	
 	/* Generate the colon constant */
-	colon = serializer->indent == Py_None? ":" : ": ";
-	if (!(serializer->colon = ascii_constant (colon, -1)))
+	colon = s->indent == Py_None? ":" : ": ";
+	if (!(s->colon = ascii_constant (colon, -1)))
 	{ return 0; }
 	
 	/* Run, clean up, return */
-	retval = serialize_object (serializer, value, 0, 0);
-	Py_DECREF (serializer->colon);
+	retval = serialize_object (s, value, 0, 0);
+	Py_DECREF (s->colon);
 	return retval;
 }
 
 static unsigned char
-serialize_object (Serializer *serializer, PyObject *value,
-                  int indent_level, unsigned char in_unknown_hook)
+serialize_object (Serializer *s, PyObject *value,
+                  unsigned int indent_level, unsigned char in_unknown_hook)
 {
 	PyObject *new_value, *iter;
 	unsigned char retval;
 	
 	/* UserStrings need to be unwrapped. */
-	if (PyObject_IsInstance (value,
-	    serializer->module->UserString) == 1)
+	if (PyObject_IsInstance (value, s->module->UserString) == 1)
 	{
 		// TODO: does this leak?
 		value = PyObject_GetAttrString (value, "data");
 	}
 	
 	/* Check built-in atomic types */
-	if (serializer_is_atomic (serializer, value))
-	{ return serialize_atom (serializer, value); }
+	if (serializer_is_atomic (s, value))
+	{ return serialize_atom (s, value); }
 	
-	if (PyMapping_Check (value))
-	{ return serialize_mapping (serializer, value, indent_level); }
+	/* http://bugs.python.org/issue5945 */
+	/*if (PyMapping_Check (value))*/
+	if (PyObject_HasAttrString (value, "items"))
+	{ return serialize_mapping (s, value, indent_level); }
 	
 	if ((iter = PyObject_GetIter (value)))
 	{
-		retval = serialize_iterable (serializer, value, indent_level);
+		retval = serialize_iterator (s, iter, value, indent_level);
 		Py_DECREF (iter);
 		return retval;
 	}
 	
 	if (in_unknown_hook)
 	{
-		PyObject_CallMethod (
-			serializer->error_helper,
+		PyObject_CallMethod (s->error_helper,
 			"unknown_serializer",
 			"O", value);
 		return 0;
 	}
 	
-	new_value = PyObject_CallFunctionObjArgs (
-		serializer->on_unknown,
+	new_value = PyObject_CallFunctionObjArgs (s->on_unknown,
 		value, NULL);
 	if (!new_value)
 	{ return 0; }
 	
-	retval = serialize_object (serializer, new_value,
-	                           indent_level, 1);
+	retval = serialize_object (s, new_value, indent_level, 1);
 	Py_DECREF (new_value);
 	return retval;
 }
 
 static unsigned char
-serialize_mapping (Serializer *serializer, PyObject *value,
-                   int indent_level)
+serialize_check_recursion (Serializer *s, PyObject *value)
 {
-	// TODO
+	int repr_ret = Py_ReprEnter (value);
+	if (repr_ret > 0)
+	{ serializer_raise (s, "self_referential"); }
+	
+	return (repr_ret == 0);
+}
+
+static unsigned char
+serializer_separators (Serializer *s, unsigned int indent_level,
+                       PyObject **indent_ret, PyObject **post_indent_ret)
+{
+	PyObject *repeated[2], *indent = NULL, *post_indent = NULL;
+	unsigned char retval = 1;
+	
+	*indent_ret = NULL;
+	*post_indent_ret = NULL;
+	if (s->indent == Py_None)
+	{ return 1; }
+	
+	repeated[0] = PySequence_Repeat (s->indent, indent_level);
+	repeated[1] = PySequence_Repeat (s->indent, indent_level + 1);
+	
+	if (!(repeated[0] && repeated[1]))
+	{ goto error; }
+	
+	indent = PyUnicode_FromFormat ("\n%S", repeated[1]);
+	post_indent = PyUnicode_FromFormat ("\n%S", repeated[0]);
+	
+	if (!(indent && post_indent))
+	{ goto error; }
+	
+	*indent_ret = indent;
+	*post_indent_ret = post_indent;
+	
+	goto success;
+error:
+	retval = 0;
+	Py_XDECREF (indent);
+	Py_XDECREF (post_indent);
+success:
+	Py_XDECREF (repeated[0]);
+	Py_XDECREF (repeated[1]);
+	return retval;
+}
+
+static unsigned char
+serializer_get_mapping_pair (Serializer *s, PyObject *iter,
+                             PyObject **key_ret, PyObject **value_ret,
+                             unsigned char *error_ret)
+{
+	PyObject *key = NULL, *value = NULL, *pair = NULL, *new_key;
+	
+	*key_ret = NULL;
+	*value_ret = NULL;
+	
+	if (!(pair = PyIter_Next (iter)))
+	{ return 0; }
+	
+	if (!(key = PySequence_GetItem (pair, 0)))
+	{ goto error; }
+	
+	/* Check for a valid key */
+	if (PyObject_IsInstance (key, s->module->UserString) == 1)
+	{
+		if (!(new_key = PyObject_GetAttrString (key, "data")))
+		{ goto error; }
+		key = new_key;
+		new_key = NULL;
+	}
+	
+	if (!PyUnicode_Check (key))
+	{
+		if (!s->coerce_keys)
+		{
+			serializer_raise (s, "invalid_object_key");
+			goto error;
+		}
+		
+		if (!(new_key = PyObject_Str (key)))
+		{ goto error; }
+		key = new_key;
+		new_key = NULL;
+	}
+	
+	if (!(value = PySequence_GetItem (pair, 1)))
+	{ goto error; }
+	
+	Py_DECREF (pair);
+	*key_ret = key;
+	*value_ret = value;
+	*error_ret = 0;
+	return 1;
+	
+error:
+	Py_DECREF (pair);
+	Py_XDECREF (key);
+	Py_XDECREF (value);
+	*error_ret = 1;
 	return 1;
 }
 
 static unsigned char
-serialize_iterable (Serializer *serializer, PyObject *value,
-                    int indent_level)
+serialize_mapping (Serializer *s, PyObject *mapping,
+                   unsigned int indent_level)
 {
-	// TODO
-	return 1;
+	unsigned char retval = 1, first = 1, error;
+	PyObject *indent = NULL, *post_indent = NULL, *keys = NULL,
+	         *iter = NULL, *key = NULL, *value = NULL;
+	
+	if (!serialize_check_recursion (s, mapping))
+	{ return 0; }
+	
+	if (!(keys = PyMapping_Items (mapping)))
+	{ goto error; }
+	
+	if (!(iter = PyObject_GetIter (keys)))
+	{ goto error; }
+	
+	if (!serializer_separators (s, indent_level, &indent, &post_indent))
+	{ goto error; }
+	
+	if (!s->append_ascii (s, "{", 1))
+	{ goto error; }
+	
+	while ((serializer_get_mapping_pair (s, iter, &key, &value, &error)))
+	{
+		if (error)
+		{ goto error; }
+		
+		if (first)
+		{ first = 0; }
+		else if (!s->append_ascii (s, ",", 1))
+		{ goto error; }
+		
+		if (indent && !s->append_unicode (s, indent))
+		{ goto error; }
+		
+		if (!serialize_object (s, key, indent_level + 1, 0))
+		{ goto error; }
+		
+		if (!s->append_ascii (s, ": ", indent? 2 : 1))
+		{ goto error; }
+		
+		if (!serialize_object (s, value, indent_level + 1, 0))
+		{ goto error; }
+		
+		Py_DECREF (key);
+		Py_DECREF (value);
+	}
+	
+	if (post_indent)
+	{
+		if (!s->append_unicode (s, post_indent))
+		{ goto error; }
+	}
+	
+	if (!s->append_ascii (s, "}", 1))
+	{ goto error; }
+	
+	goto success;
+error:
+	retval = 0;
+success:
+	Py_XDECREF (indent);
+	Py_XDECREF (post_indent);
+	Py_XDECREF (keys);
+	Py_XDECREF (iter);
+	Py_XDECREF (key);
+	Py_XDECREF (value);
+	Py_ReprLeave (mapping);
+	return retval;
 }
 
 static unsigned char
-serialize_atom (Serializer *serializer, PyObject *value)
+serialize_iterator (Serializer *s, PyObject *iter,
+                    PyObject *value, unsigned int indent_level)
 {
-	ModuleState *m = serializer->module;
+	unsigned char retval = 1, first = 1;
+	PyObject *indent = NULL, *post_indent = NULL, *item = NULL;
+	
+	if (!serialize_check_recursion (s, value))
+	{ return 0; }
+	
+	if (!serializer_separators (s, indent_level, &indent, &post_indent))
+	{ goto error; }
+	
+	if (!s->append_ascii (s, "[", 1))
+	{ goto error; }
+	
+	while ((item = PyIter_Next (iter)))
+	{
+		if (first)
+		{ first = 0; }
+		else if (!s->append_ascii (s, ",", 1))
+		{ goto error; }
+		
+		if (indent && !s->append_unicode (s, indent))
+		{ goto error; }
+		
+		if (!serialize_object (s, item, indent_level + 1, 0))
+		{ goto error; }
+		
+		Py_DECREF (item);
+		continue;
+	}
+	
+	if (post_indent)
+	{
+		if (!s->append_unicode (s, post_indent))
+		{ goto error; }
+	}
+	
+	if (!s->append_ascii (s, "]", 1))
+	{ goto error; }
+	
+	goto success;
+error:
+	retval = 0;
+success:
+	Py_XDECREF (indent);
+	Py_XDECREF (post_indent);
+	Py_XDECREF (item);
+	Py_ReprLeave (value);
+	return retval;
+}
+
+static unsigned char
+serialize_atom (Serializer *s, PyObject *value)
+{
+	ModuleState *m = s->module;
 	unsigned char retval;
 	
 	if (value == Py_True)
-	{
-		return serializer->append_unicode (
-			serializer, m->true_str);
-	}
+	{ return s->append_unicode (s, m->true_str); }
 	
 	if (value == Py_False)
-	{
-		return serializer->append_unicode (
-			serializer, m->false_str);
-	}
+	{ return s->append_unicode (s, m->false_str); }
 	
 	if (value == Py_None)
-	{
-		return serializer->append_unicode (
-			serializer, m->null_str);
-	}
+	{ return s->append_unicode (s, m->null_str); }
 	
 	/* Built-in types */
 	if (PyUnicode_Check (value))
-	{ return serialize_string (serializer, value); }
+	{ return serialize_string (s, value); }
 	
 	if (PyLong_Check (value))
 	{
 		PyObject *str;
 		if (!(str = PyObject_Str (value)))
 		{ return 0; }
-		retval = serializer->append_unicode (serializer, str);
+		retval = s->append_unicode (s, str);
 		Py_DECREF (str);
 		return retval;
 	}
 	if (PyFloat_Check (value))
-	{ return serialize_float (serializer, value); }
+	{ return serialize_float (s, value); }
 	
 	if (PyComplex_Check (value))
-	{ return serialize_complex (serializer, value); }
+	{ return serialize_complex (s, value); }
 	
 	if (PyObject_IsInstance (value, m->Decimal))
-	{ return serialize_decimal (serializer, value); }
+	{ return serialize_decimal (s, value); }
 	
 	PyErr_SetString (
 		PyExc_AssertionError,
@@ -1059,35 +1261,98 @@ serialize_atom (Serializer *serializer, PyObject *value)
 }
 
 static unsigned char
-serialize_string (Serializer *serializer, PyObject *value)
+serialize_string (Serializer *s, PyObject *value)
 {
 	// TODO
 	return 1;
 }
 
 static unsigned char
-serialize_float (Serializer *serializer, PyObject *value)
+serialize_float (Serializer *s, PyObject *value)
 {
-	// TODO
-	return 1;
+	PyObject *repr;
+	unsigned char retval;
+	double val = PyFloat_AS_DOUBLE (value);
+	
+	if (Py_IS_NAN (val))
+	{ return serializer_raise (s, "no_nan"); }
+	
+	if (Py_IS_INFINITY (val))
+	{
+		if (val < 0)
+		{ return serializer_raise (s, "no_neg_infinity"); }
+		
+		return serializer_raise (s, "no_infinity");
+	}
+	
+	if (!(repr = PyObject_Repr (value)))
+	{ return 0; }
+	
+	retval = s->append_unicode (s, repr);
+	Py_DECREF (repr);
+	return retval;
 }
 
 static unsigned char
-serialize_complex (Serializer *serializer, PyObject *value)
+serialize_complex (Serializer *s, PyObject *value)
 {
-	// TODO
-	return 1;
+	Py_complex complex = PyComplex_AsCComplex (value);
+	PyObject *real, *repr = NULL;
+	unsigned char retval = 1;
+	
+	if (complex.imag != 0)
+	{ return serializer_raise (s, "no_imaginary"); }
+	
+	if (!(real = PyFloat_FromDouble (complex.real)))
+	{ return 0; }
+	
+	repr = PyObject_Repr (real);
+	Py_DECREF (real);
+	
+	if (repr)
+	{ retval = s->append_unicode (s, repr); }
+	
+	Py_XDECREF (repr);
+	return retval;
 }
 
 static unsigned char
-serialize_decimal (Serializer *serializer, PyObject *value)
+serialize_decimal (Serializer *s, PyObject *value)
 {
-	// TODO
-	return 1;
+	PyObject *str = NULL;
+	const char *error = NULL;
+	unsigned char retval = 1;
+	
+	if (!(str = PyObject_Str (value)))
+	{ return 0; }
+	
+	if (PyUnicode_CompareWithASCIIString (str, "Infinity") == 0)
+	{ error = "no_infinity"; }
+	
+	else if (PyUnicode_CompareWithASCIIString (str, "-Infinity") == 0)
+	{ error = "no_neg_infinity"; }
+	
+	else if (PyUnicode_CompareWithASCIIString (str, "NaN") == 0)
+	{ error = "no_nan"; }
+	
+	if (error)
+	{ retval = serializer_raise (s, error); }
+	else
+	{ retval = s->append_unicode (s, str); }
+	
+	Py_DECREF (str);
+	return retval;
 }
 
 static unsigned char
-serializer_is_atomic (Serializer *serializer, PyObject *value)
+serializer_raise (Serializer *s, const char *error_key)
+{
+	PyObject_CallMethod (s->error_helper, (char*)error_key, "");
+	return 0;
+}
+
+static unsigned char
+serializer_is_atomic (Serializer *s, PyObject *value)
 {
 	int is_decimal;
 	
@@ -1100,8 +1365,7 @@ serializer_is_atomic (Serializer *serializer, PyObject *value)
 	    PyUnicode_Check (value))
 	{ return 1; }
 	
-	is_decimal = PyObject_IsInstance (value,
-		serializer->module->Decimal);
+	is_decimal = PyObject_IsInstance (value, s->module->Decimal);
 	return (is_decimal > 0);
 }
 
@@ -1218,9 +1482,6 @@ PyInit__jsonlib (void)
 	state->true_str = ascii_constant ("true", -1);
 	state->false_str = ascii_constant ("false", -1);
 	state->null_str = ascii_constant ("null", -1);
-	state->inf_str = ascii_constant ("Infinity", -1);
-	state->neg_inf_str = ascii_constant ("-Infinity", -1);
-	state->nan_str = ascii_constant ("NaN", -1);
 	state->quote = ascii_constant ("\"", -1);
 	return module;
 }
