@@ -962,7 +962,13 @@ serialize_object (Serializer *s, PyObject *value,
 	
 	/* Check built-in atomic types */
 	if (serializer_is_atomic (s, value))
-	{ return serialize_atom (s, value); }
+	{
+		if (indent_level == 0)
+		{
+			return serializer_raise (s, "invalid_root");
+		}
+		return serialize_atom (s, value);
+	}
 	
 	/* http://bugs.python.org/issue5945 */
 	/*if (PyMapping_Check (value))*/
