@@ -822,6 +822,7 @@ jsonlib_write (PyObject *, PyObject *);
 static unsigned char
 serializer_run (Serializer *, PyObject *);
 
+/* Generic serialization procedures */
 static unsigned char
 serialize_object (Serializer *, PyObject *, unsigned int, unsigned char);
 
@@ -837,6 +838,13 @@ serialize_atom (Serializer *, PyObject *);
 static unsigned char
 serialize_string (Serializer *, PyObject *);
 
+/* Special-case procedures, for performance */
+static unsigned char
+serialize_atom_fast (Serializer *, PyObject *);
+
+static unsigned char
+serialize_dict (Serializer *, PyObject *, unsigned int);
+
 static PyObject *
 escape_string_ascii (Serializer *, PyObject *);
 
@@ -851,9 +859,6 @@ serialize_complex (Serializer *, PyObject *);
 
 static unsigned char
 serialize_decimal (Serializer *, PyObject *);
-
-static unsigned char
-serializer_is_atomic (Serializer *, PyObject *);
 
 static unsigned char
 serializer_raise (Serializer *, const char *);
@@ -913,7 +918,7 @@ jsonlib_write (PyObject *self, PyObject *args)
 	base->append_unicode = buffer_serializer_append_unicode;
 	
 	if (!serializer_run (base, value))
-	{ return NULL; } // TODO: memory leak of encoder.buffer?
+	{ return NULL; } /* TODO: memory leak of encoder.buffer? */
 	
 	if (encoding)
 	{
@@ -956,21 +961,28 @@ serialize_object (Serializer *s, PyObject *value,
 	PyObject *new_value, *iter;
 	unsigned char retval;
 	
-	/* UserStrings need to be unwrapped. */
-	if (PyObject_IsInstance (value, s->module->UserString) == 1)
-	{
-		// TODO: does this leak?
-		value = PyObject_GetAttrString (value, "data");
-	}
-	
 	/* Check built-in atomic types */
-	if (serializer_is_atomic (s, value))
+	retval = serialize_atom_fast (s, value);
+	
+	/* Fast special-case tests */
+	if (retval == 0 || retval == 1)
 	{
 		if (indent_level == 0)
-		{
-			return serializer_raise (s, "invalid_root");
-		}
-		return serialize_atom (s, value);
+		{ return serializer_raise (s, "invalid_root"); }
+		return retval;
+	}
+	
+	if (PyDict_CheckExact (value) && !s->sort_keys)
+	{ return serialize_dict (s, value, indent_level); }
+	
+	/* Slow, general tests */
+	
+	retval = serialize_atom (s, value);
+	if (retval == 0 || retval == 1)
+	{
+		if (indent_level == 0)
+		{ return serializer_raise (s, "invalid_root"); }
+		return retval;
 	}
 	
 	/* http://bugs.python.org/issue5945 */
@@ -1051,12 +1063,42 @@ success:
 	return retval;
 }
 
+static PyObject *
+serializer_validate_mapping_key (Serializer *s, PyObject *key)
+{
+	unsigned char valid;
+	
+	/* Check for a valid key */
+	valid = PyUnicode_Check (key);
+	if (!valid)
+	{
+		if (PyObject_IsInstance (key, s->module->UserString) == 1)
+		{
+			if (!(key = PyObject_GetAttrString (key, "data")))
+			{ goto error; }
+			valid = PyUnicode_Check (key);
+		}
+		
+		if (!valid && !s->coerce_keys)
+		{
+			serializer_raise (s, "invalid_object_key");
+			goto error;
+		}
+		
+		if (!(key = PyObject_Str (key)))
+		{ goto error; }
+	}
+	return key;
+error:
+	return NULL;
+}
+
 static unsigned char
 serializer_get_mapping_pair (Serializer *s, PyObject *iter,
                              PyObject **key_ret, PyObject **value_ret,
                              unsigned char *error_ret)
 {
-	PyObject *key = NULL, *value = NULL, *pair = NULL, *new_key;
+	PyObject *key = NULL, *value = NULL, *pair = NULL;
 	
 	*key_ret = NULL;
 	*value_ret = NULL;
@@ -1068,27 +1110,8 @@ serializer_get_mapping_pair (Serializer *s, PyObject *iter,
 	{ goto error; }
 	
 	/* Check for a valid key */
-	if (PyObject_IsInstance (key, s->module->UserString) == 1)
-	{
-		if (!(new_key = PyObject_GetAttrString (key, "data")))
-		{ goto error; }
-		key = new_key;
-		new_key = NULL;
-	}
-	
-	if (!PyUnicode_Check (key))
-	{
-		if (!s->coerce_keys)
-		{
-			serializer_raise (s, "invalid_object_key");
-			goto error;
-		}
-		
-		if (!(new_key = PyObject_Str (key)))
-		{ goto error; }
-		key = new_key;
-		new_key = NULL;
-	}
+	if (!(key = serializer_validate_mapping_key (s, key)))
+	{ goto error; }
 	
 	if (!(value = PySequence_GetItem (pair, 1)))
 	{ goto error; }
@@ -1220,7 +1243,6 @@ serialize_iterator (Serializer *s, PyObject *iter,
 		{ goto error; }
 		
 		Py_DECREF (item);
-		continue;
 	}
 	
 	if (post_indent)
@@ -1244,7 +1266,7 @@ success:
 }
 
 static unsigned char
-serialize_atom (Serializer *s, PyObject *value)
+serialize_atom_fast (Serializer *s, PyObject *value)
 {
 	ModuleState *m = s->module;
 	unsigned char retval;
@@ -1258,11 +1280,10 @@ serialize_atom (Serializer *s, PyObject *value)
 	if (value == Py_None)
 	{ return s->append_unicode (s, m->null_str); }
 	
-	/* Built-in types */
-	if (PyUnicode_Check (value))
+	if (PyUnicode_CheckExact (value))
 	{ return serialize_string (s, value); }
 	
-	if (PyLong_Check (value))
+	if (PyLong_CheckExact (value))
 	{
 		PyObject *str;
 		if (!(str = PyObject_Str (value)))
@@ -1271,19 +1292,13 @@ serialize_atom (Serializer *s, PyObject *value)
 		Py_DECREF (str);
 		return retval;
 	}
-	if (PyFloat_Check (value))
+	if (PyFloat_CheckExact (value))
 	{ return serialize_float (s, value); }
 	
-	if (PyComplex_Check (value))
+	if (PyComplex_CheckExact (value))
 	{ return serialize_complex (s, value); }
 	
-	if (PyObject_IsInstance (value, m->Decimal))
-	{ return serialize_decimal (s, value); }
-	
-	PyErr_SetString (
-		PyExc_AssertionError,
-		"value is atomic");
-	return 0;
+	return 2;
 }
 
 static unsigned char
@@ -1366,6 +1381,103 @@ error:
 	retval = 0;
 success:
 	Py_XDECREF (escaped);
+	return retval;
+}
+
+static unsigned char
+serialize_atom (Serializer *s, PyObject *value)
+{
+	ModuleState *m = s->module;
+	unsigned char retval;
+	
+	if (PyObject_IsInstance (value, m->Decimal))
+	{ return serialize_decimal (s, value); }
+	
+	if (PyUnicode_Check (value))
+	{ return serialize_string (s, value); }
+	
+	if (PyLong_Check (value))
+	{
+		PyObject *str;
+		if (!(str = PyObject_Str (value)))
+		{ return 0; }
+		retval = s->append_unicode (s, str);
+		Py_DECREF (str);
+		return retval;
+	}
+	if (PyFloat_Check (value))
+	{ return serialize_float (s, value); }
+	
+	if (PyComplex_Check (value))
+	{ return serialize_complex (s, value); }
+	
+	/* UserStrings need to be unwrapped. */
+	if (PyObject_IsInstance (value, s->module->UserString) == 1)
+	{
+		value = PyObject_GetAttrString (value, "data");
+		if (PyUnicode_Check (value))
+		{ return serialize_string (s, value); }
+	}
+	
+	return 2;
+}
+
+static unsigned char
+serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
+{
+	unsigned char retval = 1, first = 1;
+	Py_ssize_t dict_pos = 0;
+	PyObject *indent = NULL, *post_indent = NULL,
+	         *key = NULL, *value = NULL;
+	
+	if (!serialize_check_recursion (s, dict))
+	{ return 0; }
+	
+	if (!serializer_separators (s, indent_level, &indent, &post_indent))
+	{ goto error; }
+	
+	if (!s->append_ascii (s, "{", 1))
+	{ goto error; }
+	
+	while (PyDict_Next (dict, &dict_pos, &key, &value))
+	{
+		if (!(key = serializer_validate_mapping_key (s, key)))
+		{ goto error; }
+		
+		if (first)
+		{ first = 0; }
+		else if (!s->append_ascii (s, ",", 1))
+		{ goto error; }
+		
+		if (indent && !s->append_unicode (s, indent))
+		{ goto error; }
+		
+		if (!serialize_object (s, key, indent_level + 1, 0))
+		{ goto error; }
+		
+		if (!s->append_ascii (s, ": ", indent? 2 : 1))
+		{ goto error; }
+		
+		if (!serialize_object (s, value, indent_level + 1, 0))
+		{ goto error; }
+	}
+	
+	if (post_indent)
+	{
+		if (!s->append_unicode (s, post_indent))
+		{ goto error; }
+	}
+	
+	if (!s->append_ascii (s, "}", 1))
+	{ goto error; }
+	
+	goto success;
+error:
+	retval = 0;
+success:
+	Py_XDECREF (indent);
+	Py_XDECREF (post_indent);
+	Py_ReprLeave (dict);
 	return retval;
 }
 
@@ -1676,24 +1788,6 @@ serializer_raise_reserved_cp (Serializer *s, Py_UNICODE c)
 	PyObject_CallMethod (s->error_helper,
 	                     "reserved_code_point", "k", c);
 	return 0;
-}
-
-static unsigned char
-serializer_is_atomic (Serializer *s, PyObject *value)
-{
-	int is_decimal;
-	
-	if (value == Py_True ||
-	    value == Py_False ||
-	    value == Py_None ||
-	    PyLong_Check (value) ||
-	    PyFloat_Check (value) ||
-	    PyComplex_Check (value) ||
-	    PyUnicode_Check (value))
-	{ return 1; }
-	
-	is_decimal = PyObject_IsInstance (value, s->module->Decimal);
-	return (is_decimal > 0);
 }
 
 static unsigned char
