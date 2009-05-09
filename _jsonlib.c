@@ -993,40 +993,54 @@ serialize_object (Serializer *s, PyObject *value,
 	PyObject *new_value, *iter;
 	unsigned char retval;
 	
+	Py_INCREF (value);
+	
+	/* Fast special-case tests */
+	
 	/* Check built-in atomic types */
 	retval = serialize_atom_fast (s, value);
 	
-	/* Fast special-case tests */
 	if (retval == 0 || retval == 1)
 	{
 		if (indent_level == 0 && retval == 1)
-		{ return serializer_raise (s, "invalid_root"); }
-		return retval;
+		{
+			serializer_raise (s, "invalid_root");
+			goto error;
+		}
+		goto done;
 	}
 	
 	if (PyDict_CheckExact (value) && !s->sort_keys)
-	{ return serialize_dict (s, value, indent_level); }
+	{
+		retval = serialize_dict (s, value, indent_level);
+		goto done;
+	}
 	
 	/* Slow, general tests */
-	
 	retval = serialize_atom (s, value);
 	if (retval == 0 || retval == 1)
 	{
 		if (indent_level == 0 && retval == 1)
-		{ return serializer_raise (s, "invalid_root"); }
-		return retval;
+		{
+			serializer_raise (s, "invalid_root");
+			goto error;
+		}
+		goto done;
 	}
 	
 	/* http://bugs.python.org/issue5945 */
 	/*if (PyMapping_Check (value))*/
 	if (PyObject_HasAttrString (value, "items"))
-	{ return serialize_mapping (s, value, indent_level); }
+	{
+		retval = serialize_mapping (s, value, indent_level);
+		goto done;
+	}
 	
 	if ((iter = PyObject_GetIter (value)))
 	{
 		retval = serialize_iterator (s, iter, value, indent_level);
 		Py_DECREF (iter);
-		return retval;
+		goto done;
 	}
 	
 	if (in_unknown_hook)
@@ -1034,16 +1048,22 @@ serialize_object (Serializer *s, PyObject *value,
 		PyObject_CallMethod (s->error_helper,
 			"unknown_serializer",
 			"O", value);
-		return 0;
+		goto error;
 	}
 	
 	new_value = PyObject_CallFunctionObjArgs (s->on_unknown,
 		value, NULL);
 	if (!new_value)
-	{ return 0; }
+	{ goto error; }
 	
 	retval = serialize_object (s, new_value, indent_level, 1);
 	Py_DECREF (new_value);
+	goto done;
+	
+error:
+	retval = 0;
+done:
+	Py_DECREF (value);
 	return retval;
 }
 
@@ -1484,6 +1504,9 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 	
 	while (PyDict_Next (dict, &dict_pos, &key, &value))
 	{
+		Py_INCREF (key);
+		Py_INCREF (value);
+		
 		if (!(key = serializer_validate_mapping_key (s, key)))
 		{ goto error; }
 		
@@ -1504,6 +1527,11 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 		
 		if (!serialize_object (s, value, indent_level + 1, 0))
 		{ goto error; }
+		
+		Py_DECREF (key);
+		Py_DECREF (value);
+		key = NULL;
+		value = NULL;
 	}
 	
 	if (post_indent && !s->append_unicode (s, post_indent))
@@ -1518,6 +1546,8 @@ error:
 success:
 	Py_XDECREF (indent);
 	Py_XDECREF (post_indent);
+	Py_XDECREF (key);
+	Py_XDECREF (value);
 	Py_ReprLeave (dict);
 	return retval;
 }
