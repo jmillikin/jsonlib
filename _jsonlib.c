@@ -64,7 +64,7 @@ parse_string (Parser *);
 static PyObject *
 parse_string_full (Parser *, Py_UNICODE *, size_t);
 
-static int
+static unsigned char
 parse_unicode_escape (Parser *, Py_UNICODE *, Py_UNICODE *,
                       size_t *, size_t *, size_t);
 
@@ -117,11 +117,7 @@ jsonlib_read (PyObject *self, PyObject *args)
 		result = parser_raise (&parser, "extra_data");
 	}
 	
-	if (parser.stringparse_buffer)
-	{
-		PyMem_Free (parser.stringparse_buffer);
-	}
-	
+	PyMem_Free (parser.stringparse_buffer);
 	return result;
 }
 
@@ -203,8 +199,6 @@ parse_object (Parser *parser)
 	
 	while (1)
 	{
-		key = value = NULL;
-		
 		if (!skip_whitespace (parser, start, "Unterminated object."))
 		{ goto error; }
 		
@@ -284,8 +278,6 @@ parse_array (Parser *parser)
 	
 	while (1)
 	{
-		value = NULL;
-		
 		if (!skip_whitespace (parser, start, "Unterminated array."))
 		{ goto error; }
 		
@@ -371,16 +363,12 @@ parse_string (Parser *parser)
 	{ return parser_raise_unterminated_string (parser, start); }
 	
 	if (fancy)
-	{
-		return parse_string_full (parser, start, ii);
-	}
+	{ return parse_string_full (parser, start, ii); }
 	
 	/* No fancy features, return the string directly */
-	unicode = PyUnicode_FromUnicode (start + 1, ii - 1);
-	if (unicode)
-	{
-		parser->index = start + ii + 1;
-	}
+	if ((unicode = PyUnicode_FromUnicode (start + 1, ii - 1)))
+	{ parser->index = start + ii + 1; }
+	
 	return unicode;
 }
 
@@ -399,8 +387,10 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 		size_t new_size, existing_size;
 		existing_size = parser->stringparse_buffer_size;
 		new_size = next_power_2 (1, max_char_count);
-		parser->stringparse_buffer = PyMem_Resize (buffer, Py_UNICODE, new_size);
-		buffer = parser->stringparse_buffer;
+		if (!(buffer = PyMem_Resize (buffer, Py_UNICODE, new_size)))
+		{ return NULL; }
+		
+		parser->stringparse_buffer = buffer;
 		parser->stringparse_buffer_size = new_size;
 	}
 	
@@ -415,7 +405,7 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 		while (!escaped)
 		{
 			if (start + ii >= parser->end)
-			{ parser_raise_unterminated_string (parser, start); }
+			{ return parser_raise_unterminated_string (parser, start); }
 			
 			c = start[ii];
 			if (c == '\\') { escaped = 1; }
@@ -433,7 +423,7 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 		
 		escaped = 0;
 		if (start + ii >= parser->end)
-		{ parser_raise_unterminated_string (parser, start); }
+		{ return parser_raise_unterminated_string (parser, start); }
 		
 		c = start[ii];
 		switch (c)
@@ -470,7 +460,7 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 	}
 }
 
-static int
+static unsigned char
 read_4hex (Py_UNICODE *start, Py_UNICODE *retval_ptr)
 {
 	PyObject *py_long;
@@ -483,7 +473,7 @@ read_4hex (Py_UNICODE *start, Py_UNICODE *retval_ptr)
 	return 1;
 }
 
-static int
+static unsigned char
 parse_unicode_escape (Parser *parser, Py_UNICODE *string_start, Py_UNICODE *buffer,
                       size_t *buffer_idx, size_t *index_ptr, size_t max_char_count)
 {
@@ -580,7 +570,7 @@ keyword_compare (Parser *parser, const char *expected, size_t len,
 		for (ii = 0; ii < len; ii++)
 		{
 			if (parser->index[ii] != (unsigned char)(expected[ii]))
-				return NULL;
+			{ return NULL; }
 		}
 		parser->index += len;
 		Py_INCREF (retval);
@@ -607,7 +597,7 @@ parse_number (Parser *parser)
 {
 	PyObject *object = NULL;
 	unsigned char is_float = 0, should_stop = 0, got_digit = 0,
-	    leading_zero = 0, has_exponent = 0;
+	              leading_zero = 0, has_exponent = 0;
 	Py_UNICODE *ptr;
 	
 	ptr = parser->index;
@@ -618,13 +608,11 @@ parse_number (Parser *parser)
 		{
 		case '0':
 			if (!got_digit)
-			{
-				leading_zero = 1;
-			}
+			{ leading_zero = 1; }
+			
 			else if (leading_zero && !is_float)
-			{
-				return parser_raise (parser, "invalid_number");
-			}
+			{ return parser_raise (parser, "invalid_number"); }
+			
 			got_digit = 1;
 			break;
 		case '1':
@@ -637,9 +625,8 @@ parse_number (Parser *parser)
 		case '8':
 		case '9':
 			if (leading_zero && !is_float)
-			{
-				return parser_raise (parser, "invalid_number");
-			}
+			{ return parser_raise (parser, "invalid_number"); }
+			
 			got_digit = 1;
 			break;
 		case '-':
@@ -671,9 +658,8 @@ parse_number (Parser *parser)
 			{ return NULL; }
 			
 			if (parser->use_float)
-			{
-				object = PyFloat_FromString (str);
-			}
+			{ object = PyFloat_FromString (str); }
+			
 			else
 			{
 				object = PyObject_CallFunctionObjArgs (
@@ -689,10 +675,8 @@ parse_number (Parser *parser)
 		}
 	}
 	
-	if (object == NULL)
-	{
-		return parser_raise (parser, "invalid_number");
-	}
+	if (!object)
+	{ return parser_raise (parser, "invalid_number"); }
 	
 	parser->index = ptr;
 	return object;
@@ -701,7 +685,8 @@ parse_number (Parser *parser)
 static unsigned char
 skip_whitespace (Parser *parser, Py_UNICODE *start, const char *message)
 {
-	if (message && !start) { start = parser->index; }
+	if (message && !start)
+	{ start = parser->index; }
 	
 	/* Don't use Py_UNICODE_ISSPACE, because it returns TRUE for
 	 * codepoints that are not valid JSON whitespace.
@@ -722,8 +707,8 @@ skip_whitespace (Parser *parser, Py_UNICODE *start, const char *message)
 	if (message)
 	{
 		PyObject_CallMethod (parser->error_helper, "generic", "uks",
-			parser->start, (start - parser->start),
-			message);
+		                     parser->start, (start - parser->start),
+		                     message);
 		return 0;
 	}
 	return 1;
@@ -753,8 +738,7 @@ static PyObject *
 parser_raise_unexpected (Parser *parser, const char *message)
 {
 	return PyObject_CallMethod (parser->error_helper, "unexpected", "uks",
-		parser->start, (parser->index - parser->start),
-		message);
+		parser->start, (parser->index - parser->start), message);
 }
 
 static PyObject *
@@ -767,7 +751,9 @@ parser_raise_unterminated_string (Parser *parser, Py_UNICODE *start)
 static size_t
 next_power_2 (size_t start, size_t min)
 {
-	while (start < min) start <<= 1;
+	while (start < min)
+	{ start <<= 1; }
+	
 	return start;
 }
 
@@ -885,11 +871,9 @@ static unsigned char
 stream_serializer_append_unicode (Serializer *, PyObject *);
 
 static PyObject *
-ascii_constant (const char *value, int len)
+ascii_constant (const char *value)
 {
-	if (len < 0)
-		len = strlen (value);
-	return PyUnicode_DecodeASCII (value, len, "strict");
+	return PyUnicode_DecodeASCII (value, strlen (value), "strict");
 }
 
 static PyObject *
@@ -902,9 +886,7 @@ jsonlib_write (PyObject *self, PyObject *args)
 	/* Parameters */
 	PyObject *value;
 	char *encoding;
-	unsigned char sort_keys = 0,
-	              ascii_only = 0,
-	              coerce_keys = 0;
+	unsigned char sort_keys, ascii_only, coerce_keys;
 	
 	if (!PyArg_ParseTuple(args, "ObObbzOO",
 		&value,
@@ -927,7 +909,7 @@ jsonlib_write (PyObject *self, PyObject *args)
 	base->append_unicode = buffer_serializer_append_unicode;
 	
 	if (!serializer_run (base, value))
-	{ return NULL; } /* TODO: memory leak of encoder.buffer? */
+	{ goto error; }
 	
 	if (encoding)
 	{
@@ -942,6 +924,7 @@ jsonlib_write (PyObject *self, PyObject *args)
 			serializer.buffer, serializer.buffer_size);
 	}
 	
+error:
 	PyMem_Free (serializer.buffer);
 	return result;
 }
@@ -954,10 +937,7 @@ jsonlib_dump (PyObject *self, PyObject *args)
 	
 	/* Parameters */
 	PyObject *value;
-	unsigned char sort_keys = 0,
-	              ascii_only = 0,
-	              coerce_keys = 0,
-	              ascii_safe = 0;
+	unsigned char sort_keys, ascii_only, coerce_keys, ascii_safe;
 	
 	if (!PyArg_ParseTuple(args, "OObObbzbOO",
 		&value,
@@ -997,7 +977,7 @@ serializer_run (Serializer *s, PyObject *value)
 	
 	/* Generate the colon constant */
 	colon = s->indent == Py_None? ":" : ": ";
-	if (!(s->colon = ascii_constant (colon, -1)))
+	if (!(s->colon = ascii_constant (colon)))
 	{ return 0; }
 	
 	/* Run, clean up, return */
@@ -1081,7 +1061,7 @@ static unsigned char
 serializer_separators (Serializer *s, unsigned int indent_level,
                        PyObject **indent_ret, PyObject **post_indent_ret)
 {
-	PyObject *repeated[2], *indent = NULL, *post_indent = NULL;
+	PyObject *repeated[2] = {NULL}, *indent = NULL, *post_indent = NULL;
 	unsigned char retval = 1;
 	
 	*indent_ret = NULL;
@@ -1124,10 +1104,13 @@ serializer_validate_mapping_key (Serializer *s, PyObject *key)
 	valid = PyUnicode_Check (key);
 	if (!valid)
 	{
+		PyObject *new_key;
 		if (PyObject_IsInstance (key, s->module->UserString) == 1)
 		{
-			if (!(key = PyObject_GetAttrString (key, "data")))
+			if (!(new_key = PyObject_GetAttrString (key, "data")))
 			{ goto error; }
+			Py_DECREF (key);
+			key = new_key;
 			valid = PyUnicode_Check (key);
 		}
 		
@@ -1137,11 +1120,14 @@ serializer_validate_mapping_key (Serializer *s, PyObject *key)
 			goto error;
 		}
 		
-		if (!(key = PyObject_Str (key)))
+		if (!(new_key = PyObject_Str (key)))
 		{ goto error; }
+		Py_DECREF (key);
+		key = new_key;
 	}
 	return key;
 error:
+	Py_DECREF (key);
 	return NULL;
 }
 
@@ -1178,7 +1164,7 @@ error:
 	Py_XDECREF (key);
 	Py_XDECREF (value);
 	*error_ret = 1;
-	return 1;
+	return 0;
 }
 
 static unsigned char
@@ -1218,11 +1204,9 @@ serialize_mapping (Serializer *s, PyObject *mapping,
 	
 	while ((serializer_get_mapping_pair (s, iter, &key, &value, &error)))
 	{
-		if (error)
-		{ goto error; }
-		
 		if (first)
 		{ first = 0; }
+		
 		else if (!s->append_ascii (s, ","))
 		{ goto error; }
 		
@@ -1241,12 +1225,11 @@ serialize_mapping (Serializer *s, PyObject *mapping,
 		Py_DECREF (key);
 		Py_DECREF (value);
 	}
+	if (error)
+	{ goto error; }
 	
-	if (post_indent)
-	{
-		if (!s->append_unicode (s, post_indent))
-		{ goto error; }
-	}
+	if (post_indent &&!s->append_unicode (s, post_indent))
+	{ goto error; }
 	
 	if (!s->append_ascii (s, "}"))
 	{ goto error; }
@@ -1285,6 +1268,7 @@ serialize_iterator (Serializer *s, PyObject *iter,
 	{
 		if (first)
 		{ first = 0; }
+		
 		else if (!s->append_ascii (s, ","))
 		{ goto error; }
 		
@@ -1297,11 +1281,8 @@ serialize_iterator (Serializer *s, PyObject *iter,
 		Py_DECREF (item);
 	}
 	
-	if (post_indent)
-	{
-		if (!s->append_unicode (s, post_indent))
-		{ goto error; }
-	}
+	if (post_indent && !s->append_unicode (s, post_indent))
+	{ goto error; }
 	
 	if (!s->append_ascii (s, "]"))
 	{ goto error; }
@@ -1340,10 +1321,12 @@ serialize_atom_fast (Serializer *s, PyObject *value)
 		PyObject *str;
 		if (!(str = PyObject_Str (value)))
 		{ return 0; }
+		
 		retval = s->append_unicode (s, str);
 		Py_DECREF (str);
 		return retval;
 	}
+	
 	if (PyFloat_CheckExact (value))
 	{ return serialize_float (s, value); }
 	
@@ -1440,7 +1423,7 @@ static unsigned char
 serialize_atom (Serializer *s, PyObject *value)
 {
 	ModuleState *m = s->module;
-	unsigned char retval;
+	unsigned char retval = 2;
 	
 	if (PyObject_IsInstance (value, m->Decimal))
 	{ return serialize_decimal (s, value); }
@@ -1453,10 +1436,12 @@ serialize_atom (Serializer *s, PyObject *value)
 		PyObject *str;
 		if (!(str = PyObject_Str (value)))
 		{ return 0; }
+		
 		retval = s->append_unicode (s, str);
 		Py_DECREF (str);
 		return retval;
 	}
+	
 	if (PyFloat_Check (value))
 	{ return serialize_float (s, value); }
 	
@@ -1466,12 +1451,18 @@ serialize_atom (Serializer *s, PyObject *value)
 	/* UserStrings need to be unwrapped. */
 	if (PyObject_IsInstance (value, s->module->UserString) == 1)
 	{
-		value = PyObject_GetAttrString (value, "data");
-		if (PyUnicode_Check (value))
-		{ return serialize_string (s, value); }
+		PyObject *data;
+		if (!(data = PyObject_GetAttrString (value, "data")))
+		{ return 0; }
+		
+		if (PyUnicode_Check (data))
+		{ retval = serialize_string (s, data); }
+		
+		Py_DECREF (data);
+		return retval;
 	}
 	
-	return 2;
+	return retval;
 }
 
 static unsigned char
@@ -1498,6 +1489,7 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 		
 		if (first)
 		{ first = 0; }
+		
 		else if (!s->append_ascii (s, ","))
 		{ goto error; }
 		
@@ -1514,11 +1506,8 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 		{ goto error; }
 	}
 	
-	if (post_indent)
-	{
-		if (!s->append_unicode (s, post_indent))
-		{ goto error; }
-	}
+	if (post_indent && !s->append_unicode (s, post_indent))
+	{ goto error; }
 	
 	if (!s->append_ascii (s, "}"))
 	{ goto error; }
@@ -1626,23 +1615,23 @@ escape_string_ascii (Serializer *s, PyObject *value)
 		    c == 0x22 ||
 		    c == 0x2F ||
 		    c == 0x5C)
-			new_buffer_size += 2;
+		{ new_buffer_size += 2; }
 		else if (c <= 0x1F)
-			new_buffer_size += 6;
-			
+		{ new_buffer_size += 6; }
+		
 #		ifdef Py_UNICODE_WIDE
-			else if (c > 0xFFFF)
-				new_buffer_size += 12;
+		else if (c > 0xFFFF)
+		{ new_buffer_size += 12; }
 #		endif
 		
 		else if (c > 0x7E)
-			new_buffer_size += 6;
+		{ new_buffer_size += 6; }
 		else
-			new_buffer_size += 1;
+		{ new_buffer_size += 1; }
 	}
 	
-	retval = PyUnicode_FromUnicode (NULL, new_buffer_size);
-	if (!retval) return NULL;
+	if (!(retval = PyUnicode_FromUnicode (NULL, new_buffer_size)))
+	{ return NULL; }
 	
 	/* Fill the new buffer */
 	p = PyUnicode_AS_UNICODE (retval);
@@ -1656,9 +1645,11 @@ escape_string_ascii (Serializer *s, PyObject *value)
 		    c != '"' &&
 		    c != '/')
 		{ *p++ = c; }
+		
 		else
 		{ p = escape_unichar (c, p); }
 	}
+	
 	*p++ = '"';
 	return retval;
 }
@@ -1702,15 +1693,15 @@ escape_string_unicode (Serializer *s, PyObject *value)
 		    c == 0x22 ||
 		    c == 0x2F ||
 		    c == 0x5C)
-			new_buffer_size += 2;
+		{ new_buffer_size += 2; }
 		else if (c <= 0x1F)
-			new_buffer_size += 6;
+		{ new_buffer_size += 6; }
 		else
-			new_buffer_size += 1;
+		{ new_buffer_size += 1; }
 	}
 	
-	retval = PyUnicode_FromUnicode (NULL, new_buffer_size);
-	if (!retval) { return NULL; }
+	if (!(retval = PyUnicode_FromUnicode (NULL, new_buffer_size)))
+	{ return NULL; }
 	
 	/* Fill the new buffer */
 	p = PyUnicode_AS_UNICODE (retval);
@@ -1719,21 +1710,29 @@ escape_string_unicode (Serializer *s, PyObject *value)
 	{
 		c = old_buffer[ii];
 		if (c == 0x08)
-			*p++ = '\\', *p++ = 'b';
+		{ *p++ = '\\', *p++ = 'b'; }
+		
 		else if (c == 0x09)
-			*p++ = '\\', *p++ = 't';
+		{ *p++ = '\\', *p++ = 't'; }
+		
 		else if (c == 0x0A)
-			*p++ = '\\', *p++ = 'n';
+		{ *p++ = '\\', *p++ = 'n'; }
+		
 		else if (c == 0x0C)
-			*p++ = '\\', *p++ = 'f';
+		{ *p++ = '\\', *p++ = 'f'; }
+		
 		else if (c == 0x0D)
-			*p++ = '\\', *p++ = 'r';
+		{ *p++ = '\\', *p++ = 'r'; }
+		
 		else if (c == 0x22)
-			*p++ = '\\', *p++ = '"';
+		{ *p++ = '\\', *p++ = '"'; }
+		
 		else if (c == 0x2F)
-			*p++ = '\\', *p++ = '/';
+		{ *p++ = '\\', *p++ = '/'; }
+		
 		else if (c == 0x5C)
-			*p++ = '\\', *p++ = '\\';
+		{ *p++ = '\\', *p++ = '\\'; }
+		
 		else if (c <= 0x1F)
 		{
 			*p++ = '\\';
@@ -1743,9 +1742,11 @@ escape_string_unicode (Serializer *s, PyObject *value)
 			*p++ = hexdigit[(c >> 4) & 0x0000000F];
 			*p++ = hexdigit[c & 0x0000000F];
 		}
+		
 		else
-			*p++ = c;
+		{ *p++ = c; }
 	}
+	
 	*p++ = '"';
 	return retval;
 }
@@ -1781,7 +1782,7 @@ serialize_complex (Serializer *s, PyObject *value)
 {
 	Py_complex complex = PyComplex_AsCComplex (value);
 	PyObject *real, *repr = NULL;
-	unsigned char retval = 1;
+	unsigned char retval;
 	
 	if (complex.imag != 0)
 	{ return serializer_raise (s, "no_imaginary"); }
@@ -1791,11 +1792,11 @@ serialize_complex (Serializer *s, PyObject *value)
 	
 	repr = PyObject_Repr (real);
 	Py_DECREF (real);
+	if (!repr)
+	{ return 0; }
 	
-	if (repr)
-	{ retval = s->append_unicode (s, repr); }
-	
-	Py_XDECREF (repr);
+	retval = s->append_unicode (s, repr);
+	Py_DECREF (repr);
 	return retval;
 }
 
@@ -2016,9 +2017,9 @@ PyInit__jsonlib (void)
 	state->UserString = from_import ("collections", "UserString");
 	
 	/* Constant strings */
-	state->true_str = ascii_constant ("true", -1);
-	state->false_str = ascii_constant ("false", -1);
-	state->null_str = ascii_constant ("null", -1);
+	state->true_str = ascii_constant ("true");
+	state->false_str = ascii_constant ("false");
+	state->null_str = ascii_constant ("null");
 	return module;
 }
 /* }}} */
