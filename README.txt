@@ -28,11 +28,11 @@ Deserialization
 ---------------
 
 To deserialize a JSON expression, call the ``jsonlib.read`` function with
-an instance of ``str`` or ``unicode``. ::
+an instance of ``str`` or ``bytes``. ::
 
 	>>> import jsonlib
-	>>> jsonlib.read ('["Hello world!"]')
-	[u'Hello world!']
+	>>> jsonlib.read (b'["Hello world!"]')
+	['Hello world!']
 
 Floating-point values
 ~~~~~~~~~~~~~~~~~~~~~
@@ -57,14 +57,14 @@ The simplest use is to call ``jsonlib.write`` with a Python value. ::
 
 	>>> import jsonlib
 	>>> jsonlib.write (['Hello world!'])
-	'["Hello world!"]'
+	b'["Hello world!"]'
 
 Pretty-Printing
 ~~~~~~~~~~~~~~~
 
 To "pretty-print" the output, pass a value for the ``indent`` parameter. ::
 
-	>>> print jsonlib.write (['Hello world!'], indent = '    ')
+	>>> print (jsonlib.write (['Hello world!'], indent = '    ').decode ('utf8'))
 	[
 	    "Hello world!"
 	]
@@ -78,9 +78,9 @@ stored by Python. To force a consistent ordering (for example, in doctests)
 use the ``sort_keys`` parameter. ::
 
 	>>> jsonlib.write ({'e': 'Hello', 'm': 'World!'})
-	'{"m":"World!","e":"Hello"}'
+	b'{"m":"World!","e":"Hello"}'
 	>>> jsonlib.write ({'e': 'Hello', 'm': 'World!'}, sort_keys = True)
-	'{"e":"Hello","m":"World!"}'
+	b'{"e":"Hello","m":"World!"}'
 
 Encoding and Unicode
 ~~~~~~~~~~~~~~~~~~~~
@@ -89,21 +89,21 @@ By default, the output is encoded in UTF-8. If you require a different
 encoding, pass the name of a Python codec as the ``encoding`` parameter. ::
 
 	>>> jsonlib.write (['Hello world!'], encoding = 'utf-16-be')
-	'\x00[\x00"\x00H\x00e\x00l\x00l\x00o\x00 \x00w\x00o\x00r\x00l\x00d\x00!\x00"\x00]'
+	b'\x00[\x00"\x00H\x00e\x00l\x00l\x00o\x00 \x00w\x00o\x00r\x00l\x00d\x00!\x00"\x00]'
 
 To retrieve an unencoded ``unicode`` instance, pass ``None`` for the
 encoding. ::
 
 	>>> jsonlib.write (['Hello world!'], encoding = None)
-	u'["Hello world!"]'
+	'["Hello world!"]'
 
 By default, non-ASCII codepoints are forbidden in the output. To include
 higher codepoints in the output, set ``ascii_only`` to ``False``. ::
 
-	>>> jsonlib.write ([u'Hello \u266a'], encoding = None)
-	u'["Hello \\u266a"]'
-	>>> jsonlib.write ([u'Hello \u266a'], encoding = None, ascii_only = False)
-	u'["Hello \u266a"]'
+	>>> jsonlib.write (['Hello \u266a'], encoding = None)
+	'["Hello \\u266a"]'
+	>>> jsonlib.write (['Hello \u266a'], encoding = None, ascii_only = False)
+	'["Hello \u266a"]'
 
 Mapping Key Coercion
 ~~~~~~~~~~~~~~~~~~~~
@@ -114,9 +114,9 @@ mapping keys to strings, so the ``coerce_keys`` parameter is available. ::
 
 	>>> jsonlib.write ({True: 1})
 	Traceback (most recent call last):
-	WriteError: Only strings may be used as object keys.
+	jsonlib.WriteError: Only strings may be used as object keys.
 	>>> jsonlib.write ({True: 1}, coerce_keys = True)
-	'{"true":1}'
+	b'{"True":1}'
 
 Serializing Other Types
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -125,7 +125,7 @@ If the object implements the iterator or mapping protocol, it will be
 handled automatically. If the object is intended for use as a basic value,
 it should subclass one of the supported basic values.
 
-String-like objects that do not inherit from ``str``, ``unicode``, or
+String-like objects that do not inherit from ``unicode`` or
 ``UserString.UserString`` will likely be serialized as a list. This will
 not be changed. If iterating them returns an instance of the same type, the
 serializer might crash. This (hopefully) will be changed.
@@ -134,11 +134,12 @@ To serialize a type not known to jsonlib, use the ``on_unknown`` parameter
 to ``write``::
 
 	>>> from datetime import date
-	>>> def unknown_handler (value):
-	...     if isinstance (value, date): return str (value)
-	...     raise jsonlib.UnknownSerializerError
+	>>> def unknown_handler (value, unknown):
+	...     if isinstance (value, date):
+	...         return str (value)
+	...     unknown (value)
 	>>> jsonlib.write ([date (2000, 1, 1)], on_unknown = unknown_handler)
-	'["2000-01-01"]'
+	b'["2000-01-01"]'
 
 Streaming Serializer
 ~~~~~~~~~~~~~~~~~~~~
@@ -148,7 +149,7 @@ too much memory to be used. For these situations, use the ``dump`` function
 to write objects to a file-like object::
 
 	>>> import sys
-	>>> jsonlib.dump (["Written to stdout"], sys.stdout)
+	>>> jsonlib.dump (["Written to stdout"], sys.stdout, encoding = None)
 	["Written to stdout"]
 	>>> 
 
@@ -178,6 +179,14 @@ serialized. See the ``on_unknown`` parameter to ``write``.
 
 Change Log
 ==========
+
+1.4
+---
+* Ported to Python 3.
+* ``coerce_keys`` no longer attempts to determine the "JSON" format for
+  a coerced value -- it will simply call ``str()``.
+* Serializing byte strings is no longer supported -- please use ``str``
+  objects instead.
 
 1.3.10
 ------
