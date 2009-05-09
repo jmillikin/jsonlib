@@ -30,7 +30,6 @@ typedef struct _ModuleState
 	PyObject *true_str;
 	PyObject *false_str;
 	PyObject *null_str;
-	PyObject *quote;
 } ModuleState;
 
 /* Parser {{{ */
@@ -781,7 +780,7 @@ struct _Serializer
 	ModuleState *module;
 	
 	/* Virtual implementation methods */
-	unsigned char (*append_ascii) (Serializer *, const char *, const size_t);
+	unsigned char (*append_ascii) (Serializer *, const char *);
 	unsigned char (*append_unicode) (Serializer *, PyObject *);
 	
 	/* Per-run constant. This isn't saved in the module state
@@ -811,6 +810,7 @@ typedef struct _StreamSerializer
 	Serializer base;
 	PyObject *stream;
 	char *encoding;
+	unsigned char ascii_safe_encoding: 1;
 } StreamSerializer;
 
 static const char hexdigit[] = "0123456789abcdef";
@@ -818,6 +818,9 @@ static const char INITIAL_BUFFER_SIZE = 32;
 
 static PyObject *
 jsonlib_write (PyObject *, PyObject *);
+
+static PyObject *
+jsonlib_dump (PyObject *, PyObject *);
 
 static unsigned char
 serializer_run (Serializer *, PyObject *);
@@ -867,13 +870,19 @@ static unsigned char
 serializer_raise_reserved_cp (Serializer *, Py_UNICODE);
 
 static unsigned char
-buffer_serializer_append_ascii (Serializer *, const char *, size_t);
+buffer_serializer_append_ascii (Serializer *, const char *);
 
 static unsigned char
 buffer_serializer_append_unicode (Serializer *, PyObject *);
 
 static unsigned char
 buffer_serializer_resize (BufferSerializer *, size_t delta);
+
+static unsigned char
+stream_serializer_append_ascii (Serializer *, const char *);
+
+static unsigned char
+stream_serializer_append_unicode (Serializer *, PyObject *);
 
 static PyObject *
 ascii_constant (const char *value, int len)
@@ -935,6 +944,49 @@ jsonlib_write (PyObject *self, PyObject *args)
 	
 	PyMem_Free (serializer.buffer);
 	return result;
+}
+
+static PyObject *
+jsonlib_dump (PyObject *self, PyObject *args)
+{
+	StreamSerializer serializer = {{NULL}, NULL};
+	Serializer *base = (Serializer *) &serializer;
+	
+	/* Parameters */
+	PyObject *value;
+	unsigned char sort_keys = 0,
+	              ascii_only = 0,
+	              coerce_keys = 0,
+	              ascii_safe = 0;
+	
+	if (!PyArg_ParseTuple(args, "OObObbzbOO",
+		&value,
+		&serializer.stream,
+		&sort_keys,
+		&base->indent,
+		&ascii_only,
+		&coerce_keys,
+		&serializer.encoding,
+		&ascii_safe,
+		&base->on_unknown,
+		&base->error_helper))
+	{ return NULL; }
+	
+	base->sort_keys = sort_keys;
+	base->ascii_only = ascii_only;
+	base->coerce_keys = coerce_keys;
+	
+	serializer.ascii_safe_encoding = ascii_safe;
+	
+	/* Implementation pointers */
+	base->module = PyModule_GetState (self);
+	base->append_ascii = stream_serializer_append_ascii;
+	base->append_unicode = stream_serializer_append_unicode;
+	
+	if (!serializer_run (base, value))
+	{ return NULL; }
+	
+	Py_RETURN_NONE;
 }
 
 static unsigned char
@@ -1161,7 +1213,7 @@ serialize_mapping (Serializer *s, PyObject *mapping,
 	if (!serializer_separators (s, indent_level, &indent, &post_indent))
 	{ goto error; }
 	
-	if (!s->append_ascii (s, "{", 1))
+	if (!s->append_ascii (s, "{"))
 	{ goto error; }
 	
 	while ((serializer_get_mapping_pair (s, iter, &key, &value, &error)))
@@ -1171,7 +1223,7 @@ serialize_mapping (Serializer *s, PyObject *mapping,
 		
 		if (first)
 		{ first = 0; }
-		else if (!s->append_ascii (s, ",", 1))
+		else if (!s->append_ascii (s, ","))
 		{ goto error; }
 		
 		if (indent && !s->append_unicode (s, indent))
@@ -1180,7 +1232,7 @@ serialize_mapping (Serializer *s, PyObject *mapping,
 		if (!serialize_object (s, key, indent_level + 1, 0))
 		{ goto error; }
 		
-		if (!s->append_ascii (s, ": ", indent? 2 : 1))
+		if (!s->append_unicode (s, s->colon))
 		{ goto error; }
 		
 		if (!serialize_object (s, value, indent_level + 1, 0))
@@ -1196,7 +1248,7 @@ serialize_mapping (Serializer *s, PyObject *mapping,
 		{ goto error; }
 	}
 	
-	if (!s->append_ascii (s, "}", 1))
+	if (!s->append_ascii (s, "}"))
 	{ goto error; }
 	
 	goto success;
@@ -1226,14 +1278,14 @@ serialize_iterator (Serializer *s, PyObject *iter,
 	if (!serializer_separators (s, indent_level, &indent, &post_indent))
 	{ goto error; }
 	
-	if (!s->append_ascii (s, "[", 1))
+	if (!s->append_ascii (s, "["))
 	{ goto error; }
 	
 	while ((item = PyIter_Next (iter)))
 	{
 		if (first)
 		{ first = 0; }
-		else if (!s->append_ascii (s, ",", 1))
+		else if (!s->append_ascii (s, ","))
 		{ goto error; }
 		
 		if (indent && !s->append_unicode (s, indent))
@@ -1251,7 +1303,7 @@ serialize_iterator (Serializer *s, PyObject *iter,
 		{ goto error; }
 	}
 	
-	if (!s->append_ascii (s, "]", 1))
+	if (!s->append_ascii (s, "]"))
 	{ goto error; }
 	
 	goto success;
@@ -1356,11 +1408,11 @@ serialize_string (Serializer *s, PyObject *value)
 	
 	if (safe)
 	{
-		if (!s->append_ascii (s, "\"", 1))
+		if (!s->append_ascii (s, "\""))
 		{ goto error; }
 		if (!s->append_unicode (s, value))
 		{ goto error; }
-		if (!s->append_ascii (s, "\"", 1))
+		if (!s->append_ascii (s, "\""))
 		{ goto error; }
 		
 		return 1;
@@ -1436,7 +1488,7 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 	if (!serializer_separators (s, indent_level, &indent, &post_indent))
 	{ goto error; }
 	
-	if (!s->append_ascii (s, "{", 1))
+	if (!s->append_ascii (s, "{"))
 	{ goto error; }
 	
 	while (PyDict_Next (dict, &dict_pos, &key, &value))
@@ -1446,7 +1498,7 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 		
 		if (first)
 		{ first = 0; }
-		else if (!s->append_ascii (s, ",", 1))
+		else if (!s->append_ascii (s, ","))
 		{ goto error; }
 		
 		if (indent && !s->append_unicode (s, indent))
@@ -1455,7 +1507,7 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 		if (!serialize_object (s, key, indent_level + 1, 0))
 		{ goto error; }
 		
-		if (!s->append_ascii (s, ": ", indent? 2 : 1))
+		if (!s->append_unicode (s, s->colon))
 		{ goto error; }
 		
 		if (!serialize_object (s, value, indent_level + 1, 0))
@@ -1468,7 +1520,7 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 		{ goto error; }
 	}
 	
-	if (!s->append_ascii (s, "}", 1))
+	if (!s->append_ascii (s, "}"))
 	{ goto error; }
 	
 	goto success;
@@ -1791,12 +1843,11 @@ serializer_raise_reserved_cp (Serializer *s, Py_UNICODE c)
 }
 
 static unsigned char
-buffer_serializer_append_ascii (Serializer *base,
-                                const char *text,
-                                size_t len)
+buffer_serializer_append_ascii (Serializer *base, const char *text)
 {
 	BufferSerializer *s = (BufferSerializer *) base;
 	size_t ii;
+	size_t len = strlen (text);
 	
 	if (!buffer_serializer_resize (s, len))
 	{ return 0; }
@@ -1856,12 +1907,77 @@ buffer_serializer_resize (BufferSerializer *s, size_t delta)
 	s->buffer_max_size = new_size;
 	return 1;
 }
+
+static unsigned char
+stream_serializer_append_ascii (Serializer *base, const char *text)
+{
+	StreamSerializer *s = (StreamSerializer *) (base);
+	PyObject *encoded, *temp = NULL;
+	
+	if (s->ascii_safe_encoding)
+	{
+		temp = PyObject_CallMethod (s->stream, "write", "y", text);
+		goto done;
+	}
+	
+	if (!(encoded = PyUnicode_DecodeASCII (text, strlen (text), "strict")))
+	{ return 0; }
+	
+	if (s->encoding)
+	{
+		PyObject *unicode = encoded;
+		encoded = PyUnicode_AsEncodedString (
+			unicode, s->encoding, "strict");
+		Py_DECREF (unicode);
+		if (!encoded)
+		{ return 0; }
+	}
+	
+	temp = PyObject_CallMethod (s->stream, "write", "O", encoded);
+	Py_DECREF (encoded);
+done:
+	if (!temp)
+	{ return 0; }
+	
+	Py_DECREF (temp);
+	return 1;
+}
+
+static unsigned char
+stream_serializer_append_unicode (Serializer *base, PyObject *text)
+{
+	StreamSerializer *s = (StreamSerializer *) (base);
+	PyObject *encoded, *temp;
+	
+	if (s->encoding)
+	{
+		encoded = PyUnicode_AsEncodedString (text, s->encoding, "strict");
+		if (!encoded)
+		{ return 0; }
+	}
+	
+	else
+	{
+		encoded = text;
+		Py_INCREF (encoded);
+	}
+	
+	temp = PyObject_CallMethod (s->stream, "write", "O", encoded);
+	Py_DECREF (encoded);
+	if (!temp)
+	{ return 0; }
+	
+	Py_DECREF (temp);
+	return 1;
+}
+
 /* }}} */
 
 /* Python module setup {{{ */
 static PyMethodDef jsonlib_methods[] = {
 	{"read_impl", jsonlib_read, METH_VARARGS, NULL},
 	{"write_impl", jsonlib_write, METH_VARARGS, NULL},
+	{"dump_impl", jsonlib_dump, METH_VARARGS, NULL},
 	{NULL, NULL, 0, NULL}
 };
 
@@ -1903,7 +2019,6 @@ PyInit__jsonlib (void)
 	state->true_str = ascii_constant ("true", -1);
 	state->false_str = ascii_constant ("false", -1);
 	state->null_str = ascii_constant ("null", -1);
-	state->quote = ascii_constant ("\"", -1);
 	return module;
 }
 /* }}} */
