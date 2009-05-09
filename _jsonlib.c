@@ -1019,7 +1019,7 @@ serialize_object (Serializer *s, PyObject *value,
 	/* Fast special-case tests */
 	if (retval == 0 || retval == 1)
 	{
-		if (indent_level == 0)
+		if (indent_level == 0 && retval == 1)
 		{ return serializer_raise (s, "invalid_root"); }
 		return retval;
 	}
@@ -1032,7 +1032,7 @@ serialize_object (Serializer *s, PyObject *value,
 	retval = serialize_atom (s, value);
 	if (retval == 0 || retval == 1)
 	{
-		if (indent_level == 0)
+		if (indent_level == 0 && retval == 1)
 		{ return serializer_raise (s, "invalid_root"); }
 		return retval;
 	}
