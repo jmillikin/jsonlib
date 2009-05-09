@@ -990,7 +990,7 @@ static unsigned char
 serialize_object (Serializer *s, PyObject *value,
                   unsigned int indent_level, unsigned char in_unknown_hook)
 {
-	PyObject *new_value, *iter;
+	PyObject *new_value, *iter, *unknown_error_func;
 	unsigned char retval;
 	
 	Py_INCREF (value);
@@ -1042,6 +1042,7 @@ serialize_object (Serializer *s, PyObject *value,
 		Py_DECREF (iter);
 		goto done;
 	}
+	PyErr_Clear ();
 	
 	if (in_unknown_hook)
 	{
@@ -1051,8 +1052,14 @@ serialize_object (Serializer *s, PyObject *value,
 		goto error;
 	}
 	
+	unknown_error_func = PyObject_GetAttrString (
+		s->error_helper, "unknown_serializer");
+	if (!unknown_error_func)
+	{ goto error; }
+	
 	new_value = PyObject_CallFunctionObjArgs (s->on_unknown,
-		value, NULL);
+		value, unknown_error_func, NULL);
+	Py_DECREF (unknown_error_func);
 	if (!new_value)
 	{ goto error; }
 	

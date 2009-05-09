@@ -696,13 +696,15 @@ class WriteMiscTests (SerializerTestCase):
 		         indent = 1, error_type = TypeError)
 		
 	def test_on_unknown (self):
+		def on_unknown (value, unknown):
+			return repr (value)
 		obj = object ()
-		self.w ([obj], '["%r"]' % obj, on_unknown = repr)
+		self.w ([obj], '["%r"]' % obj, on_unknown = on_unknown)
 		
 	def test_on_unknown_invalid (self):
 		obj = self.UnknownObject ()
 		self.we ([obj], "No known serializer for object: %r" % obj,
-		         on_unknown = lambda v: v)
+		         on_unknown = lambda v, u: v)
 		
 	def test_on_unknown_not_callable (self):
 		obj = object ()

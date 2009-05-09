@@ -516,7 +516,8 @@ class Serializer (metaclass = abc.ABCMeta):
 		elif isinstance (value, collections.Iterable):
 			self.serialize_iterable (value, parent_ids)
 		elif not in_unknown_hook:
-			new_value = self.on_unknown (value)
+			new_value = self.on_unknown (value,
+				self.raise_.unknown_serializer)
 			self.serialize_object (new_value, parent_ids, True)
 		else:
 			self.raise_.unknown_serializer (value)
@@ -798,10 +799,10 @@ def validate_indent (indent):
 	return indent
 	
 def validate_on_unknown (f):
-	def default_f (value):
-		return value
+	def on_unknown (value, unknown):
+		unknown (value)
 	if f is None:
-		return default_f
+		return on_unknown
 	if not isinstance (f, collections.Callable):
 		raise TypeError ("The on_unknown object must be callable.")
 	return f
