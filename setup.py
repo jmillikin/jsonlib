@@ -1,9 +1,6 @@
 from os.path import dirname, join
-try:
-	from setuptools import setup, Extension
-except ImportError:
-	from distutils.core import setup, Extension
-	
+from distutils.core import setup, Extension
+
 # If you change the version here, also change it in jsonlib.py.
 version = '1.4'
 
