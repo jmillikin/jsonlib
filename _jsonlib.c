@@ -387,9 +387,11 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 		size_t new_size, existing_size;
 		existing_size = parser->stringparse_buffer_size;
 		new_size = next_power_2 (1, max_char_count);
-		if (!(buffer = PyMem_Resize (buffer, Py_UNICODE, new_size)))
+		Py_UNICODE *new_buffer = PyMem_Resize (buffer, Py_UNICODE, new_size);
+		if (!new_buffer)
 		{ return NULL; }
 		
+		buffer = new_buffer;
 		parser->stringparse_buffer = buffer;
 		parser->stringparse_buffer_size = new_size;
 	}
