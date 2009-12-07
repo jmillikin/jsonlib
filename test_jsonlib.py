@@ -744,7 +744,7 @@ class WriteNumberTests (SerializerTestCase):
 		# depending on whether it is passed to str() or repr().
 		pi = 3.1415926535897931
 		self.assertNotEqual (str (pi), repr (pi))
-		self.w ([pi], '[3.1415926535897931]')
+		self.w ([pi], '[%s]' % repr (pi))
 		
 	def test_long_decimal (self):
 		pi = Decimal ('3.1415926535897931')
@@ -764,7 +764,7 @@ class WriteNumberTests (SerializerTestCase):
 	def test_long_complex (self):	
 		pi = 3.1415926535897931
 		self.assertNotEqual (str (pi), repr (pi))
-		self.w ([pi+0j], '[3.1415926535897931]')
+		self.w ([pi+0j], '[%s]' % repr (pi))
 		
 	def test_fail_complex (self):
 		self.we ([5+1j], "Cannot serialize complex numbers"
