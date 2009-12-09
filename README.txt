@@ -180,6 +180,10 @@ serialized. See the ``on_unknown`` parameter to ``write``.
 Change Log
 ==========
 
+1.5
+---
+* Faster streaming serialization.
+
 1.4
 ---
 * Ported to Python 3.

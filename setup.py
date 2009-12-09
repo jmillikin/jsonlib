@@ -2,7 +2,7 @@ from os.path import dirname, join
 from distutils.core import setup, Extension
 
 # If you change the version here, also change it in jsonlib.py.
-version = '1.4'
+version = '1.5'
 
 setup (
 	name = 'jsonlib-python3',
