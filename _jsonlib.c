@@ -799,12 +799,15 @@ typedef struct _StreamSerializer
 {
 	Serializer base;
 	PyObject *stream;
+	Py_UNICODE *buffer;
+	size_t buffer_size;
 	char *encoding;
 	unsigned int ascii_safe_encoding: 1;
 } StreamSerializer;
 
 static const char hexdigit[] = "0123456789abcdef";
 static const size_t INITIAL_BUFFER_SIZE = 32;
+static const size_t STREAM_BUFFER_SIZE = 1024;
 
 static PyObject *
 jsonlib_write (PyObject *, PyObject *);
@@ -873,6 +876,9 @@ stream_serializer_append_ascii (Serializer *, const char *);
 
 static unsigned char
 stream_serializer_append_unicode (Serializer *, PyObject *);
+
+static unsigned char
+stream_serializer_flush (StreamSerializer *);
 
 static PyObject *
 ascii_constant (const char *value)
@@ -967,8 +973,19 @@ jsonlib_dump (PyObject *self, PyObject *args)
 	base->append_ascii = stream_serializer_append_ascii;
 	base->append_unicode = stream_serializer_append_unicode;
 	
+	/* Small buffer for more efficient streaming */
+	Py_UNICODE stream_buffer[STREAM_BUFFER_SIZE];
+	serializer.buffer = stream_buffer;
+	serializer.buffer_size = 0;
+	
 	if (!serializer_run (base, value))
 	{ return NULL; }
+	
+	if (serializer.buffer_size > 0)
+	{
+		if (!stream_serializer_flush (&serializer))
+		{ return NULL; }
+	}
 	
 	Py_RETURN_NONE;
 }
@@ -1954,62 +1971,66 @@ static unsigned char
 stream_serializer_append_ascii (Serializer *base, const char *text)
 {
 	StreamSerializer *s = (StreamSerializer *) (base);
-	PyObject *encoded, *temp = NULL;
 	
-	if (s->ascii_safe_encoding)
+	/* Copy text to s->buffer, flushing as needed */
+	for (; *text; text++)
 	{
-		temp = PyObject_CallMethod (s->stream, "write", "y", text);
-		goto done;
+		if (s->buffer_size == STREAM_BUFFER_SIZE)
+		{
+			if (!stream_serializer_flush (s))
+			{ return 0; }
+		}
+		s->buffer[s->buffer_size++] = *text;
 	}
 	
-	if (!(encoded = PyUnicode_DecodeASCII (text, strlen (text), "strict")))
-	{ return 0; }
-	
-	if (s->encoding)
-	{
-		PyObject *unicode = encoded;
-		encoded = PyUnicode_AsEncodedString (
-			unicode, s->encoding, "strict");
-		Py_DECREF (unicode);
-		if (!encoded)
-		{ return 0; }
-	}
-	
-	temp = PyObject_CallMethod (s->stream, "write", "O", encoded);
-	Py_DECREF (encoded);
-done:
-	if (!temp)
-	{ return 0; }
-	
-	Py_DECREF (temp);
 	return 1;
 }
 
 static unsigned char
-stream_serializer_append_unicode (Serializer *base, PyObject *text)
+stream_serializer_append_unicode (Serializer *base, PyObject *obj)
 {
 	StreamSerializer *s = (StreamSerializer *) (base);
-	PyObject *encoded, *temp;
+	Py_UNICODE *text = PyUnicode_AS_UNICODE (obj);
+	Py_ssize_t ii, len_text = PyUnicode_GET_SIZE (obj);
+	
+	/* Copy text to s->buffer, flushing as needed */
+	for (ii = 0; ii < len_text; ii++)
+	{
+		if (s->buffer_size == STREAM_BUFFER_SIZE)
+		{
+			if (!stream_serializer_flush (s))
+			{ return 0; }
+		}
+		s->buffer[s->buffer_size++] = text[ii];
+	}
+	
+	return 1;
+}
+
+static unsigned char
+stream_serializer_flush (StreamSerializer *s)
+{
+	PyObject *obj, *temp;
 	
 	if (s->encoding)
 	{
-		encoded = PyUnicode_AsEncodedString (text, s->encoding, "strict");
-		if (!encoded)
+		obj = PyUnicode_Encode(s->buffer, s->buffer_size, s->encoding, "strict");
+		if (!obj)
 		{ return 0; }
 	}
 	
 	else
 	{
-		encoded = text;
-		Py_INCREF (encoded);
+		obj = PyUnicode_FromUnicode(s->buffer, s->buffer_size);
 	}
 	
-	temp = PyObject_CallMethod (s->stream, "write", "O", encoded);
-	Py_DECREF (encoded);
+	temp = PyObject_CallMethod (s->stream, "write", "O", obj);
+	Py_DECREF (obj);
 	if (!temp)
 	{ return 0; }
 	
 	Py_DECREF (temp);
+	s->buffer_size = 0;
 	return 1;
 }
 

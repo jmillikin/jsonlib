@@ -1008,14 +1008,6 @@ class StreamingSerializerTests (SerializerTestCase):
 		jsonlib.dump (["a", "b", "c \U0001D11E \u24Ca", {"a": "b"}], fp)
 		self.assertEqual (fp.getvalue (), b'["a","b","c \\ud834\\udd1e \\u24ca",{"a":"b"}]')
 		
-	def test_partial_serialization_on_error (self):
-		fp = io.BytesIO ()
-		try:
-			jsonlib.dump ([object ()], fp)
-		except UnknownSerializerError:
-			pass
-		self.assertEqual (fp.getvalue (), b'[')
-		
 	def test_encode_utf16_specialcased (self):
 		# Test that special cases that return pure ASCII are still
 		# re-encoded if needed.
