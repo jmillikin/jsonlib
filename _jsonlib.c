@@ -42,8 +42,8 @@ typedef struct _Parser
 	Py_UNICODE *stringparse_buffer;
 	size_t stringparse_buffer_size;
 	
-	unsigned char use_float: 1;
-	unsigned char got_root: 1;
+	unsigned int use_float: 1;
+	unsigned int got_root: 1;
 } Parser;
 
 static PyObject *
@@ -385,9 +385,10 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 	if (max_char_count > parser->stringparse_buffer_size)
 	{
 		size_t new_size, existing_size;
+		Py_UNICODE *new_buffer;
 		existing_size = parser->stringparse_buffer_size;
 		new_size = next_power_2 (1, max_char_count);
-		Py_UNICODE *new_buffer = PyMem_Resize (buffer, Py_UNICODE, new_size);
+		new_buffer = PyMem_Resize (buffer, Py_UNICODE, new_size);
 		if (!new_buffer)
 		{ return NULL; }
 		
@@ -687,13 +688,14 @@ parse_number (Parser *parser)
 static unsigned char
 skip_whitespace (Parser *parser, Py_UNICODE *start, const char *message)
 {
+	Py_UNICODE c;
+	
 	if (message && !start)
 	{ start = parser->index; }
 	
 	/* Don't use Py_UNICODE_ISSPACE, because it returns TRUE for
 	 * codepoints that are not valid JSON whitespace.
 	**/
-	Py_UNICODE c;
 	while (parser->index < parser->end)
 	{
 		c = *parser->index;
@@ -780,9 +782,9 @@ struct _Serializer
 	PyObject *indent;
 	PyObject *on_unknown;
 	PyObject *error_helper;
-	unsigned char sort_keys: 1;
-	unsigned char coerce_keys: 1;
-	unsigned char ascii_only: 1;
+	unsigned int sort_keys: 1;
+	unsigned int coerce_keys: 1;
+	unsigned int ascii_only: 1;
 };
 
 typedef struct _BufferSerializer
@@ -798,11 +800,11 @@ typedef struct _StreamSerializer
 	Serializer base;
 	PyObject *stream;
 	char *encoding;
-	unsigned char ascii_safe_encoding: 1;
+	unsigned int ascii_safe_encoding: 1;
 } StreamSerializer;
 
 static const char hexdigit[] = "0123456789abcdef";
-static const char INITIAL_BUFFER_SIZE = 32;
+static const size_t INITIAL_BUFFER_SIZE = 32;
 
 static PyObject *
 jsonlib_write (PyObject *, PyObject *);
@@ -837,10 +839,10 @@ static unsigned char
 serialize_dict (Serializer *, PyObject *, unsigned int);
 
 static PyObject *
-escape_string_ascii (Serializer *, PyObject *);
+escape_string_ascii (PyObject *);
 
 static PyObject *
-escape_string_unicode (Serializer *, PyObject *);
+escape_string_unicode (PyObject *);
 
 static unsigned char
 serialize_float (Serializer *, PyObject *);
@@ -1434,9 +1436,9 @@ serialize_string (Serializer *s, PyObject *value)
 	{ goto error; }
 	
 	if (s->ascii_only)
-	{ escaped = escape_string_ascii (s, value); }
+	{ escaped = escape_string_ascii (value); }
 	else
-	{ escaped = escape_string_unicode (s, value); }
+	{ escaped = escape_string_unicode (value); }
 	
 	if (escaped && s->append_unicode (s, escaped))
 	{ goto success; }
@@ -1614,7 +1616,7 @@ escape_unichar (Py_UNICODE c, Py_UNICODE *p)
 }
 
 static PyObject *
-escape_string_ascii (Serializer *s, PyObject *value)
+escape_string_ascii (PyObject *value)
 {
 	PyObject *retval;
 	Py_UNICODE *old_buffer, *p, c;
@@ -1694,7 +1696,7 @@ escape_string_ascii (Serializer *s, PyObject *value)
 }
 
 static PyObject *
-escape_string_unicode (Serializer *s, PyObject *value)
+escape_string_unicode (PyObject *value)
 {
 	PyObject *retval;
 	Py_UNICODE *old_buffer, *p, c;
