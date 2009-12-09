@@ -5,7 +5,7 @@ from distutils.core import setup, Extension
 version = '1.4'
 
 setup (
-	name = 'jsonlib',
+	name = 'jsonlib-python3',
 	version = version,
 	description = "JSON serializer/deserializer for Python",
 	long_description = open (join (dirname (__file__), 'README.txt')).read (),
@@ -16,12 +16,12 @@ setup (
 	download_url = "http://cheeseshop.python.org/pypi/jsonlib-python3/%s" % version,
 	platforms = ["Platform Independent"],
 	classifiers = [
-		"Development Status :: 4 - Beta",
+		"Development Status :: 5 - Production/Stable",
 		"Intended Audience :: Developers",
 		"License :: OSI Approved :: GNU General Public License (GPL)",
 		"Operating System :: OS Independent",
 		"Programming Language :: Python",
-		"Programming Language :: Python 3",
+		"Programming Language :: Python :: 3",
 		"Programming Language :: C",
 		"Topic :: Software Development :: Libraries :: Python Modules",
 	],
