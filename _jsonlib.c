@@ -802,7 +802,6 @@ typedef struct _StreamSerializer
 	Py_UNICODE *buffer;
 	size_t buffer_size;
 	char *encoding;
-	unsigned int ascii_safe_encoding: 1;
 } StreamSerializer;
 
 static const char hexdigit[] = "0123456789abcdef";
@@ -947,9 +946,9 @@ jsonlib_dump (PyObject *self, PyObject *args)
 	
 	/* Parameters */
 	PyObject *value;
-	unsigned char sort_keys, ascii_only, coerce_keys, ascii_safe;
+	unsigned char sort_keys, ascii_only, coerce_keys;
 	
-	if (!PyArg_ParseTuple(args, "OObObbzbOO",
+	if (!PyArg_ParseTuple(args, "OObObbzOO",
 		&value,
 		&serializer.stream,
 		&sort_keys,
@@ -957,7 +956,6 @@ jsonlib_dump (PyObject *self, PyObject *args)
 		&ascii_only,
 		&coerce_keys,
 		&serializer.encoding,
-		&ascii_safe,
 		&base->on_unknown,
 		&base->error_helper))
 	{ return NULL; }
@@ -965,8 +963,6 @@ jsonlib_dump (PyObject *self, PyObject *args)
 	base->sort_keys = sort_keys;
 	base->ascii_only = ascii_only;
 	base->coerce_keys = coerce_keys;
-	
-	serializer.ascii_safe_encoding = ascii_safe;
 	
 	/* Implementation pointers */
 	base->module = PyModule_GetState (self);

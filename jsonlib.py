@@ -60,8 +60,6 @@ UTF_HEADERS = [
 	((1, 0, 1, 0), 'utf-16-le'),
 ]
 
-ASCII_SAFE_ENCODINGS = set(['ascii', 'utf-8', 'iso8859-1'])
-
 NUMBER_SPLITTER = re.compile (
 	'^(?P<minus>-)?(?P<int>0|[1-9][0-9]*)' # Basic integer portion
 	'(?:\\.(?P<frac>[0-9]+))?'             # Fractional portion
@@ -705,7 +703,7 @@ class BufferSerializer(Serializer):
 		return str_result.encode (self.encoding)
 		
 def dump_impl (value, fp, sort_keys, indent, ascii_only,
-               coerce_keys, encoding, ascii_safe, on_unknown, error_helper):
+               coerce_keys, encoding, on_unknown, error_helper):
 	serializer = StreamSerializer (fp, sort_keys, indent, ascii_only,
 	                               coerce_keys, encoding,
 	                               on_unknown, error_helper)
@@ -722,7 +720,6 @@ def dump (value, fp, sort_keys = False, indent = None, ascii_only = True,
 	return dump_impl (value, fp, sort_keys,
 	                  validate_indent (indent), ascii_only,
 	                  coerce_keys, encoding,
-	                  is_ascii_safe (encoding),
 	                  validate_on_unknown (on_unknown),
 	                  SerializerErrorHelper ())
 	
@@ -806,16 +803,6 @@ def validate_on_unknown (f):
 	if not isinstance (f, collections.Callable):
 		raise TypeError ("The on_unknown object must be callable.")
 	return f
-	
-def is_ascii_safe (encoding):
-	if encoding is None:
-		return False
-	try:
-		info = codecs.lookup (encoding)
-	except LookupError:
-		return False
-	return (info.name in ASCII_SAFE_ENCODINGS)
-	
 # }}}
 
 try:
