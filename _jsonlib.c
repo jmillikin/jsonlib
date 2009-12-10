@@ -768,10 +768,11 @@ typedef struct _Serializer Serializer;
 struct _Serializer
 {
 	ModuleState *module;
+	Py_UNICODE *buffer;
+	size_t buffer_size;
 	
 	/* Virtual implementation methods */
-	unsigned char (*append_ascii) (Serializer *, const char *);
-	unsigned char (*append_unicode) (Serializer *, PyObject *);
+	unsigned char (*flush) (Serializer *);
 	
 	/* Per-run constant. This isn't saved in the module state
 	 * because it varies based on the indentation mode.
@@ -787,26 +788,31 @@ struct _Serializer
 	unsigned int ascii_only: 1;
 };
 
+typedef struct _BufferList BufferList;
+struct _BufferList
+{
+	Py_UNICODE *buffer;
+	size_t buffer_size;
+	BufferList *next;
+};
+
 typedef struct _BufferSerializer
 {
 	Serializer base;
-	Py_UNICODE *buffer;
-	size_t buffer_size;
-	size_t buffer_max_size;
+	const char *encoding;
+	BufferList *all_buffers;
+	BufferList *current_buffer;
 } BufferSerializer;
 
 typedef struct _StreamSerializer
 {
 	Serializer base;
 	PyObject *stream;
-	Py_UNICODE *buffer;
-	size_t buffer_size;
 	char *encoding;
 } StreamSerializer;
 
 static const char hexdigit[] = "0123456789abcdef";
-static const size_t INITIAL_BUFFER_SIZE = 32;
-static const size_t STREAM_BUFFER_SIZE = 1024;
+#define FIXED_BUFFER_SIZE 1024
 
 static PyObject *
 jsonlib_write (PyObject *, PyObject *);
@@ -862,22 +868,25 @@ static unsigned char
 serializer_raise_reserved_cp (Serializer *, Py_UNICODE);
 
 static unsigned char
-buffer_serializer_append_ascii (Serializer *, const char *);
+serializer_append_ascii (Serializer *, const char *);
 
 static unsigned char
-buffer_serializer_append_unicode (Serializer *, PyObject *);
+serializer_append_unicode (Serializer *, PyObject *);
 
 static unsigned char
-buffer_serializer_resize (BufferSerializer *, size_t delta);
+buffer_serializer_flush (Serializer *);
+
+static BufferList *
+alloc_buffer_list (void);
+
+static PyObject *
+buffer_serializer_merge (BufferSerializer *);
+
+static void
+buffer_serializer_free (BufferSerializer *);
 
 static unsigned char
-stream_serializer_append_ascii (Serializer *, const char *);
-
-static unsigned char
-stream_serializer_append_unicode (Serializer *, PyObject *);
-
-static unsigned char
-stream_serializer_flush (StreamSerializer *);
+stream_serializer_flush (Serializer *);
 
 static PyObject *
 ascii_constant (const char *value)
@@ -894,7 +903,6 @@ jsonlib_write (PyObject *self, PyObject *args)
 	
 	/* Parameters */
 	PyObject *value;
-	char *encoding;
 	unsigned char sort_keys, ascii_only, coerce_keys;
 	
 	if (!PyArg_ParseTuple(args, "ObObbzOO",
@@ -903,7 +911,7 @@ jsonlib_write (PyObject *self, PyObject *args)
 		&base->indent,
 		&ascii_only,
 		&coerce_keys,
-		&encoding,
+		&serializer.encoding,
 		&base->on_unknown,
 		&base->error_helper))
 	{ return NULL; }
@@ -914,27 +922,16 @@ jsonlib_write (PyObject *self, PyObject *args)
 	
 	/* Implementation pointers */
 	base->module = PyModule_GetState (self);
-	base->append_ascii = buffer_serializer_append_ascii;
-	base->append_unicode = buffer_serializer_append_unicode;
+	base->flush = buffer_serializer_flush;
 	
 	if (!serializer_run (base, value))
 	{ goto error; }
 	
-	if (encoding)
-	{
-		result = PyUnicode_Encode (
-			serializer.buffer, serializer.buffer_size,
-			encoding, "strict");
-	}
-	
-	else
-	{
-		result = PyUnicode_FromUnicode (
-			serializer.buffer, serializer.buffer_size);
-	}
+	/* Merge all buffers into a single unicode string */
+	result = buffer_serializer_merge (&serializer);
 	
 error:
-	PyMem_Free (serializer.buffer);
+	buffer_serializer_free (&serializer);
 	return result;
 }
 
@@ -966,22 +963,10 @@ jsonlib_dump (PyObject *self, PyObject *args)
 	
 	/* Implementation pointers */
 	base->module = PyModule_GetState (self);
-	base->append_ascii = stream_serializer_append_ascii;
-	base->append_unicode = stream_serializer_append_unicode;
-	
-	/* Small buffer for more efficient streaming */
-	Py_UNICODE stream_buffer[STREAM_BUFFER_SIZE];
-	serializer.buffer = stream_buffer;
-	serializer.buffer_size = 0;
+	base->flush = stream_serializer_flush;
 	
 	if (!serializer_run (base, value))
 	{ return NULL; }
-	
-	if (serializer.buffer_size > 0)
-	{
-		if (!stream_serializer_flush (&serializer))
-		{ return NULL; }
-	}
 	
 	Py_RETURN_NONE;
 }
@@ -991,15 +976,27 @@ serializer_run (Serializer *s, PyObject *value)
 {
 	const char *colon;
 	unsigned char retval;
+	Py_UNICODE fixed_buffer[FIXED_BUFFER_SIZE];
 	
 	/* Generate the colon constant */
 	colon = s->indent == Py_None? ":" : ": ";
 	if (!(s->colon = ascii_constant (colon)))
 	{ return 0; }
 	
+	/* Small buffer for more efficient streaming */
+	s->buffer = fixed_buffer;
+	s->buffer_size = 0;
+	
 	/* Run, clean up, return */
 	retval = serialize_object (s, value, 0, 0);
 	Py_DECREF (s->colon);
+	
+	if (s->buffer_size > 0)
+	{
+		if (!(s->flush(s)))
+		{ return 0; }
+	}
+	
 	return retval;
 }
 
@@ -1243,7 +1240,7 @@ serialize_mapping (Serializer *s, PyObject *mapping,
 	if (!serializer_separators (s, indent_level, &indent, &post_indent))
 	{ goto error; }
 	
-	if (!s->append_ascii (s, "{"))
+	if (!serializer_append_ascii (s, "{"))
 	{ goto error; }
 	
 	while ((serializer_get_mapping_pair (s, iter, &key, &value, &error)))
@@ -1251,16 +1248,16 @@ serialize_mapping (Serializer *s, PyObject *mapping,
 		if (first)
 		{ first = 0; }
 		
-		else if (!s->append_ascii (s, ","))
+		else if (!serializer_append_ascii (s, ","))
 		{ goto error; }
 		
-		if (indent && !s->append_unicode (s, indent))
+		if (indent && !serializer_append_unicode (s, indent))
 		{ goto error; }
 		
 		if (!serialize_object (s, key, indent_level + 1, 0))
 		{ goto error; }
 		
-		if (!s->append_unicode (s, s->colon))
+		if (!serializer_append_unicode (s, s->colon))
 		{ goto error; }
 		
 		if (!serialize_object (s, value, indent_level + 1, 0))
@@ -1272,10 +1269,10 @@ serialize_mapping (Serializer *s, PyObject *mapping,
 	if (error)
 	{ goto error; }
 	
-	if (post_indent &&!s->append_unicode (s, post_indent))
+	if (post_indent &&!serializer_append_unicode (s, post_indent))
 	{ goto error; }
 	
-	if (!s->append_ascii (s, "}"))
+	if (!serializer_append_ascii (s, "}"))
 	{ goto error; }
 	
 	goto success;
@@ -1305,7 +1302,7 @@ serialize_iterator (Serializer *s, PyObject *iter,
 	if (!serializer_separators (s, indent_level, &indent, &post_indent))
 	{ goto error; }
 	
-	if (!s->append_ascii (s, "["))
+	if (!serializer_append_ascii (s, "["))
 	{ goto error; }
 	
 	while ((item = PyIter_Next (iter)))
@@ -1313,10 +1310,10 @@ serialize_iterator (Serializer *s, PyObject *iter,
 		if (first)
 		{ first = 0; }
 		
-		else if (!s->append_ascii (s, ","))
+		else if (!serializer_append_ascii (s, ","))
 		{ goto error; }
 		
-		if (indent && !s->append_unicode (s, indent))
+		if (indent && !serializer_append_unicode (s, indent))
 		{ goto error; }
 		
 		if (!serialize_object (s, item, indent_level + 1, 0))
@@ -1325,10 +1322,10 @@ serialize_iterator (Serializer *s, PyObject *iter,
 		Py_DECREF (item);
 	}
 	
-	if (post_indent && !s->append_unicode (s, post_indent))
+	if (post_indent && !serializer_append_unicode (s, post_indent))
 	{ goto error; }
 	
-	if (!s->append_ascii (s, "]"))
+	if (!serializer_append_ascii (s, "]"))
 	{ goto error; }
 	
 	goto success;
@@ -1349,13 +1346,13 @@ serialize_atom_fast (Serializer *s, PyObject *value)
 	unsigned char retval;
 	
 	if (value == Py_True)
-	{ return s->append_unicode (s, m->true_str); }
+	{ return serializer_append_unicode (s, m->true_str); }
 	
 	if (value == Py_False)
-	{ return s->append_unicode (s, m->false_str); }
+	{ return serializer_append_unicode (s, m->false_str); }
 	
 	if (value == Py_None)
-	{ return s->append_unicode (s, m->null_str); }
+	{ return serializer_append_unicode (s, m->null_str); }
 	
 	if (PyUnicode_CheckExact (value))
 	{ return serialize_string (s, value); }
@@ -1366,7 +1363,7 @@ serialize_atom_fast (Serializer *s, PyObject *value)
 		if (!(str = PyObject_Str (value)))
 		{ return 0; }
 		
-		retval = s->append_unicode (s, str);
+		retval = serializer_append_unicode (s, str);
 		Py_DECREF (str);
 		return retval;
 	}
@@ -1435,11 +1432,11 @@ serialize_string (Serializer *s, PyObject *value)
 	
 	if (safe)
 	{
-		if (!s->append_ascii (s, "\""))
+		if (!serializer_append_ascii (s, "\""))
 		{ goto error; }
-		if (!s->append_unicode (s, value))
+		if (!serializer_append_unicode (s, value))
 		{ goto error; }
-		if (!s->append_ascii (s, "\""))
+		if (!serializer_append_ascii (s, "\""))
 		{ goto error; }
 		
 		return 1;
@@ -1453,7 +1450,7 @@ serialize_string (Serializer *s, PyObject *value)
 	else
 	{ escaped = escape_string_unicode (value); }
 	
-	if (escaped && s->append_unicode (s, escaped))
+	if (escaped && serializer_append_unicode (s, escaped))
 	{ goto success; }
 	
 error:
@@ -1481,7 +1478,7 @@ serialize_atom (Serializer *s, PyObject *value)
 		if (!(str = PyObject_Str (value)))
 		{ return 0; }
 		
-		retval = s->append_unicode (s, str);
+		retval = serializer_append_unicode (s, str);
 		Py_DECREF (str);
 		return retval;
 	}
@@ -1523,7 +1520,7 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 	if (!serializer_separators (s, indent_level, &indent, &post_indent))
 	{ goto error; }
 	
-	if (!s->append_ascii (s, "{"))
+	if (!serializer_append_ascii (s, "{"))
 	{ goto error; }
 	
 	while (PyDict_Next (dict, &dict_pos, &key, &value))
@@ -1537,16 +1534,16 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 		if (first)
 		{ first = 0; }
 		
-		else if (!s->append_ascii (s, ","))
+		else if (!serializer_append_ascii (s, ","))
 		{ goto error; }
 		
-		if (indent && !s->append_unicode (s, indent))
+		if (indent && !serializer_append_unicode (s, indent))
 		{ goto error; }
 		
 		if (!serialize_object (s, key, indent_level + 1, 0))
 		{ goto error; }
 		
-		if (!s->append_unicode (s, s->colon))
+		if (!serializer_append_unicode (s, s->colon))
 		{ goto error; }
 		
 		if (!serialize_object (s, value, indent_level + 1, 0))
@@ -1558,10 +1555,10 @@ serialize_dict (Serializer *s, PyObject *dict, unsigned int indent_level)
 		value = NULL;
 	}
 	
-	if (post_indent && !s->append_unicode (s, post_indent))
+	if (post_indent && !serializer_append_unicode (s, post_indent))
 	{ goto error; }
 	
-	if (!s->append_ascii (s, "}"))
+	if (!serializer_append_ascii (s, "}"))
 	{ goto error; }
 	
 	goto success;
@@ -1826,7 +1823,7 @@ serialize_float (Serializer *s, PyObject *value)
 	if (!(repr = PyObject_Repr (value)))
 	{ return 0; }
 	
-	retval = s->append_unicode (s, repr);
+	retval = serializer_append_unicode (s, repr);
 	Py_DECREF (repr);
 	return retval;
 }
@@ -1849,7 +1846,7 @@ serialize_complex (Serializer *s, PyObject *value)
 	if (!repr)
 	{ return 0; }
 	
-	retval = s->append_unicode (s, repr);
+	retval = serializer_append_unicode (s, repr);
 	Py_DECREF (repr);
 	return retval;
 }
@@ -1876,7 +1873,7 @@ serialize_decimal (Serializer *s, PyObject *value)
 	if (error)
 	{ retval = serializer_raise (s, error); }
 	else
-	{ retval = s->append_unicode (s, str); }
+	{ retval = serializer_append_unicode (s, str); }
 	
 	Py_DECREF (str);
 	return retval;
@@ -1898,82 +1895,14 @@ serializer_raise_reserved_cp (Serializer *s, Py_UNICODE c)
 }
 
 static unsigned char
-buffer_serializer_append_ascii (Serializer *base, const char *text)
+serializer_append_ascii (Serializer *s, const char *text)
 {
-	BufferSerializer *s = (BufferSerializer *) base;
-	size_t ii;
-	size_t len = strlen (text);
-	
-	if (!buffer_serializer_resize (s, len))
-	{ return 0; }
-	
-	for (ii = 0; ii < len; ii++)
-	{ s->buffer[s->buffer_size++] = text[ii]; }
-	
-	return 1;
-}
-
-static unsigned char
-buffer_serializer_append_unicode (Serializer *base, PyObject *text)
-{
-	size_t len;
-	Py_UNICODE *raw;
-	BufferSerializer *s = (BufferSerializer *) base;
-	
-	raw = PyUnicode_AS_UNICODE (text);
-	len = PyUnicode_GET_SIZE (text);
-	
-	if (!buffer_serializer_resize (s, len))
-	{ return 0; }
-	
-	memcpy (s->buffer + s->buffer_size, raw,
-	        len * sizeof (Py_UNICODE));
-	s->buffer_size += len;
-	return 1;
-}
-
-static unsigned char
-buffer_serializer_resize (BufferSerializer *s, size_t delta)
-{
-	size_t new_size;
-	Py_UNICODE *new_buf;
-	
-	new_size = s->buffer_size + delta;
-	if (s->buffer_max_size >= new_size)
-	{ return 1; }
-	
-	if (!s->buffer)
-	{
-		new_size = (delta > INITIAL_BUFFER_SIZE? delta : INITIAL_BUFFER_SIZE);
-		new_size = next_power_2 (1, new_size);
-		s->buffer = PyMem_Malloc (sizeof (Py_UNICODE) * new_size);
-		s->buffer_max_size = new_size;
-		return 1;
-	}
-	
-	new_size = next_power_2 (s->buffer_max_size, new_size);
-	new_buf = PyMem_Realloc (s->buffer, sizeof (Py_UNICODE) * new_size);
-	if (!new_buf)
-	{
-		PyMem_Free (s->buffer);
-		return 0;
-	}
-	s->buffer = new_buf;
-	s->buffer_max_size = new_size;
-	return 1;
-}
-
-static unsigned char
-stream_serializer_append_ascii (Serializer *base, const char *text)
-{
-	StreamSerializer *s = (StreamSerializer *) (base);
-	
 	/* Copy text to s->buffer, flushing as needed */
 	for (; *text; text++)
 	{
-		if (s->buffer_size == STREAM_BUFFER_SIZE)
+		if (s->buffer_size == FIXED_BUFFER_SIZE)
 		{
-			if (!stream_serializer_flush (s))
+			if (!(s->flush (s)))
 			{ return 0; }
 		}
 		s->buffer[s->buffer_size++] = *text;
@@ -1983,18 +1912,17 @@ stream_serializer_append_ascii (Serializer *base, const char *text)
 }
 
 static unsigned char
-stream_serializer_append_unicode (Serializer *base, PyObject *obj)
+serializer_append_unicode (Serializer *s, PyObject *obj)
 {
-	StreamSerializer *s = (StreamSerializer *) (base);
 	Py_UNICODE *text = PyUnicode_AS_UNICODE (obj);
 	Py_ssize_t ii, len_text = PyUnicode_GET_SIZE (obj);
 	
 	/* Copy text to s->buffer, flushing as needed */
 	for (ii = 0; ii < len_text; ii++)
 	{
-		if (s->buffer_size == STREAM_BUFFER_SIZE)
+		if (s->buffer_size == FIXED_BUFFER_SIZE)
 		{
-			if (!stream_serializer_flush (s))
+			if (!(s->flush (s)))
 			{ return 0; }
 		}
 		s->buffer[s->buffer_size++] = text[ii];
@@ -2004,21 +1932,126 @@ stream_serializer_append_unicode (Serializer *base, PyObject *obj)
 }
 
 static unsigned char
-stream_serializer_flush (StreamSerializer *s)
+buffer_serializer_flush (Serializer *base)
 {
-	PyObject *obj, *temp;
+	BufferSerializer *s = (BufferSerializer *)base;
+	BufferList *lst = s->current_buffer;
 	
-	if (s->encoding)
+	assert (base->buffer_size <= FIXED_BUFFER_SIZE);
+	
+	/* On the first flush, buffer pointers will be empty */
+	if (lst)
 	{
-		obj = PyUnicode_Encode(s->buffer, s->buffer_size, s->encoding, "strict");
-		if (!obj)
-		{ return 0; }
+		lst->next = alloc_buffer_list();
+		lst = lst->next;
 	}
 	
 	else
 	{
-		obj = PyUnicode_FromUnicode(s->buffer, s->buffer_size);
+		lst = alloc_buffer_list();
+		s->all_buffers = lst;
+		s->current_buffer = lst;
 	}
+	if (!lst)
+	{ return 0; }
+	
+	lst->buffer_size = base->buffer_size;
+	memcpy (lst->buffer, base->buffer,
+	        base->buffer_size * sizeof (Py_UNICODE));
+	base->buffer_size = 0;
+	
+	return 1;
+}
+
+static BufferList *
+alloc_buffer_list (void)
+{
+	BufferList *lst;
+	if (!(lst = PyMem_Malloc (sizeof (BufferList))))
+	{ return NULL; }
+	
+	lst->buffer_size = 0;
+	lst->next = NULL;
+	lst->buffer = PyMem_Malloc (sizeof (Py_UNICODE) * FIXED_BUFFER_SIZE);
+	if (!lst->buffer)
+	{ return NULL; }
+	
+	return lst;
+}
+
+static PyObject *
+buffer_serializer_merge (BufferSerializer *s)
+{
+	size_t total = 0, offset = 0;
+	BufferList *lst;
+	Py_UNICODE *raw_merged;
+	PyObject *merged;
+	
+	lst = s->all_buffers;
+	while (lst)
+	{
+		total += lst->buffer_size;
+		lst = lst->next;
+	}
+	
+	if (!(raw_merged = PyMem_Malloc (sizeof (Py_UNICODE) * total)))
+	{ return NULL; }
+	
+	lst = s->all_buffers;
+	while (lst)
+	{
+		memcpy (raw_merged + offset, lst->buffer,
+		        lst->buffer_size * sizeof (Py_UNICODE));
+		offset += lst->buffer_size;
+		lst = lst->next;
+	}
+	
+	if (s->encoding)
+	{
+		merged = PyUnicode_Encode (raw_merged, total, s->encoding,
+		                           "strict");
+	}
+	
+	else
+	{
+		merged = PyUnicode_FromUnicode (raw_merged, total);
+	}
+	PyMem_Free (raw_merged);
+	
+	return merged;
+}
+
+static void
+buffer_serializer_free (BufferSerializer *s)
+{
+	BufferList *lst = s->all_buffers;
+	while (lst)
+	{
+		BufferList *next = lst->next;
+		PyMem_Free (lst->buffer);
+		PyMem_Free (lst);
+		lst = next;
+	}
+}
+
+static unsigned char
+stream_serializer_flush (Serializer *base)
+{
+	PyObject *obj, *temp;
+	StreamSerializer *s = (StreamSerializer*)base;
+	
+	if (s->encoding)
+	{
+		obj = PyUnicode_Encode (base->buffer, base->buffer_size,
+		                        s->encoding, "strict");
+	}
+	
+	else
+	{
+		obj = PyUnicode_FromUnicode(base->buffer, base->buffer_size);
+	}
+	if (!obj)
+	{ return 0; }
 	
 	temp = PyObject_CallMethod (s->stream, "write", "O", obj);
 	Py_DECREF (obj);
@@ -2026,7 +2059,7 @@ stream_serializer_flush (StreamSerializer *s)
 	{ return 0; }
 	
 	Py_DECREF (temp);
-	s->buffer_size = 0;
+	base->buffer_size = 0;
 	return 1;
 }
 
