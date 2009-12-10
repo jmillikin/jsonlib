@@ -1030,6 +1030,16 @@ serialize_object (Serializer *s, PyObject *value,
 		goto done;
 	}
 	
+	if (PyList_CheckExact (value))
+	{
+		if (!(iter = PyObject_GetIter (value)))
+		{ goto error; }
+		
+		retval = serialize_iterator (s, iter, value, indent_level);
+		Py_DECREF (iter);
+		goto done;
+	}
+	
 	/* Slow, general tests */
 	retval = serialize_atom (s, value);
 	if (retval == 0 || retval == 1)
