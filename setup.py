@@ -6,7 +6,7 @@ except ImportError:
 	
 
 # If you change the version here, also change it in jsonlib.py.
-version = '1.3.11'
+version = '1.6'
 
 setup (
 	name = 'jsonlib',
