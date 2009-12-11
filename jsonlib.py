@@ -32,8 +32,7 @@ import codecs
 from decimal import Decimal
 import re
 import sys
-import abc
-import collections
+from UserString import UserString
 
 # Constants {{{
 KEYWORDS = (('null', None), ('true', True), ('false', False))
@@ -95,9 +94,9 @@ WRITE_ESCAPES = {
 }
 
 for __char_ord in range (0, 0x20):
-	WRITE_ESCAPES.setdefault (chr (__char_ord), '\\u%04x' % __char_ord)
+	WRITE_ESCAPES.setdefault (unichr (__char_ord), '\\u%04x' % __char_ord)
 	
-ALLOWED_WHITESPACE = '\u0020\u0009\u000A\u000D'
+ALLOWED_WHITESPACE = u'\u0020\u0009\u000A\u000D'
 # }}}
 
 # Exception classes {{{
@@ -125,7 +124,7 @@ def unicode_autodetect_encoding (bytestring):
 	input is already in unicode, this is a noop.
 	
 	"""
-	if isinstance (bytestring, str):
+	if isinstance (bytestring, unicode):
 		return bytestring
 		
 	# Check for UTF byte order marks in the bytestring
@@ -135,7 +134,7 @@ def unicode_autodetect_encoding (bytestring):
 			
 	# Autodetect UTF-* encodings using the algorithm in the RFC
 	# Don't use inline if..else for Python 2.4
-	header = tuple ((1 if b else 0) for b in bytestring[:4])
+	header = tuple ((ord (b) and 1) or 0 for b in bytestring[:4])
 	for utf_header, encoding in UTF_HEADERS:
 		if header == utf_header:
 			return bytestring.decode (encoding)
@@ -143,7 +142,7 @@ def unicode_autodetect_encoding (bytestring):
 	# Default to UTF-8
 	return bytestring.decode ('utf-8')
 	
-class ParseErrorHelper:
+class ParseErrorHelper (object):
 	"""Small class to provide a collection of error-formatting routines
 	shared between the Python and C implementation.
 	
@@ -205,7 +204,7 @@ class ParseErrorHelper:
 	def invalid_number (self, text, offset):
 		self.generic (text, offset, "Invalid number.")
 		
-class Parser:
+class Parser (object):
 	def __init__ (self, text, use_float, error_helper):
 		self.text = text
 		self.index = 0
@@ -304,7 +303,7 @@ class Parser:
 					escaped = True
 				elif c == '"':
 					self.skip ('"', "string end")
-					return ''.join (chunks)
+					return u''.join (chunks)
 				elif ord (c) < 0x20:
 					self.raise_unexpected ()
 				else:
@@ -350,7 +349,7 @@ class Parser:
 		# Check if it's a UTF-16 surrogate pair
 		if not (0xD800 <= first_hex <= 0xDBFF):
 			self.index += 4
-			return chr (first_hex)
+			return unichr (first_hex)
 			
 		second_hex_str = self.text[self.index+5:self.index+11]
 		if (not (len (second_hex_str) >= 6
@@ -360,14 +359,14 @@ class Parser:
 			
 		second_hex = int (second_hex_str[2:], 16)
 		if sys.maxunicode <= 65535:
-			retval = chr (first_hex) + chr (second_hex)
+			retval = unichr (first_hex) + unichr (second_hex)
 		else:
 			# Convert to 10-bit halves of the 20-bit character
 			first_hex -= 0xD800
 			second_hex -= 0xDC00
 			
 			# Merge into 20-bit character
-			retval = chr ((first_hex << 10) + second_hex + 0x10000)
+			retval = unichr ((first_hex << 10) + second_hex + 0x10000)
 		self.index += 10
 		return retval
 		
@@ -437,17 +436,26 @@ loads = read
 # }}}
 
 # Serializer {{{
-class JSONAtom (metaclass = abc.ABCMeta):
-	pass
-	
-JSONAtom.register (type (None))
-JSONAtom.register (int)
-JSONAtom.register (float)
-JSONAtom.register (complex)
-JSONAtom.register (Decimal)
-JSONAtom.register (str)
+ATOMIC_TYPES = (
+	  type (None)
+	, bool
+	, int
+	, long
+	, float
+	, complex
+	, Decimal
+	, unicode
+	, str
+	)
 
-class SerializerErrorHelper:
+def is_iterable (x):
+	try:
+		iter (x)
+		return True
+	except TypeError:
+		return False
+		
+class SerializerErrorHelper (object):
 	def invalid_root (self):
 		raise WriteError ("The outermost container must be an array or object.")
 		
@@ -482,7 +490,7 @@ class SerializerErrorHelper:
 		raise WriteError ("Cannot serialize complex numbers with"
 		                  " imaginary components.")
 		
-class Serializer (metaclass = abc.ABCMeta):
+class Serializer (object):
 	def __init__ (self, sort_keys, indent, ascii_only,
 	              coerce_keys, encoding, on_unknown,
 	              error_helper):
@@ -494,24 +502,22 @@ class Serializer (metaclass = abc.ABCMeta):
 		self.on_unknown = on_unknown
 		self.raise_ = error_helper
 		
-	@abc.abstractmethod
 	def append (self, value):
 		raise NotImplementedError
 		
-	@abc.abstractmethod
 	def serialize (self, value):
 		raise NotImplementedError
 		
 	def serialize_object (self, value, parent_ids, in_unknown_hook = False):
-		if isinstance (value, collections.UserString):
+		if isinstance (value, UserString):
 			value = value.data
-		if isinstance (value, JSONAtom):
+		if isinstance (value, ATOMIC_TYPES):
 			if not parent_ids:
 				self.raise_.invalid_root ()
 			self.serialize_atom (value)
-		elif isinstance (value, collections.Mapping):
+		elif hasattr (value, 'items'):
 			self.serialize_mapping (value, parent_ids)
-		elif isinstance (value, collections.Iterable):
+		elif is_iterable (value):
 			self.serialize_iterable (value, parent_ids)
 		elif not in_unknown_hook:
 			new_value = self.on_unknown (value,
@@ -543,11 +549,11 @@ class Serializer (metaclass = abc.ABCMeta):
 		
 		a ('{')
 		for key, item in items:
-			if isinstance (key, collections.UserString):
+			if isinstance (key, UserString):
 				key = key.data
-			if not isinstance (key, str):
+			if not isinstance (key, (str, unicode)):
 				if self.coerce_keys:
-					key = str (key)
+					key = unicode (key)
 				else:
 					self.raise_.invalid_object_key ()
 			if first:
@@ -590,10 +596,12 @@ class Serializer (metaclass = abc.ABCMeta):
 			if value is kw_value:
 				return self.append (keyword)
 				
-		if isinstance (value, str):
-			self.serialize_string (value)
-		elif isinstance (value, int):
-			self.append (str (value))
+		if isinstance (value, unicode):
+			self.serialize_unicode (value)
+		elif isinstance (value, str):
+			self.serialize_bytes (value)
+		elif isinstance (value, (int, long)):
+			self.append (unicode (value))
 		elif isinstance (value, float):
 			self.serialize_float (value)
 		elif isinstance (value, complex):
@@ -603,7 +611,10 @@ class Serializer (metaclass = abc.ABCMeta):
 		else:
 			self.raise_.unknown_serializer (value)
 			
-	def serialize_string (self, value):
+	def serialize_bytes (self, value):
+		self.serialize_unicode (unicode (value, 'ascii'))
+		
+	def serialize_unicode (self, value):
 		a = self.append
 		stream = iter (value)
 		a ('"')
@@ -667,10 +678,10 @@ class Serializer (metaclass = abc.ABCMeta):
 	def serialize_decimal (self, value):
 		if value != value:
 			self.raise_.no_nan ()
-		s_value = str (value)
-		if s_value == 'Infinity':
+		s_value = unicode (value)
+		if s_value == u'Infinity':
 			self.raise_.no_infinity ()
-		elif s_value == '-Infinity':
+		elif s_value == u'-Infinity':
 			self.raise_.no_neg_infinity ()
 		self.append (s_value)
 		
@@ -680,6 +691,8 @@ class StreamSerializer(Serializer):
 		self.fp = fp
 		
 	def append (self, value):
+		if isinstance (value, str):
+			value = unicode (value, 'ascii')
 		if self.encoding is not None:
 			value = value.encode (self.encoding)
 		self.fp.write (value)
@@ -697,7 +710,7 @@ class BufferSerializer(Serializer):
 		
 	def serialize (self, value):
 		self.serialize_object (value, [])
-		str_result = ''.join (self.chunks)
+		str_result = u''.join (self.chunks)
 		if self.encoding is None:
 			return str_result
 		return str_result.encode (self.encoding)
@@ -789,7 +802,7 @@ dumps = write
 
 def validate_indent (indent):
 	if indent is not None:
-		indent = str (indent)
+		indent = unicode (indent)
 	if not (indent is None or len (indent) == 0):
 		if len (indent.strip (ALLOWED_WHITESPACE)) > 0:
 			raise TypeError ("Only whitespace may be used for indentation.")
@@ -797,12 +810,12 @@ def validate_indent (indent):
 	
 def validate_on_unknown (f):
 	def on_unknown (value, unknown):
+		if f is not None:
+			return f (value)
 		unknown (value)
-	if f is None:
-		return on_unknown
-	if not isinstance (f, collections.Callable):
+	if not (f is None or callable (f)):
 		raise TypeError ("The on_unknown object must be callable.")
-	return f
+	return on_unknown
 # }}}
 
 try:
