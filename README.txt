@@ -45,10 +45,8 @@ construct, so this flag may substantially increase parser performance.
 Please note that using ``float``s will cause a loss of precision when
 parsing some values. ::
 
-	>>> jsonlib.read ('[1.1]', use_float = True)
-	[1.1000000000000001]
 	>>> jsonlib.read ('[3.14159265358979323846]', use_float = True)
-	[3.1415926535897931]
+	[3.141592653589793]
 
 Serialization
 -------------
@@ -152,6 +150,8 @@ to write objects to a file-like object::
 	>>> import sys
 	>>> jsonlib.dump (["Written to stdout"], sys.stdout, encoding = None)
 	["Written to stdout"]
+	>>> with open ("/dev/null", "wb") as out:
+	...     jsonlib.dump (["Written to a file"], out)
 	>>> 
 
 Exceptions
