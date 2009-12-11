@@ -42,8 +42,8 @@ typedef struct _Parser
 	Py_UNICODE *stringparse_buffer;
 	size_t stringparse_buffer_size;
 	
-	unsigned int use_float: 1;
-	unsigned int got_root: 1;
+	unsigned char use_float;
+	unsigned char got_root;
 } Parser;
 
 static PyObject *
@@ -108,6 +108,7 @@ jsonlib_read (PyObject *self, PyObject *args)
 	parser.use_float = use_float;
 	parser.module = PyModule_GetState (self);
 	
+	skip_whitespace (&parser, NULL, NULL);
 	result = parse_raw (&parser);
 	skip_whitespace (&parser, NULL, NULL);
 	
@@ -126,7 +127,6 @@ parse_raw (Parser *parser)
 {
 	Py_UNICODE c;
 	
-	skip_whitespace (parser, NULL, NULL);
 	if (parser->index == parser->end)
 	{
 		return PyObject_CallMethod (parser->error_helper, "no_expression", "uk",
@@ -170,9 +170,8 @@ parse_raw (Parser *parser)
 	case '9':
 		return parse_number (parser);
 	default:
-		break;
+		return parser_raise_unexpected (parser, NULL);
 	}
-	return parser_raise_unexpected (parser, NULL);
 }
 
 static PyObject *
@@ -182,8 +181,7 @@ parse_object (Parser *parser)
 	Py_UNICODE *start = parser->index;
 	int result;
 	
-	if (!skip_char (parser, '{', "object start"))
-	{ goto error; }
+	++parser->index; /* '{' */
 	
 	if (!skip_whitespace (parser, start, "Unterminated object."))
 	{ goto error; }
@@ -191,9 +189,7 @@ parse_object (Parser *parser)
 	retval = PyDict_New ();
 	if (*parser->index == '}')
 	{
-		if (!skip_char (parser, '}', "object end"))
-		{ goto error; }
-		
+		++parser->index;
 		return retval;
 	}
 	
@@ -236,9 +232,7 @@ parse_object (Parser *parser)
 		
 		if (*parser->index == '}')
 		{
-			if (!skip_char (parser, '}', "object end"))
-			{ goto error; }
-			
+			++parser->index;
 			return retval;
 		}
 		
@@ -261,8 +255,7 @@ parse_array (Parser *parser)
 	Py_UNICODE *start = parser->index;
 	int result;
 	
-	if (!skip_char (parser, '[', "array start"))
-	{ goto error; }
+	++parser->index; /* '[' */
 	
 	if (!skip_whitespace (parser, start, "Unterminated array."))
 	{ goto error; }
@@ -270,9 +263,7 @@ parse_array (Parser *parser)
 	retval = PyList_New (0);
 	if (*parser->index == ']')
 	{
-		if (!skip_char (parser, ']', "object end"))
-		{ goto error; }
-		
+		++parser->index;
 		return retval;
 	}
 	
@@ -295,9 +286,7 @@ parse_array (Parser *parser)
 		
 		if (*parser->index == ']')
 		{
-			if (!skip_char (parser, ']', "array end"))
-			{ goto error; }
-			
+			++parser->index;
 			return retval;
 		}
 		
@@ -316,8 +305,8 @@ static PyObject *
 parse_string (Parser *parser)
 {
 	PyObject *unicode;
-	int escaped = 0, fancy = 0;
-	Py_UNICODE c, *start;
+	unsigned char escaped = 0, fancy = 0;
+	Py_UNICODE c, *start, *end = parser->end;
 	size_t ii;
 	
 	start = parser->index;
@@ -332,7 +321,7 @@ parse_string (Parser *parser)
 	/* Scan through for maximum character count, and to ensure the string
 	 * is terminated.
 	**/
-	for (ii = 1; start + ii < parser->end; ii++)
+	for (ii = 1; start + ii < end; ++ii)
 	{
 		c = start[ii];
 		
@@ -347,19 +336,17 @@ parse_string (Parser *parser)
 		if (escaped)
 		{ escaped = 0; }
 		
-		else
+		else if (c == '\\')
 		{
-			if (c == '\\')
-			{
-				fancy = 1;
-				escaped = 1;
-			}
-			else if (c == '"')
-			{ break; }
+			fancy = 1;
+			escaped = 1;
 		}
+		
+		else if (c == '"')
+		{ break; }
 	}
 	
-	if (start + ii >= parser->end)
+	if (start + ii >= end)
 	{ return parser_raise_unterminated_string (parser, start); }
 	
 	if (fancy)
@@ -421,7 +408,7 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 				return unicode;
 			}
 			else { buffer[buffer_idx++] = c; }
-			ii++;
+			++ii;
 		}
 		
 		escaped = 0;
@@ -446,8 +433,8 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 				parser, start, buffer, &buffer_idx, &ii,
 				max_char_count))
 			{
-				ii--;
-				buffer_idx++;
+				--ii;
+				++buffer_idx;
 				break;
 			}
 			else { return NULL; }
@@ -459,7 +446,7 @@ parse_string_full (Parser *parser, Py_UNICODE *start, size_t max_char_count)
 				(start - parser->start + ii - 1),
 				&c, 1);
 		}
-		ii++;
+		++ii;
 	}
 }
 
@@ -484,7 +471,7 @@ parse_unicode_escape (Parser *parser, Py_UNICODE *string_start, Py_UNICODE *buff
 	size_t offset = *index_ptr;
 	Py_UNICODE value;
 	
-	offset++;
+	++offset;
 	
 	remaining = max_char_count - offset;
 	if (remaining < 4)
@@ -565,21 +552,21 @@ static PyObject *
 keyword_compare (Parser *parser, const char *expected, size_t len,
                  PyObject *retval)
 {
-	size_t ii, left;
+	size_t ii;
+	Py_UNICODE *index = parser->index;
 	
-	left = parser->end - parser->index;
-	if (left >= len)
+	if (parser->end - index < len)
+	{ return NULL; }
+	
+	for (ii = 0; expected[ii]; ++ii)
 	{
-		for (ii = 0; ii < len; ii++)
-		{
-			if (parser->index[ii] != (unsigned char)(expected[ii]))
-			{ return NULL; }
-		}
-		parser->index += len;
-		Py_INCREF (retval);
-		return retval;
+		if (parser->index[ii] != (unsigned char)(expected[ii]))
+		{ return NULL; }
 	}
-	return NULL;
+	
+	parser->index += ii;
+	Py_INCREF (retval);
+	return retval;
 }
 
 static PyObject *
@@ -648,7 +635,7 @@ parse_number (Parser *parser)
 		}
 		if (should_stop)
 		{ break; }
-		ptr++;
+		++ptr;
 	}
 	
 	if (got_digit)
@@ -688,25 +675,30 @@ parse_number (Parser *parser)
 static unsigned char
 skip_whitespace (Parser *parser, Py_UNICODE *start, const char *message)
 {
-	Py_UNICODE c;
+	Py_UNICODE *index = parser->index, *end = parser->end;
 	
 	if (message && !start)
-	{ start = parser->index; }
+	{ start = index; }
 	
 	/* Don't use Py_UNICODE_ISSPACE, because it returns TRUE for
 	 * codepoints that are not valid JSON whitespace.
 	**/
-	while (parser->index < parser->end)
+	while (index < end)
 	{
-		c = *parser->index;
-		if (!(c == '\x09' ||
-		      c == '\x0A' ||
-		      c == '\x0D' ||
-		      c == '\x20'))
-		{ return 1; }
-		
-		parser->index++;
+		switch (*index)
+		{
+		case '\x09':
+		case '\x0A':
+		case '\x0D':
+		case '\x20':
+			++index;
+			break;
+		default:
+			parser->index = index;
+			return 1;
+		}
 	}
+	parser->index = index;
 	
 	if (message)
 	{
@@ -727,7 +719,7 @@ skip_char (Parser *parser, Py_UNICODE c, const char *message)
 		return 0;
 	}
 	
-	parser->index++;
+	++parser->index;
 	return 1;
 }
 
@@ -783,9 +775,9 @@ struct _Serializer
 	PyObject *indent;
 	PyObject *on_unknown;
 	PyObject *error_helper;
-	unsigned int sort_keys: 1;
-	unsigned int coerce_keys: 1;
-	unsigned int ascii_only: 1;
+	unsigned char sort_keys;
+	unsigned char coerce_keys;
+	unsigned char ascii_only;
 };
 
 typedef struct _BufferList BufferList;
