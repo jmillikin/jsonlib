@@ -2,7 +2,7 @@ from os.path import dirname, join
 from distutils.core import setup, Extension
 
 # If you change the version here, also change it in jsonlib.py.
-version = '1.5'
+version = '1.6'
 
 setup (
 	name = 'jsonlib-python3',
@@ -13,7 +13,7 @@ setup (
 	author_email = "jmillikin@gmail.com",
 	license = "GPL",
 	url = "https://launchpad.net/jsonlib",
-	download_url = "http://cheeseshop.python.org/pypi/jsonlib-python3/%s" % version,
+	download_url = "http://pypi.python.org/pypi/jsonlib-python3/%s" % version,
 	platforms = ["Platform Independent"],
 	classifiers = [
 		"Development Status :: 5 - Production/Stable",

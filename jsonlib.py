@@ -20,7 +20,7 @@ The main implementation of this module is accessed through calls to
 
 """
 __author__ = "John Millikin <jmillikin@gmail.com>"
-__version__ = (1, 5)
+__version__ = (1, 6)
 __license__ = "GPL"
 
 __all__ = [
