@@ -418,7 +418,7 @@ class Parser (object):
 	def raise_unexpected (self, message = None):
 		self.raise_.unexpected (self.text, self.index, message)
 		
-def read_impl (text, use_float, error_helper):
+def read_impl (text, use_float, error_helper, decimal):
 	parser = Parser (text, use_float, error_helper)
 	return parser.parse ()
 	
@@ -430,7 +430,7 @@ def read (bytestring, use_float = False):
 	
 	"""
 	text = unicode_autodetect_encoding (bytestring)
-	return read_impl (text, use_float, ParseErrorHelper ())
+	return read_impl (text, use_float, ParseErrorHelper (), Decimal)
 	
 loads = read
 # }}}
@@ -716,7 +716,8 @@ class BufferSerializer(Serializer):
 		return str_result.encode (self.encoding)
 		
 def dump_impl (value, fp, sort_keys, indent, ascii_only,
-               coerce_keys, encoding, on_unknown, error_helper):
+               coerce_keys, encoding, on_unknown, error_helper,
+               decimal, userstring):
 	serializer = StreamSerializer (fp, sort_keys, indent, ascii_only,
 	                               coerce_keys, encoding,
 	                               on_unknown, error_helper)
@@ -734,10 +735,12 @@ def dump (value, fp, sort_keys = False, indent = None, ascii_only = True,
 	                  validate_indent (indent), ascii_only,
 	                  coerce_keys, encoding,
 	                  validate_on_unknown (on_unknown),
-	                  SerializerErrorHelper ())
+	                  SerializerErrorHelper (),
+	                  UserString, Decimal)
 	
 def write_impl (value, sort_keys, indent, ascii_only,
-                coerce_keys, encoding, on_unknown, error_helper):
+                coerce_keys, encoding, on_unknown, error_helper,
+                decimal, userstring):
 	serializer = BufferSerializer (sort_keys, indent, ascii_only,
 	                               coerce_keys, encoding,
 	                               on_unknown, error_helper)
@@ -796,7 +799,8 @@ def write (value, sort_keys = False, indent = None, ascii_only = True,
 	return write_impl (value, sort_keys, validate_indent (indent), ascii_only,
 	                   coerce_keys, encoding,
 	                   validate_on_unknown (on_unknown),
-	                   SerializerErrorHelper ())
+	                   SerializerErrorHelper (),
+	                   UserString, Decimal)
 	
 dumps = write
 
