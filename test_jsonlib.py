@@ -724,6 +724,15 @@ class WriteMiscTests (SerializerTestCase):
 	def test_dumps_alias (self):
 		self.assert_ (jsonlib.write is jsonlib.dumps)
 		
+	def test_fixed_truncation_error (self):
+		data = [{"a": 3}] * 270
+		
+		fp = io.StringIO ()
+		jsonlib.dump (data, fp, encoding = None)
+		self.assertEqual (len (read (fp.getvalue ())), len (data))
+		
+		self.assertEqual (len (read (write (data))), len (data))
+		
 class WriteKeywordTests (SerializerTestCase):
 	def test_null (self):
 		self.w ([None], '[null]')
