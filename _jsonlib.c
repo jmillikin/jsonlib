@@ -2028,11 +2028,11 @@ buffer_serializer_flush (Serializer *base)
 	{
 		lst = alloc_buffer_list();
 		s->all_buffers = lst;
-		s->current_buffer = lst;
 	}
 	if (!lst)
 	{ return 0; }
 	
+	s->current_buffer = lst;
 	lst->buffer_size = base->buffer_size;
 	memcpy (lst->buffer, base->buffer,
 	        base->buffer_size * sizeof (Py_UNICODE));
