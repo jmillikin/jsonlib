@@ -28,11 +28,11 @@ Deserialization
 ---------------
 
 To deserialize a JSON expression, call the ``jsonlib.read`` function with
-an instance of ``str`` or ``bytes``. ::
+an instance of ``unicode`` or ``bytes``. ::
 
 	>>> import jsonlib
 	>>> jsonlib.read (b'["Hello world!"]')
-	['Hello world!']
+	[u'Hello world!']
 
 Floating-point values
 ~~~~~~~~~~~~~~~~~~~~~
@@ -46,7 +46,7 @@ Please note that using ``float``s will cause a loss of precision when
 parsing some values. ::
 
 	>>> jsonlib.read ('[3.14159265358979323846]', use_float = True)
-	[3.141592653589793]
+	[3.1415926535897931]
 
 Serialization
 -------------
@@ -56,7 +56,7 @@ The simplest use is to call ``jsonlib.write`` with a Python value. ::
 
 	>>> import jsonlib
 	>>> jsonlib.write (['Hello world!'])
-	b'["Hello world!"]'
+	'["Hello world!"]'
 
 Pretty-Printing
 ~~~~~~~~~~~~~~~
@@ -77,9 +77,9 @@ stored by Python. To force a consistent ordering (for example, in doctests)
 use the ``sort_keys`` parameter. ::
 
 	>>> jsonlib.write ({'e': 'Hello', 'm': 'World!'})
-	b'{"m":"World!","e":"Hello"}'
+	'{"m":"World!","e":"Hello"}'
 	>>> jsonlib.write ({'e': 'Hello', 'm': 'World!'}, sort_keys = True)
-	b'{"e":"Hello","m":"World!"}'
+	'{"e":"Hello","m":"World!"}'
 
 Encoding and Unicode
 ~~~~~~~~~~~~~~~~~~~~
@@ -88,21 +88,21 @@ By default, the output is encoded in UTF-8. If you require a different
 encoding, pass the name of a Python codec as the ``encoding`` parameter. ::
 
 	>>> jsonlib.write (['Hello world!'], encoding = 'utf-16-be')
-	b'\x00[\x00"\x00H\x00e\x00l\x00l\x00o\x00 \x00w\x00o\x00r\x00l\x00d\x00!\x00"\x00]'
+	'\x00[\x00"\x00H\x00e\x00l\x00l\x00o\x00 \x00w\x00o\x00r\x00l\x00d\x00!\x00"\x00]'
 
 To retrieve an unencoded ``unicode`` instance, pass ``None`` for the
 encoding. ::
 
 	>>> jsonlib.write (['Hello world!'], encoding = None)
-	'["Hello world!"]'
+	u'["Hello world!"]'
 
 By default, non-ASCII codepoints are forbidden in the output. To include
 higher codepoints in the output, set ``ascii_only`` to ``False``. ::
 
-	>>> jsonlib.write (['Hello \u266a'], encoding = None)
-	'["Hello \\u266a"]'
-	>>> jsonlib.write (['Hello \u266a'], encoding = None, ascii_only = False)
-	'["Hello \u266a"]'
+	>>> jsonlib.write ([u'Hello \u266a'], encoding = None)
+	u'["Hello \\u266a"]'
+	>>> jsonlib.write ([u'Hello \u266a'], encoding = None, ascii_only = False)
+	u'["Hello \u266a"]'
 
 Mapping Key Coercion
 ~~~~~~~~~~~~~~~~~~~~
@@ -113,9 +113,9 @@ mapping keys to strings, so the ``coerce_keys`` parameter is available. ::
 
 	>>> jsonlib.write ({True: 1})
 	Traceback (most recent call last):
-	jsonlib.WriteError: Only strings may be used as object keys.
+	WriteError: Only strings may be used as object keys.
 	>>> jsonlib.write ({True: 1}, coerce_keys = True)
-	b'{"True":1}'
+	'{"True":1}'
 
 Serializing Other Types
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -133,12 +133,12 @@ To serialize a type not known to jsonlib, use the ``on_unknown`` parameter
 to ``write``::
 
 	>>> from datetime import date
-	>>> def unknown_handler (value, unknown):
+	>>> def unknown_handler (value):
 	...     if isinstance (value, date):
 	...         return str (value)
-	...     unknown (value)
+	...     raise jsonlib.UnknownSerializerError
 	>>> jsonlib.write ([date (2000, 1, 1)], on_unknown = unknown_handler)
-	b'["2000-01-01"]'
+	'["2000-01-01"]'
 
 Streaming Serializer
 ~~~~~~~~~~~~~~~~~~~~
